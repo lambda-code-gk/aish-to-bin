@@ -54,6 +54,11 @@ echo "Building leakscan..."
 cd "$PROJECT_ROOT/tools/leakscan"
 $BUILD_CMD
 
+# md-fmtをビルド
+echo "Building md-fmt..."
+cd "$PROJECT_ROOT/tools/md-fmt"
+$BUILD_CMD
+
 # aiをビルド
 echo "Building ai..."
 cd "$PROJECT_ROOT/core/ai"
@@ -66,7 +71,7 @@ $BUILD_CMD
 
 # ビルド成果物を dist/bin にコピー（存在するもののみ、無ければ warn）
 echo "Deploying binaries to $BIN_DIR/..."
-rm -f "$BIN_DIR/aish-capture" "$BIN_DIR/aish-render" "$BIN_DIR/aish-script" "$BIN_DIR/leakscan" "$BIN_DIR/ai" "$BIN_DIR/aish"
+rm -f "$BIN_DIR/aish-capture" "$BIN_DIR/aish-render" "$BIN_DIR/aish-script" "$BIN_DIR/leakscan" "$BIN_DIR/md-fmt" "$BIN_DIR/ai" "$BIN_DIR/aish"
 
 copy_if_exists() {
     local src="$1"
@@ -79,6 +84,7 @@ copy_if_exists() {
 }
 
 copy_if_exists "$PROJECT_ROOT/tools/leakscan/target/$TARGET_DIR/leakscan" "leakscan"
+copy_if_exists "$PROJECT_ROOT/tools/md-fmt/target/$TARGET_DIR/md-fmt" "md-fmt"
 copy_if_exists "$PROJECT_ROOT/core/ai/target/$TARGET_DIR/ai" "ai"
 copy_if_exists "$PROJECT_ROOT/core/aish/target/$TARGET_DIR/aish" "aish"
 # 以下はビルドコメントアウト中のためスキップ

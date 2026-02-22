@@ -498,6 +498,7 @@ fn print_help() {
     println!("  AISH_SESSION    Session directory for resume/continue. Set by aish when running ai from the shell.");
     println!("  AISH_HOME       Home directory. Profiles: $AISH_HOME/config/profiles.json; tasks: $AISH_HOME/config/task.d/; modes: $AISH_HOME/config/mode.d/");
     println!("                 If unset, $XDG_CONFIG_HOME/aish (e.g. ~/.config/aish) is used.");
+    println!("  AISH_FILTER     If set, LLM output (text/reasoning stream) is piped through this command (e.g. cat, sed, less). Errors and tool messages are not filtered.");
     println!();
     println!("Description:");
     println!("  Send a message to the LLM and display the response.");

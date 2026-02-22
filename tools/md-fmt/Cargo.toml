@@ -1,0 +1,8 @@
+[package]
+name = "md-fmt"
+version = "0.1.0"
+edition = "2021"
+description = "Streaming Markdown formatter: reads Markdown from stdin and prints formatted text with colors"
+
+[dependencies]
+syntect = "5"

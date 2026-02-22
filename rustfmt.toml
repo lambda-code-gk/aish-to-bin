@@ -1,0 +1,2 @@
+# プロジェクト共通の rustfmt 設定
+max_width = 100
