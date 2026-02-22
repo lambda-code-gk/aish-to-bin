@@ -1,5 +1,6 @@
 pub(crate) mod app;
 pub(crate) mod clear;
+pub(crate) mod history;
 pub(crate) mod init;
 pub(crate) mod memory;
 pub(crate) mod rollout;
@@ -11,6 +12,7 @@ pub(crate) mod mute;
 pub(crate) mod unmute;
 
 pub(crate) use clear::ClearUseCase;
+pub(crate) use history::HistoryUseCase;
 pub(crate) use init::InitUseCase;
 pub(crate) use memory::MemoryUseCase;
 pub(crate) use rollout::RolloutUseCase;

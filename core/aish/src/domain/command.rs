@@ -48,6 +48,15 @@ pub enum Command {
     /// メモリ削除（memory remove id [id...]）
     MemoryRemove { ids: Vec<String> },
 
+    /// reviewed 履歴一覧（history ls [--all][-a][-u]）
+    HistoryLs {
+        all: bool,
+        user_only: bool,
+        assistant_only: bool,
+    },
+    /// reviewed 履歴取得（history get <id> ...）
+    HistoryGet { ids: Vec<String> },
+
     /// 未知のコマンド（エラー用）
     Unknown(String),
 }
@@ -67,6 +76,33 @@ impl Command {
                 _ => {
                     let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
                     return Command::Unknown(format!("memory {}", sub).trim_end().to_string());
+                }
+            }
+        }
+        if name == "history" {
+            match args.first().map(|s| s.as_str()) {
+                Some("ls") => {
+                    let mut all = false;
+                    let mut user_only = false;
+                    let mut assistant_only = false;
+                    for arg in args.iter().skip(1) {
+                        match arg.as_str() {
+                            "--all" => all = true,
+                            "-a" => assistant_only = true,
+                            "-u" => user_only = true,
+                            _ => {}
+                        }
+                    }
+                    return Command::HistoryLs {
+                        all,
+                        user_only,
+                        assistant_only,
+                    };
+                }
+                Some("get") => return Command::HistoryGet { ids: args[1..].to_vec() },
+                _ => {
+                    let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
+                    return Command::Unknown(format!("history {}", sub).trim_end().to_string());
                 }
             }
         }
@@ -155,5 +191,53 @@ mod tests {
     fn test_parse_with_args_memory_remove() {
         let cmd = Command::parse_with_args("memory", &["remove".to_string(), "abc".to_string()]);
         assert!(matches!(&cmd, Command::MemoryRemove { ids } if ids == &["abc".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_with_args_history_ls() {
+        let cmd = Command::parse_with_args("history", &["ls".to_string()]);
+        assert!(matches!(
+            &cmd,
+            Command::HistoryLs {
+                all: false,
+                user_only: false,
+                assistant_only: false
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_with_args_history_ls_all_assistant() {
+        let cmd = Command::parse_with_args(
+            "history",
+            &["ls".to_string(), "--all".to_string(), "-a".to_string()],
+        );
+        assert!(matches!(
+            &cmd,
+            Command::HistoryLs {
+                all: true,
+                user_only: false,
+                assistant_only: true
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_with_args_history_ls_user() {
+        let cmd = Command::parse_with_args("history", &["ls".to_string(), "-u".to_string()]);
+        assert!(matches!(
+            &cmd,
+            Command::HistoryLs {
+                all: false,
+                user_only: true,
+                assistant_only: false
+            }
+        ));
+    }
+
+    #[test]
+    fn test_parse_with_args_history_get() {
+        let cmd = Command::parse_with_args("history", &["get".to_string(), "001".to_string(), "002".to_string()]);
+        assert!(matches!(&cmd, Command::HistoryGet { ids } if ids == &["001".to_string(), "002".to_string()]));
     }
 }

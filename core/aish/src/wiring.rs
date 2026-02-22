@@ -9,13 +9,13 @@ use common::part_id::{IdGenerator, StdIdGenerator};
 use common::ports::outbound::{EnvResolver, FileSystem, Log, PathResolver, Signal};
 
 use crate::adapter::{
-    LoggingMemoryRepository, StdMemoryRepository, StdShellRunner, UnixPtySpawn,
-    UnixSignal,
+    LoggingMemoryRepository, StdMemoryRepository, StdReviewedHistoryReader, StdShellRunner,
+    UnixPtySpawn, UnixSignal,
 };
-use crate::ports::outbound::{MemoryRepository, ShellRunner};
+use crate::ports::outbound::{MemoryRepository, ReviewedHistoryReader, ShellRunner};
 use crate::usecase::{
-    ClearUseCase, InitUseCase, MemoryUseCase, RolloutUseCase, ResumeUseCase, SessionsUseCase,
-    ShellUseCase, TruncateConsoleLogUseCase, MuteUseCase, UnmuteUseCase,
+    ClearUseCase, HistoryUseCase, InitUseCase, MemoryUseCase, RolloutUseCase, ResumeUseCase,
+    SessionsUseCase, ShellUseCase, TruncateConsoleLogUseCase, MuteUseCase, UnmuteUseCase,
 };
 
 /// 配線で組み立てたポート群とユースケース（main の Command ディスパッチで利用）
@@ -38,6 +38,7 @@ pub struct App {
     pub unmute_use_case: UnmuteUseCase,
     pub resume_use_case: ResumeUseCase,
     pub sessions_use_case: SessionsUseCase,
+    pub history_use_case: HistoryUseCase,
     pub init_use_case: InitUseCase,
     /// 構造化ログ（ファイルへ JSONL）。エラー時のコンソール表示とは別。main で lifecycle/error に利用予定。
     #[allow(dead_code)]
@@ -98,6 +99,12 @@ pub fn wire_aish() -> App {
         Arc::clone(&fs),
         Arc::clone(&env_resolver),
     );
+    let reviewed_history_reader: Arc<dyn ReviewedHistoryReader> =
+        Arc::new(StdReviewedHistoryReader::new(Arc::clone(&fs)));
+    let history_use_case = HistoryUseCase::new(
+        Arc::clone(&path_resolver),
+        reviewed_history_reader,
+    );
     let init_use_case = InitUseCase::new(Arc::clone(&env_resolver), Arc::clone(&fs));
     App {
         path_resolver,
@@ -113,6 +120,7 @@ pub fn wire_aish() -> App {
         unmute_use_case,
         resume_use_case,
         sessions_use_case,
+        history_use_case,
         init_use_case,
         logger,
     }

@@ -103,8 +103,44 @@ fn build_memory_subcommand() -> clap::Command {
         )
 }
 
+fn build_history_subcommand() -> clap::Command {
+    clap::Command::new("history")
+        .about("List or get reviewed conversation history (requires -s/-d or AISH_SESSION)")
+        .subcommand_required(true)
+        .subcommand(
+            clap::Command::new("ls")
+                .about("List reviewed entries: <id> <datetime> <first line> (first line truncated at 20 chars)")
+                .arg(
+                    clap::Arg::new("all")
+                        .long("all")
+                        .help("Show all entries (ignore .history_send_from)")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    clap::Arg::new("assistant")
+                        .short('a')
+                        .long("assistant")
+                        .help("Show only assistant role entries")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    clap::Arg::new("user")
+                        .short('u')
+                        .long("user")
+                        .help("Show only user role entries")
+                        .action(ArgAction::SetTrue),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("get")
+                .about("Get reviewed content by ID(s)")
+                .arg(clap::Arg::new("ids").num_args(1..).value_name("id").required(true)),
+        )
+}
+
 fn build_clap_command() -> clap::Command {
     let memory = build_memory_subcommand();
+    let history = build_history_subcommand();
 
     global_args(
         clap::Command::new("aish")
@@ -132,6 +168,7 @@ fn build_clap_command() -> clap::Command {
                     .about("Clear all part files in the session directory (delete conversation history)"),
             )
             .subcommand(memory)
+            .subcommand(history)
             .subcommand(
                 clap::Command::new("resume")
                     .about("Resume last or specified session")
@@ -218,6 +255,33 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
             command_args.extend(args);
             (Some("memory".to_string()), command_args, false, false, None)
         }
+        Some(("history", history_m)) => {
+            let (sub, args) = match history_m.subcommand() {
+                Some(("ls", m)) => {
+                    let mut a = vec!["ls".to_string()];
+                    if m.get_flag("all") {
+                        a.push("--all".to_string());
+                    }
+                    if m.get_flag("assistant") {
+                        a.push("-a".to_string());
+                    }
+                    if m.get_flag("user") {
+                        a.push("-u".to_string());
+                    }
+                    ("ls", a)
+                }
+                Some(("get", m)) => (
+                    "get",
+                    m.get_many::<String>("ids")
+                        .map(|i| i.cloned().collect())
+                        .unwrap_or_default(),
+                ),
+                _ => ("", vec![]),
+            };
+            let mut command_args = vec![sub.to_string()];
+            command_args.extend(args);
+            (Some("history".to_string()), command_args, false, false, None)
+        }
         Some((name, _)) => (Some(name.to_string()), vec![], false, false, None),
     };
 
@@ -256,7 +320,8 @@ pub fn print_completion(shell: Shell) {
 
 fn emit_fallback_completion(shell: Shell) {
     let subcommands = [
-        "clear", "init", "memory", "resume", "rollout", "sessions", "shell", "truncate_console_log",
+        "clear", "history", "init", "memory", "resume", "rollout", "sessions", "shell",
+        "truncate_console_log",
     ];
     match shell {
         Shell::Bash => {

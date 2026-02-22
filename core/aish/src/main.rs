@@ -99,6 +99,32 @@ impl UseCaseRunner for Runner {
                 self.app.memory_use_case.remove(&ids)?;
                 Ok(0)
             }
+            Command::HistoryLs {
+                all,
+                user_only,
+                assistant_only,
+            } => {
+                let session_explicitly_specified = is_session_explicitly_specified(&config);
+                let entries = self.app.history_use_case.list(
+                    &path_input,
+                    session_explicitly_specified,
+                    all,
+                    user_only,
+                    assistant_only,
+                )?;
+                print_history_list(&entries);
+                Ok(0)
+            }
+            Command::HistoryGet { ids } => {
+                let session_explicitly_specified = is_session_explicitly_specified(&config);
+                let entries = self.app.history_use_case.get(
+                    &path_input,
+                    session_explicitly_specified,
+                    &ids,
+                )?;
+                print_history_get(&entries);
+                Ok(0)
+            }
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
                 "Command '{}' is not implemented.",
                 name
@@ -178,6 +204,9 @@ fn print_help() {
     println!("  memory list            List all memories (id, category, subject).");
     println!("  memory get <id> [id...] Get memory content by ID(s).");
     println!("  memory remove <id> [id...] Remove memory by ID(s).");
+    println!();
+    println!("  history ls [--all][-a][-u]  List reviewed (id, YYYY-mm-dd HH:MM, first line up to 20 chars). -a=assistant only, --all=all entries.");
+    println!("  history get <id> [...]  Get reviewed content by ID(s).");
 }
 
 #[cfg(unix)]
@@ -204,6 +233,29 @@ fn print_memory_get(entries: &[crate::domain::MemoryEntry]) {
             println!("--- {} (id={}) ---", e.subject, e.id);
         }
         println!("{}", e.content);
+        if i + 1 < entries.len() {
+            println!();
+        }
+    }
+}
+
+#[cfg(unix)]
+fn print_history_list(entries: &[crate::domain::HistoryListEntry]) {
+    for e in entries {
+        println!("{}\t{}\t{}", e.id, e.datetime, e.first_line);
+    }
+}
+
+#[cfg(unix)]
+fn print_history_get(entries: &[crate::domain::HistoryGetEntry]) {
+    for (i, e) in entries.iter().enumerate() {
+        if entries.len() > 1 {
+            println!("--- id={} ---", e.id);
+        }
+        print!("{}", e.content);
+        if !e.content.ends_with('\n') {
+            println!();
+        }
         if i + 1 < entries.len() {
             println!();
         }
@@ -319,6 +371,26 @@ mod tests {
                     return Err(Error::invalid_argument("memory remove requires at least one id".to_string()));
                 }
                 app.memory_use_case.remove(&ids)?;
+                Ok(0)
+            }
+            Command::HistoryLs {
+                all,
+                user_only,
+                assistant_only,
+            } => {
+                let session_explicitly_specified = is_session_explicitly_specified_for_test(&config);
+                let _ = app.history_use_case.list(
+                    &path_input,
+                    session_explicitly_specified,
+                    all,
+                    user_only,
+                    assistant_only,
+                )?;
+                Ok(0)
+            }
+            Command::HistoryGet { ids } => {
+                let session_explicitly_specified = is_session_explicitly_specified_for_test(&config);
+                let _ = app.history_use_case.get(&path_input, session_explicitly_specified, &ids)?;
                 Ok(0)
             }
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
