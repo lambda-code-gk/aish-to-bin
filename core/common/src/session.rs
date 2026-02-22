@@ -24,16 +24,12 @@ impl ValidatedPath {
     ///
     /// # Errors
     /// ディレクトリの作成や正規化に失敗した場合、エラーを返します。
-    fn new<F>(
-        path: impl Into<PathBuf>,
-        path_name: &str,
-        missing_handler: F,
-    ) -> Result<Self, Error>
+    fn new<F>(path: impl Into<PathBuf>, path_name: &str, missing_handler: F) -> Result<Self, Error>
     where
         F: FnOnce(&PathBuf, &str) -> Result<(), Error>,
     {
         let path = path.into();
-        
+
         // ディレクトリが存在しない場合の処理
         if !path.exists() {
             missing_handler(&path, path_name)?;
@@ -44,7 +40,7 @@ impl ValidatedPath {
                 path.display()
             )));
         }
-        
+
         // フルパスに展開
         let path = std::fs::canonicalize(&path).map_err(|e| {
             Error::io_msg(format!(
@@ -54,10 +50,10 @@ impl ValidatedPath {
                 e
             ))
         })?;
-        
+
         Ok(ValidatedPath { path })
     }
-    
+
     /// パスを取得
     fn path(&self) -> &PathBuf {
         &self.path
@@ -81,24 +77,20 @@ impl SessionPath {
     /// # Errors
     /// ディレクトリの作成や正規化に失敗した場合、エラーを返します。
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, Error> {
-        let inner = ValidatedPath::new(
-            path,
-            "session directory",
-            |path, path_name| {
-                std::fs::create_dir_all(path).map_err(|e| {
-                    Error::io_msg(format!(
-                        "Failed to create {} '{}': {}",
-                        path_name,
-                        path.display(),
-                        e
-                    ))
-                })?;
-                Ok(())
-            },
-        )?;
+        let inner = ValidatedPath::new(path, "session directory", |path, path_name| {
+            std::fs::create_dir_all(path).map_err(|e| {
+                Error::io_msg(format!(
+                    "Failed to create {} '{}': {}",
+                    path_name,
+                    path.display(),
+                    e
+                ))
+            })?;
+            Ok(())
+        })?;
         Ok(SessionPath { inner })
     }
-    
+
     /// パスを取得
     pub fn path(&self) -> &PathBuf {
         self.inner.path()
@@ -122,20 +114,16 @@ impl HomePath {
     /// # Errors
     /// ディレクトリが存在しない場合や正規化に失敗した場合、エラーを返します。
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, Error> {
-        let inner = ValidatedPath::new(
-            path,
-            "home directory",
-            |path, path_name| {
-                Err(Error::io_msg(format!(
-                    "{} '{}' does not exist",
-                    path_name,
-                    path.display()
-                )))
-            },
-        )?;
+        let inner = ValidatedPath::new(path, "home directory", |path, path_name| {
+            Err(Error::io_msg(format!(
+                "{} '{}' does not exist",
+                path_name,
+                path.display()
+            )))
+        })?;
         Ok(HomePath { inner })
     }
-    
+
     /// パスを取得
     pub fn path(&self) -> &PathBuf {
         self.inner.path()
@@ -162,20 +150,26 @@ impl Session {
     /// セッションディレクトリの作成に失敗した場合、エラーを返します。
     ///
     /// ホームディレクトリは存在しなくてもよい（AISH_HOME 未設定時など）。
-    pub fn new(session_dir: impl Into<PathBuf>, home_dir: impl Into<PathBuf>) -> Result<Self, Error> {
+    pub fn new(
+        session_dir: impl Into<PathBuf>,
+        home_dir: impl Into<PathBuf>,
+    ) -> Result<Self, Error> {
         // セッションディレクトリを作成（存在しない場合は作成）
         let session_path = SessionPath::new(session_dir)?;
         let session_dir = SessionDir::new(session_path.path().clone());
         let home_dir = HomeDir::new(home_dir.into());
 
-        Ok(Session { session_dir, home_dir })
+        Ok(Session {
+            session_dir,
+            home_dir,
+        })
     }
-    
+
     /// セッションディレクトリを取得
     pub fn session_dir(&self) -> &SessionDir {
         &self.session_dir
     }
-    
+
     /// AISH_HOME環境変数の値を取得
     ///
     /// ホームディレクトリのパスを返す。
@@ -194,7 +188,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_new");
         let home_path = temp_dir.join("aish_test_home_new");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
@@ -202,52 +196,52 @@ mod tests {
         if home_path.exists() {
             fs::remove_dir_all(&home_path).unwrap();
         }
-        
+
         // ホームディレクトリを作成
         fs::create_dir_all(&home_path).unwrap();
-        
+
         // セッションを作成
         let session = Session::new(&test_path, &home_path);
         assert!(session.is_ok());
-        
+
         // ディレクトリが作成されたことを確認
         assert!(test_path.exists());
         assert!(test_path.is_dir());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
         fs::remove_dir_all(&home_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_new_with_existing_directory() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_existing");
         let home_path = temp_dir.join("aish_test_home_existing");
-        
+
         // 事前にディレクトリを作成
         fs::create_dir_all(&test_path).unwrap();
         fs::create_dir_all(&home_path).unwrap();
-        
+
         // セッションを作成（既存のディレクトリを使用）
         let session = Session::new(&test_path, &home_path);
         assert!(session.is_ok());
-        
+
         // ディレクトリが存在することを確認
         assert!(test_path.exists());
         assert!(test_path.is_dir());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
         fs::remove_dir_all(&home_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_path() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_path");
         let home_path = temp_dir.join("aish_test_home_path");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
@@ -255,24 +249,27 @@ mod tests {
         if home_path.exists() {
             fs::remove_dir_all(&home_path).unwrap();
         }
-        
+
         // ホームディレクトリを作成
         fs::create_dir_all(&home_path).unwrap();
-        
+
         let session = Session::new(&test_path, &home_path).unwrap();
         assert_eq!(session.session_dir().as_ref(), test_path.as_path());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
         fs::remove_dir_all(&home_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_new_with_nested_path() {
         let temp_dir = std::env::temp_dir();
-        let test_path = temp_dir.join("aish_test_session_nested").join("subdir").join("deep");
+        let test_path = temp_dir
+            .join("aish_test_session_nested")
+            .join("subdir")
+            .join("deep");
         let home_path = temp_dir.join("aish_test_home_nested");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path.parent().unwrap().parent().unwrap()).unwrap();
@@ -280,29 +277,29 @@ mod tests {
         if home_path.exists() {
             fs::remove_dir_all(&home_path).unwrap();
         }
-        
+
         // ホームディレクトリを作成
         fs::create_dir_all(&home_path).unwrap();
-        
+
         // ネストされたパスでセッションを作成
         let session = Session::new(&test_path, &home_path);
         assert!(session.is_ok());
-        
+
         // ディレクトリが作成されたことを確認
         assert!(test_path.exists());
         assert!(test_path.is_dir());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path.parent().unwrap().parent().unwrap()).unwrap();
         fs::remove_dir_all(&home_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_with_home_dir() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_home");
         let home_path = temp_dir.join("aish_test_home");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
@@ -310,7 +307,7 @@ mod tests {
         if home_path.exists() {
             fs::remove_dir_all(&home_path).unwrap();
         }
-        
+
         // ホームディレクトリが存在しなくてもセッションは作成できる（AISH_HOME 未設定時用）
         let session = Session::new(&test_path, &home_path);
         assert!(session.is_ok());
@@ -318,7 +315,7 @@ mod tests {
         assert!(test_path.exists());
         assert!(session.aish_home().as_ref() == home_path.as_path());
         fs::remove_dir_all(&test_path).unwrap();
-        
+
         // ホームディレクトリを作成してから再度試行
         fs::create_dir_all(&home_path).unwrap();
         let session = Session::new(&test_path, &home_path);
@@ -329,17 +326,17 @@ mod tests {
         assert!(home_path.exists());
         assert!(home_path.is_dir());
         assert_eq!(session.aish_home().as_ref(), home_path.as_path());
-        
+
         fs::remove_dir_all(&test_path).unwrap();
         fs::remove_dir_all(&home_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_aish_home() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_home2");
         let home_path = temp_dir.join("aish_test_home2");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
@@ -347,16 +344,16 @@ mod tests {
         if home_path.exists() {
             fs::remove_dir_all(&home_path).unwrap();
         }
-        
+
         // ホームディレクトリを作成
         fs::create_dir_all(&home_path).unwrap();
-        
+
         // セッションを作成
         let session = Session::new(&test_path, &home_path).unwrap();
         // フルパスに展開されているため、canonicalizeしたパスと比較
         let canonical_home = std::fs::canonicalize(&home_path).unwrap();
         assert_eq!(session.aish_home().as_ref(), canonical_home.as_path());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
         fs::remove_dir_all(&home_path).unwrap();
@@ -372,61 +369,61 @@ mod session_path_tests {
     fn test_session_path_new_creates_directory() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_path_new");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
         }
-        
+
         // セッションパスを作成（存在しない場合は作成）
         let path = SessionPath::new(&test_path);
         assert!(path.is_ok());
-        
+
         // ディレクトリが作成されたことを確認
         assert!(test_path.exists());
         assert!(test_path.is_dir());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_path_new_with_existing_directory() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_path_existing");
-        
+
         // 事前にディレクトリを作成
         fs::create_dir_all(&test_path).unwrap();
-        
+
         // セッションパスを作成（既存のディレクトリを使用）
         let path = SessionPath::new(&test_path);
         assert!(path.is_ok());
-        
+
         // ディレクトリが存在することを確認
         assert!(test_path.exists());
         assert!(test_path.is_dir());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
     }
-    
+
     #[test]
     fn test_session_path_canonicalize() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_session_path_canonicalize");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
         }
-        
+
         // セッションパスを作成
         let path = SessionPath::new(&test_path).unwrap();
         let canonical_path = path.path();
-        
+
         // フルパスになっていることを確認
         assert!(canonical_path.is_absolute());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
     }
@@ -441,54 +438,53 @@ mod home_path_tests {
     fn test_home_path_new_fails_if_not_exists() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_home_path_not_exists");
-        
+
         // テスト前にディレクトリが存在しないことを確認
         if test_path.exists() {
             fs::remove_dir_all(&test_path).unwrap();
         }
-        
+
         // ホームパスを作成（存在しない場合はエラー）
         let path = HomePath::new(&test_path);
         assert!(path.is_err());
     }
-    
+
     #[test]
     fn test_home_path_new_with_existing_directory() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_home_path_existing");
-        
+
         // 事前にディレクトリを作成
         fs::create_dir_all(&test_path).unwrap();
-        
+
         // ホームパスを作成（既存のディレクトリを使用）
         let path = HomePath::new(&test_path);
         assert!(path.is_ok());
-        
+
         // ディレクトリが存在することを確認
         assert!(test_path.exists());
         assert!(test_path.is_dir());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
     }
-    
+
     #[test]
     fn test_home_path_canonicalize() {
         let temp_dir = std::env::temp_dir();
         let test_path = temp_dir.join("aish_test_home_path_canonicalize");
-        
+
         // 事前にディレクトリを作成
         fs::create_dir_all(&test_path).unwrap();
-        
+
         // ホームパスを作成
         let path = HomePath::new(&test_path).unwrap();
         let canonical_path = path.path();
-        
+
         // フルパスになっていることを確認
         assert!(canonical_path.is_absolute());
-        
+
         // クリーンアップ
         fs::remove_dir_all(&test_path).unwrap();
     }
 }
-
