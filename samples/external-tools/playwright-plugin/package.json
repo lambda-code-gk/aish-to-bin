@@ -1,0 +1,10 @@
+{
+  "name": "aish-playwright-plugin",
+  "version": "0.1.0",
+  "description": "AISH external tool plugin: Playwright browser automation (sample)",
+  "type": "module",
+  "main": "plugin.mjs",
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

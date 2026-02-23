@@ -12,6 +12,7 @@ use common::ports::outbound::{EnvResolver, FileSystem, Log, Process};
 use common::tool::EchoTool;
 
 use crate::adapter::{
+    external_plugin_loader,
     CliContinuePrompt, CliToolApproval, CompositeLifecycleHooks, DeterministicCompactionStrategy,
     FileAgentStateStorage, GetMemoryContentTool, GrepTool, LeakscanPrepareSession,
     ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy, NoContinuePrompt,
@@ -239,9 +240,14 @@ fn build_policy_deps(
     }
 }
 
-fn build_tooling_deps(verbose: bool) -> ToolingDeps {
+fn build_tooling_deps(
+    verbose: bool,
+    fs: &Arc<dyn FileSystem>,
+    env_resolver: &Arc<dyn EnvResolver>,
+    event_hub: Option<EventHubHandle>,
+) -> ToolingDeps {
     let sink_factory = Arc::new(StdEventSinkFactory::new(verbose));
-    let tools: Vec<Arc<dyn common::tool::Tool>> = vec![
+    let mut tools: Vec<Arc<dyn common::tool::Tool>> = vec![
         Arc::new(EchoTool::new()),
         Arc::new(ShellTool::new()),
         Arc::new(QueueShellSuggestionTool::new()),
@@ -255,6 +261,11 @@ fn build_tooling_deps(verbose: bool) -> ToolingDeps {
         Arc::new(SearchMemoryTool::new()),
         Arc::new(GetMemoryContentTool::new()),
     ];
+    tools.extend(external_plugin_loader::load_external_plugins(
+        Arc::clone(fs),
+        Arc::clone(env_resolver),
+        event_hub,
+    ));
 
     ToolingDeps {
         sink_factory,
@@ -346,7 +357,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
     let process: Arc<dyn Process> = Arc::new(StdProcess);
     let session = build_session_deps(&fs, &env_resolver, &interrupt_checker, non_interactive);
     let policy = build_policy_deps(&env_resolver, &interrupt_checker, non_interactive);
-    let tooling = build_tooling_deps(verbose);
+    let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None);
     let model = build_model_deps(&fs, &env_resolver);
     let system = build_system_deps(&process);
     let obs = build_obs_deps(&logger);

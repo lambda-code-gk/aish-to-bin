@@ -1,4 +1,8 @@
 pub(crate) mod agent_state_storage;
+pub(crate) mod external_plugin_manifest_loader;
+pub(crate) mod external_plugin_loader;
+pub(crate) mod external_plugin_stdio_client;
+pub(crate) mod external_tool_executor_impl;
 pub(crate) mod approval;
 pub(crate) mod compactor_deterministic;
 pub(crate) mod config;
@@ -25,6 +29,8 @@ pub(crate) mod sinks;
 pub(crate) mod task;
 pub(crate) mod tools;
 
+#[cfg(test)]
+mod external_plugin_stdio_client_tests;
 #[cfg(test)]
 pub(crate) mod stub_llm;
 pub(crate) use agent_state_storage::FileAgentStateStorage;

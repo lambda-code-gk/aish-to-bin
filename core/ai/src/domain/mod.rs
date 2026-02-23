@@ -4,6 +4,7 @@ pub mod approval;
 pub mod command;
 pub mod compaction;
 pub mod dry_run_info;
+pub mod external_plugin;
 pub mod mode_config;
 pub mod context_budget;
 pub mod history;

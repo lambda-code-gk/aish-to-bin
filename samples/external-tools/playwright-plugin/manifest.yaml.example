@@ -1,0 +1,18 @@
+# AISH 外部ツールプラグイン manifest 例（Playwright）
+#
+# 使い方:
+#   1. このファイルをコピーし、manifest 内の path を実際の plugin.mjs の絶対パスに書き換える
+#   2. コピー先: ~/.aish/plugins.d/playwright.yaml または ~/.config/aish/plugins.d/playwright.yaml
+#   3. 事前に npm install を実行しておく（playwright のブラウザダウンロードが発生します）
+#
+id: playwright
+version: "0.1.0"
+transport:
+  type: stdio
+  command: node
+  args:
+    - "/path/to/samples/external-tools/playwright-plugin/plugin.mjs"  # 絶対パスに書き換える
+timeouts:
+  startup_ms: 15000
+  call_ms: 60000
+enabled: true

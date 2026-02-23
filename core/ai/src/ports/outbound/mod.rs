@@ -3,6 +3,7 @@
 pub mod agent_state_storage;
 pub mod compaction_strategy;
 pub mod approval;
+pub mod external_tool_executor;
 pub mod dry_run_report_sink;
 pub mod command_allow_rules_loader;
 pub mod context_message_builder;
@@ -27,6 +28,7 @@ pub mod task_runner;
 pub use agent_state_storage::{AgentStateLoader, AgentStateSaver};
 pub use compaction_strategy::CompactionStrategy;
 pub use approval::{Approval, ToolApproval};
+pub use external_tool_executor::ExternalToolExecutor;
 pub use dry_run_report_sink::DryRunReportSink;
 pub use command_allow_rules_loader::CommandAllowRulesLoader;
 pub use context_message_builder::{ContextMessageBuilder, QueryPlacement};
