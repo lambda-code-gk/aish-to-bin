@@ -51,12 +51,13 @@ ai [options] [task] [message...]
 | --- | --- |
 | `-h, --help` | ヘルプを表示します。 |
 | `-L, --list-profiles` | 利用可能なプロバイダプロファイル一覧を表示します。 |
-| `--list-tools` | 有効なツール一覧を表示します（`-p` でプロファイル指定推奨）。 |
+| `--list-tools` | 有効なツール一覧を表示します（現状はプロファイルに依存しません）。 |
 | `-c, --continue` | 直前のエージェントループ状態から再開します（`AISH_SESSION` を利用）。 |
 | `--no-interactive` | 非対話モード。ツール承認などを自動で拒否し、CI 向けに使うことを想定しています。 |
 | `-v, --verbose` | デバッグログを標準エラーに出力します。 |
 | `-p, --profile <profile>` | LLM プロファイルを指定します（例: `gemini`, `gpt`, `echo` など）。 |
 | `-m, --model <model>` | モデル名を指定します（例: `gemini-2.0`, `gpt-4` など）。 |
+| `-M, --mode <name>` | モード（プリセット）を指定します。`$AISH_HOME/config/mode.d/<name>.json` に定義された `system`/`profile`/`tools` を補完します。 |
 | `-S, --system <instruction>` | この問い合わせ専用のシステムインストラクションを直接指定します。 |
 | `--generate <shell>` | シェル補完スクリプトを生成します。 |
 | `--list-tasks` | 利用可能なタスク名一覧を表示します（シェル補完用）。 |
@@ -89,18 +90,23 @@ ai [options] [task] [message...]
 
 - 検索パス
   - `$AISH_HOME/config/task.d/`
-  - `$XDG_CONFIG_HOME/aish/task.d`
+  - `$XDG_CONFIG_HOME/aish/task.d/`
+  - `~/.config/aish/task.d/`
 
 > 詳細: `ai` の具体的な使い方やプロンプト設計、セッションとの関係については `ai-usage.md` を参照してください。
 
-### サポートツール
+### サポートツール / leakscan
 
-ビルド時に、AISH 本体とは別の補助ツールも `dist/bin/` に配置されます。
+代表的なものに `leakscan` があります（機密情報の誤送信を防ぐための検査エンジン）。
 
-代表的なもの:
+- `ai` からの利用時は、以下の順でバイナリを探索し、ルールファイルが存在するときのみ有効化されます。
+  1) `$AISH_HOME/bin/leakscan`
+  2) `ai` バイナリの隣にある `leakscan`
+  - ルールファイルは `$AISH_HOME/config/rules.json` 等（XDG 環境では `$XDG_CONFIG_HOME/aish/rules.json`）。
+- 見つからない場合やルールが無い場合は、leakscan は無効になり、セッションの準備はスキップされます。
 
-- `leakscan` : 機密情報の誤送信を防ぐための検査エンジン。  
-  ログやファイルをスキャンし、キーワード・正規表現・エントロピーなどで危険な文字列を検出します。
+詳細が必要になったタイミングで `tools/` 以下や各ツールのヘルプを参照してください。
 
-これらは日常利用では直接触らないことも多いため、詳細が必要になったタイミングで `tools/` 以下や各ツールのヘルプを参照してください。
+### モード（`-M, --mode`）
 
+`ai` はモード機能を持ち、`$AISH_HOME/config/mode.d/<name>.json`（または XDG 配下）に定義されたプリセットから、`system`/`profile`/`tools` を補完できます。`--list-modes` で利用可能なモード名の一覧を表示でき、CLI で `-p/-m/-S` を明示した場合はそれらがモードより優先されます。`-S` 未指定かつモードで system が無い場合は、hooks ベースのシステムプロンプト解決を試行します。

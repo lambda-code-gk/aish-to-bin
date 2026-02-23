@@ -13,7 +13,7 @@
 - **ツールの結果**  
   エージェントが `read_file` や `run_shell` などを実行した結果が会話に含まれ、続く LLM 呼び出しで送信されます。
 - **システムプロンプト**  
-  `-S` で明示的に指定した場合のみ、その文字列が system instruction として送られます。
+  `-S` を指定した場合はその文字列が、未指定の場合は hooks から解決された文字列（存在すれば）が system instruction として送られます。hooks の探索順は `$AISH_HOME/config/hooks/system_prompt/` → `$HOME/.aish/hooks/system_prompt/` → プロジェクト直下の `.aish/hooks/system_prompt/` です。
 
 API キーや秘密鍵・トークン・個人情報・社外秘のコードなどが、上記いずれかに含まれないよう注意してください。
 
