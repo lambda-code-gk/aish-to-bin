@@ -5,12 +5,12 @@ mod ports;
 mod usecase;
 mod wiring;
 
-use std::process;
+use cli::{config_to_command, parse_args, print_completion, Config, ParseOutcome};
 use common::error::Error;
 use common::ports::outbound::PathResolverInput;
-use cli::{config_to_command, parse_args, print_completion, Config, ParseOutcome};
 use domain::command::Command;
 use ports::inbound::UseCaseRunner;
+use std::process;
 #[cfg(unix)]
 use wiring::{wire_aish, App};
 
@@ -41,11 +41,11 @@ impl UseCaseRunner for Runner {
             Command::Unmute => self.app.unmute_use_case.run(&path_input),
             Command::Clear => {
                 let session_explicitly_specified = is_session_explicitly_specified(&config);
-                self.app.clear_use_case.run(&path_input, session_explicitly_specified)
+                self.app
+                    .clear_use_case
+                    .run(&path_input, session_explicitly_specified)
             }
-            Command::Resume { id } => {
-                self.app.resume_use_case.run(&path_input, id.as_deref())
-            }
+            Command::Resume { id } => self.app.resume_use_case.run(&path_input, id.as_deref()),
             Command::Sessions => {
                 let ids = self.app.sessions_use_case.list(&path_input)?;
                 for id in ids {
@@ -73,9 +73,17 @@ impl UseCaseRunner for Runner {
                     for p in &result.copied_paths {
                         println!("  {}", p.display());
                     }
-                    println!("Would copy {} file(s) to {}", result.copied_count, result.config_dir.display());
+                    println!(
+                        "Would copy {} file(s) to {}",
+                        result.copied_count,
+                        result.config_dir.display()
+                    );
                 } else {
-                    println!("Initialized config at {} ({} file(s))", result.config_dir.display(), result.copied_count);
+                    println!(
+                        "Initialized config at {} ({} file(s))",
+                        result.config_dir.display(),
+                        result.copied_count
+                    );
                 }
                 Ok(0)
             }
@@ -86,7 +94,9 @@ impl UseCaseRunner for Runner {
             }
             Command::MemoryGet { ids } => {
                 if ids.is_empty() {
-                    return Err(Error::invalid_argument("memory get requires at least one id".to_string()));
+                    return Err(Error::invalid_argument(
+                        "memory get requires at least one id".to_string(),
+                    ));
                 }
                 let entries = self.app.memory_use_case.get(&ids)?;
                 print_memory_get(&entries);
@@ -94,7 +104,9 @@ impl UseCaseRunner for Runner {
             }
             Command::MemoryRemove { ids } => {
                 if ids.is_empty() {
-                    return Err(Error::invalid_argument("memory remove requires at least one id".to_string()));
+                    return Err(Error::invalid_argument(
+                        "memory remove requires at least one id".to_string(),
+                    ));
                 }
                 self.app.memory_use_case.remove(&ids)?;
                 Ok(0)
@@ -145,19 +157,19 @@ fn is_session_explicitly_specified(config: &Config) -> bool {
     if config.session_dir.is_some() || config.home_dir.is_some() {
         return true;
     }
-    
+
     if let Ok(env_session) = std::env::var("AISH_SESSION") {
         if !env_session.is_empty() {
             return true;
         }
     }
-    
+
     if let Ok(env_home) = std::env::var("AISH_HOME") {
         if !env_home.is_empty() {
             return true;
         }
     }
-    
+
     false
 }
 
@@ -182,30 +194,30 @@ fn print_usage() {
 fn print_help() {
     println!("Usage: aish [-h] [-s|--session-dir directory] [-d|--home-dir directory] [<command> [args...]]");
     println!("  -h, --help            Display this help message.");
-    println!("  -d, --home-dir        Specify a home directory (sets AISH_HOME for this process).");
-    println!("  -s, --session-dir     Specify a session directory (for resume). Without -s, a new unique session is used each time.");
-    println!("  -v, --verbose         Emit verbose debug logs (for troubleshooting).");
-    println!("  --generate <shell>    Generate shell completion script (bash, zsh, fish). Source the output to enable tab completion.");
-    println!("  <command>             Command to execute. Omit to start the interactive shell.");
-    println!("  [args...]             Arguments for the command.");
+    println!("  -d, --home-dir        Home directory (sets AISH_HOME).");
+    println!("  -s, --session-dir     Session dir (resume). Omit for new session each run.");
+    println!("  -v, --verbose         Verbose debug logs.");
+    println!("  --generate <shell>    Emit completion (bash, zsh, fish). Source to enable.");
+    println!("  <command>             Command to run. Omit to start interactive shell.");
+    println!("  [args...]             Command arguments.");
     println!();
     println!("Environment:");
-    println!("  AISH_HOME       Home directory (config, profiles.json, task.d). Default: $XDG_CONFIG_HOME/aish or ~/.config/aish.");
-    println!("  AISH_SESSION   Session directory; set by aish for child processes (e.g. ai). Use -s or -d to scope clear/resume.");
+    println!("  AISH_HOME       Config root. Default: $XDG_CONFIG_HOME/aish or ~/.config/aish.");
+    println!("  AISH_SESSION   Session dir for child (e.g. ai). Use -s/-d to scope clear/resume.");
     println!();
     println!("Implemented commands:");
-    println!("  clear                  Clear all part files in the session directory (delete conversation history).");
-    println!("  truncate_console_log   Truncate console buffer and log file (used by ai command).");
-    println!("  rollout                Flush console buffer and rollover console log (same as sending SIGUSR1 to aish).");
-    println!("  mute                   Rollout console log and stop recording console.txt.");
+    println!("  clear                  Remove part files in session (delete conversation).");
+    println!("  truncate_console_log   Truncate console buffer and log (used by ai).");
+    println!("  rollout                Flush buffer and rollover log (SIGUSR1).");
+    println!("  mute                   Rollout then stop recording console.txt.");
     println!("  unmute                 Resume recording console.txt.");
-    println!("  init                   Copy default config (set AISH_DEFAULTS_DIR or use --defaults-dir).");
+    println!("  init                   Copy defaults (AISH_DEFAULTS_DIR or --defaults-dir).");
     println!();
-    println!("  memory list            List all memories (id, category, subject).");
+    println!("  memory list            List memories (id, category, subject).");
     println!("  memory get <id> [id...] Get memory content by ID(s).");
     println!("  memory remove <id> [id...] Remove memory by ID(s).");
     println!();
-    println!("  history ls [--all][-a][-u]  List reviewed (id, YYYY-mm-dd HH:MM, first line up to 20 chars). -a=assistant only, --all=all entries.");
+    println!("  history ls [-a][-u][--all]  List reviewed. -a=assistant, -u=user, --all=all.");
     println!("  history get <id> [...]  Get reviewed content by ID(s).");
 }
 
@@ -329,8 +341,10 @@ mod tests {
             Command::Mute => app.mute_use_case.run(&path_input),
             Command::Unmute => app.unmute_use_case.run(&path_input),
             Command::Clear => {
-                let session_explicitly_specified = is_session_explicitly_specified_for_test(&config);
-                app.clear_use_case.run(&path_input, session_explicitly_specified)
+                let session_explicitly_specified =
+                    is_session_explicitly_specified_for_test(&config);
+                app.clear_use_case
+                    .run(&path_input, session_explicitly_specified)
             }
             Command::Resume { .. } => Err(Error::invalid_argument(
                 "resume command is not available in run_app (use aish binary).".to_string(),
@@ -341,7 +355,11 @@ mod tests {
                 let _ = ids;
                 Ok(0)
             }
-            Command::Init { force, dry_run, defaults_dir: defaults_dir_opt } => {
+            Command::Init {
+                force,
+                dry_run,
+                defaults_dir: defaults_dir_opt,
+            } => {
                 let defaults_dir = defaults_dir_opt
                     .or_else(|| std::env::var("AISH_DEFAULTS_DIR").ok())
                     .ok_or_else(|| Error::invalid_argument(
@@ -361,14 +379,18 @@ mod tests {
             }
             Command::MemoryGet { ids } => {
                 if ids.is_empty() {
-                    return Err(Error::invalid_argument("memory get requires at least one id".to_string()));
+                    return Err(Error::invalid_argument(
+                        "memory get requires at least one id".to_string(),
+                    ));
                 }
                 let _ = app.memory_use_case.get(&ids)?;
                 Ok(0)
             }
             Command::MemoryRemove { ids } => {
                 if ids.is_empty() {
-                    return Err(Error::invalid_argument("memory remove requires at least one id".to_string()));
+                    return Err(Error::invalid_argument(
+                        "memory remove requires at least one id".to_string(),
+                    ));
                 }
                 app.memory_use_case.remove(&ids)?;
                 Ok(0)
@@ -378,7 +400,8 @@ mod tests {
                 user_only,
                 assistant_only,
             } => {
-                let session_explicitly_specified = is_session_explicitly_specified_for_test(&config);
+                let session_explicitly_specified =
+                    is_session_explicitly_specified_for_test(&config);
                 let _ = app.history_use_case.list(
                     &path_input,
                     session_explicitly_specified,
@@ -389,8 +412,11 @@ mod tests {
                 Ok(0)
             }
             Command::HistoryGet { ids } => {
-                let session_explicitly_specified = is_session_explicitly_specified_for_test(&config);
-                let _ = app.history_use_case.get(&path_input, session_explicitly_specified, &ids)?;
+                let session_explicitly_specified =
+                    is_session_explicitly_specified_for_test(&config);
+                let _ =
+                    app.history_use_case
+                        .get(&path_input, session_explicitly_specified, &ids)?;
                 Ok(0)
             }
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
@@ -434,7 +460,10 @@ mod tests {
             ..Default::default()
         };
         let result = run_app(config);
-        assert!(result.is_ok(), "truncate_console_log (no PID file) should succeed");
+        assert!(
+            result.is_ok(),
+            "truncate_console_log (no PID file) should succeed"
+        );
         assert_eq!(result.unwrap(), 0);
 
         fs::remove_dir_all(&home_path).unwrap();
@@ -465,14 +494,34 @@ mod tests {
             fs::write(session_path.join("part_00000001_user.txt"), "Hello").unwrap();
             fs::write(session_path.join("part_00000002_assistant.txt"), "Hi there").unwrap();
             fs::write(session_path.join("part_00000003_user.txt"), "How are you?").unwrap();
-            fs::write(session_path.join("reviewed_ABC12001_user.txt"), "Reviewed user (legacy)").unwrap();
-            fs::write(session_path.join("reviewed_ABC12002_assistant.txt"), "Reviewed assistant (legacy)").unwrap();
-            fs::write(reviewed_dir.join("reviewed_ABC12003_user.txt"), "Reviewed user").unwrap();
-            fs::write(reviewed_dir.join("reviewed_ABC12004_assistant.txt"), "Reviewed assistant").unwrap();
+            fs::write(
+                session_path.join("reviewed_ABC12001_user.txt"),
+                "Reviewed user (legacy)",
+            )
+            .unwrap();
+            fs::write(
+                session_path.join("reviewed_ABC12002_assistant.txt"),
+                "Reviewed assistant (legacy)",
+            )
+            .unwrap();
+            fs::write(
+                reviewed_dir.join("reviewed_ABC12003_user.txt"),
+                "Reviewed user",
+            )
+            .unwrap();
+            fs::write(
+                reviewed_dir.join("reviewed_ABC12004_assistant.txt"),
+                "Reviewed assistant",
+            )
+            .unwrap();
             let evacuated_dir = session_path.join("leakscan_evacuated");
             fs::create_dir_all(&evacuated_dir).unwrap();
             fs::write(evacuated_dir.join("part_old_user.txt"), "evacuated").unwrap();
-            fs::write(session_path.join("manifest.jsonl"), "{\"kind\":\"message\"}\n").unwrap();
+            fs::write(
+                session_path.join("manifest.jsonl"),
+                "{\"kind\":\"message\"}\n",
+            )
+            .unwrap();
             fs::write(session_path.join("console.txt"), "console log").unwrap();
             fs::write(session_path.join("AISH_PID"), "12345").unwrap();
 
@@ -483,7 +532,11 @@ mod tests {
                 ..Default::default()
             };
             let result = run_app(config);
-            assert!(result.is_ok(), "clear command should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "clear command should succeed: {:?}",
+                result.err()
+            );
             assert_eq!(result.unwrap(), 0);
 
             assert!(!session_path.join("part_00000001_user.txt").exists());
@@ -491,15 +544,28 @@ mod tests {
             assert!(!session_path.join("part_00000003_user.txt").exists());
             // reviewed と manifest は残す（Ctrl+L は送信開始位置を先頭にするだけ）
             assert!(session_path.join("reviewed_ABC12001_user.txt").exists());
-            assert!(session_path.join("reviewed_ABC12002_assistant.txt").exists());
+            assert!(session_path
+                .join("reviewed_ABC12002_assistant.txt")
+                .exists());
             assert!(reviewed_dir.exists());
-            assert!(session_path.join("reviewed/reviewed_ABC12003_user.txt").exists());
-            assert!(session_path.join("reviewed/reviewed_ABC12004_assistant.txt").exists());
+            assert!(session_path
+                .join("reviewed/reviewed_ABC12003_user.txt")
+                .exists());
+            assert!(session_path
+                .join("reviewed/reviewed_ABC12004_assistant.txt")
+                .exists());
             assert!(session_path.join("manifest.jsonl").exists());
             assert!(!session_path.join("leakscan_evacuated").exists());
             let send_from = session_path.join(".history_send_from");
-            assert!(send_from.exists(), "Ctrl+L で送信開始位置が manifest の行数に設定され会話履歴0件になる");
-            assert_eq!(fs::read_to_string(&send_from).unwrap().trim(), "1", "manifest.jsonl が1行なので .history_send_from は 1");
+            assert!(
+                send_from.exists(),
+                "Ctrl+L で送信開始位置が manifest の行数に設定され会話履歴0件になる"
+            );
+            assert_eq!(
+                fs::read_to_string(&send_from).unwrap().trim(),
+                "1",
+                "manifest.jsonl が1行なので .history_send_from は 1"
+            );
             assert!(session_path.join("console.txt").exists());
             assert!(session_path.join("AISH_PID").exists());
 
@@ -599,7 +665,11 @@ mod tests {
 
             assert!(result.is_err());
             let err = result.unwrap_err();
-            assert!(err.to_string().contains("session"), "error message should mention session: {}", err);
+            assert!(
+                err.to_string().contains("session"),
+                "error message should mention session: {}",
+                err
+            );
             assert_eq!(err.exit_code(), 64);
         }
 
@@ -645,7 +715,11 @@ mod tests {
                 env::remove_var("AISH_HOME");
             }
 
-            assert!(result.is_ok(), "clear with AISH_SESSION env should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "clear with AISH_SESSION env should succeed: {:?}",
+                result.err()
+            );
             assert_eq!(result.unwrap(), 0);
 
             fs::remove_dir_all(&home_path).unwrap();

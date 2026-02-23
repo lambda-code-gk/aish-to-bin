@@ -319,40 +319,148 @@ pub fn print_completion(shell: Shell) {
 }
 
 fn emit_fallback_completion(shell: Shell) {
-    let subcommands = [
-        "clear", "history", "init", "memory", "resume", "rollout", "sessions", "shell",
-        "truncate_console_log",
-    ];
+    let subcommands = "clear history init memory mute unmute resume rollout sessions shell truncate_console_log";
+    let global_opts = "-h --help -s --session-dir -d --home-dir -v --verbose --generate";
+    let memory_subs = "list get remove";
+    let history_subs = "ls get";
+    let history_ls_opts = "--all -a --assistant -u --user";
+    let init_opts = "--force --dry-run --defaults-dir";
+    let generate_shells = "bash zsh fish";
+
     match shell {
         Shell::Bash => {
             println!(
-                r#"# Fallback completion for aish (subcommands only)
+                r#"# Fallback completion for aish (subcommands + options, dirs for -s/-d/--defaults-dir, history ls opts)
 _aish() {{
   local cur="${{COMP_WORDS[COMP_CWORD]}}"
-  COMPREPLY=($(compgen -W "{}" -- "$cur"))
+  local prev="${{COMP_WORDS[COMP_CWORD-1]}}"
+  local words=("${{COMP_WORDS[@]}}")
+  local cword=$COMP_CWORD
+
+  if [[ "$prev" == "--generate" ]]; then
+    COMPREPLY=($(compgen -W "{generate_shells}" -- "$cur"))
+  elif [[ "$prev" == "-s" || "$prev" == "--session-dir" || "$prev" == "-d" || "$prev" == "--home-dir" ]]; then
+    compopt -o filenames 2>/dev/null
+    COMPREPLY=($(compgen -d -S / -- "$cur"))
+  elif [[ "$prev" == "--defaults-dir" ]]; then
+    compopt -o filenames 2>/dev/null
+    COMPREPLY=($(compgen -d -S / -- "$cur"))
+  elif (( cword == 1 )); then
+    COMPREPLY=($(compgen -W "{subcommands} {global_opts}" -- "$cur"))
+  elif (( cword == 2 )); then
+    case "${{words[1]}}" in
+      memory)  COMPREPLY=($(compgen -W "{memory_subs}" -- "$cur")) ;;
+      history) COMPREPLY=($(compgen -W "{history_subs}" -- "$cur")) ;;
+      resume)  COMPREPLY=($(compgen -W "$(aish sessions 2>/dev/null)" -- "$cur")) ;;
+      init)    COMPREPLY=($(compgen -W "{init_opts}" -- "$cur")) ;;
+      *)       COMPREPLY=() ;;
+    esac
+  elif (( cword >= 3 )); then
+    if [[ "${{words[1]}}" == "memory" ]]; then
+      if [[ "${{words[2]}}" == "get" || "${{words[2]}}" == "remove" ]]; then
+        COMPREPLY=($(compgen -W "$(aish memory list 2>/dev/null | awk '{{print $1}}')" -- "$cur"))
+      fi
+    elif [[ "${{words[1]}}" == "history" ]]; then
+      if [[ "${{words[2]}}" == "ls" ]]; then
+        COMPREPLY=($(compgen -W "{history_ls_opts}" -- "$cur"))
+      elif [[ "${{words[2]}}" == "get" ]]; then
+        COMPREPLY=($(compgen -W "$(aish history ls 2>/dev/null | cut -f1)" -- "$cur"))
+      fi
+    elif [[ "${{words[1]}}" == "init" ]]; then
+      if [[ "$prev" != "--defaults-dir" ]]; then
+        COMPREPLY=($(compgen -W "{init_opts}" -- "$cur"))
+      fi
+    fi
+  fi
 }}
 complete -F _aish aish
 "#,
-                subcommands.join(" ")
+                subcommands = subcommands,
+                global_opts = global_opts,
+                memory_subs = memory_subs,
+                history_subs = history_subs,
+                history_ls_opts = history_ls_opts,
+                init_opts = init_opts,
+                generate_shells = generate_shells
             );
         }
         Shell::Zsh => {
+            let subcommands_zsh = subcommands
+                .split_whitespace()
+                .chain(global_opts.split_whitespace())
+                .map(|s| format!("\"{}\"", s))
+                .collect::<Vec<_>>()
+                .join(" ");
             println!(
-                r#"# Fallback completion for aish (subcommands only)
+                r#"# Fallback completion for aish (subcommands + options, dirs for -s/-d/--defaults-dir, history ls opts)
 #compdef aish
-local subcommands
-subcommands=({})
-_describe 'command' subcommands
+local cur="${{words[CURRENT]}}"
+local prev="${{words[CURRENT-1]}}"
+local -a reply
+if [[ "$prev" == --generate ]]; then
+  reply=(bash zsh fish)
+elif [[ "$prev" == -s || "$prev" == --session-dir || "$prev" == -d || "$prev" == --home-dir || "$prev" == --defaults-dir ]]; then
+  _files -/
+elif (( CURRENT == 2 )); then
+  reply=({subcommands_zsh})
+elif (( CURRENT == 3 )); then
+  case "${{words[2]}}" in
+    memory)  reply=(list get remove) ;;
+    history) reply=(ls get) ;;
+    resume)  reply=($(aish sessions 2>/dev/null)) ;;
+    init)    reply=(--force --dry-run --defaults-dir) ;;
+    *)       reply=() ;;
+  esac
+elif (( CURRENT >= 4 )); then
+  if [[ "${{words[2]}}" == memory && ( "${{words[3]}}" == get || "${{words[3]}}" == remove ) ]]; then
+    reply=($(aish memory list 2>/dev/null | awk '{{print $1}}'))
+  elif [[ "${{words[2]}}" == history && "${{words[3]}}" == get ]]; then
+    reply=($(aish history ls 2>/dev/null | cut -f1))
+  elif [[ "${{words[2]}}" == history && "${{words[3]}}" == ls ]]; then
+    reply=(--all -a --assistant -u --user)
+  elif [[ "${{words[2]}}" == init ]]; then
+    [[ "$prev" != --defaults-dir ]] && reply=(--force --dry-run --defaults-dir)
+  else
+    reply=()
+  fi
+else
+  reply=()
+fi
+[[ -n $reply ]] && _describe 'aish' reply
 "#,
-                subcommands.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(" ")
+                subcommands_zsh = subcommands_zsh
             );
         }
         Shell::Fish => {
             println!(
-                r#"# Fallback completion for aish (subcommands only)
-complete -c aish -a "{}"
-"#,
-                subcommands.join(" ")
+                r#"# Fallback completion for aish (subcommands + options, dirs for -s/-d/--defaults-dir, history ls opts)
+complete -c aish -l help -s h -d "Print help"
+complete -c aish -l session-dir -s s -d "Session directory" -r -a "(__fish_complete_directories)"
+complete -c aish -l home-dir -s d -d "Home directory" -r -a "(__fish_complete_directories)"
+complete -c aish -l verbose -s v -d "Verbose debug logs"
+complete -c aish -l generate -d "Generate completion script" -r -a "bash zsh fish"
+complete -c aish -l force -d "Overwrite existing files" -n "__fish_seen_subcommand_from init"
+complete -c aish -l dry-run -d "Only print what would be copied" -n "__fish_seen_subcommand_from init"
+complete -c aish -l defaults-dir -d "Template root" -r -a "(__fish_complete_directories)" -n "__fish_seen_subcommand_from init"
+complete -c aish -a "clear" -d "Clear part files in session"
+complete -c aish -a "history" -d "List or get conversation history"
+complete -c aish -a "init" -d "Copy default config"
+complete -c aish -a "memory" -d "Memory list / get / remove"
+complete -c aish -a "mute" -d "Stop recording console.txt"
+complete -c aish -a "unmute" -d "Resume recording console.txt"
+complete -c aish -a "resume" -d "Resume session"
+complete -c aish -a "rollout" -d "Flush and rollover console log"
+complete -c aish -a "sessions" -d "List sessions"
+complete -c aish -a "shell" -d "Start interactive shell (default)"
+complete -c aish -a "truncate_console_log" -d "Truncate console buffer and log"
+complete -c aish -a "(aish sessions 2>/dev/null)" -n "__fish_seen_subcommand_from resume"
+complete -c aish -a "(aish memory list 2>/dev/null | awk '{{print $1}}')" -n "__fish_seen_subcommand_from memory; and (__fish_seen_subcommand_from get or __fish_seen_subcommand_from remove)"
+complete -c aish -a "list get remove" -n "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from remove"
+complete -c aish -a "(aish history ls 2>/dev/null | cut -f1)" -n "__fish_seen_subcommand_from history; and __fish_seen_subcommand_from get"
+complete -c aish -a "ls get" -n "__fish_seen_subcommand_from history; and not __fish_seen_subcommand_from get; and not __fish_seen_subcommand_from ls"
+complete -c aish -a "--all -a --assistant -u --user" -n "__fish_seen_subcommand_from history; and __fish_seen_subcommand_from ls"
+complete -c aish -a "--force --dry-run --defaults-dir" -n "__fish_seen_subcommand_from init"
+"#
             );
         }
         _ => {}
