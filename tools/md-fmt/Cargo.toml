@@ -6,3 +6,4 @@ description = "Streaming Markdown formatter: reads Markdown from stdin and print
 
 [dependencies]
 syntect = "5"
+unicode-width = "0.1"

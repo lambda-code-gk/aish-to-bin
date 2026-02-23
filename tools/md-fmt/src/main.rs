@@ -2,6 +2,7 @@
 //! ストリーミング入力（例: ai コマンドの出力）を随時処理し、できるだけ随時出力する。
 
 use std::io::{self, BufRead, Write};
+use unicode_width::UnicodeWidthStr;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
@@ -15,10 +16,14 @@ const CYAN: &str = "\x1b[36m";
 const YELLOW: &str = "\x1b[33m";
 const GREEN: &str = "\x1b[32m";
 
-/// コードブロック内かどうか
+/// テーブル枠用（太字＋白以外で境界を判別しやすくする）
+const TABLE_FRAME: &str = "\x1b[1;36m"; // BOLD + CYAN
+
+/// ブロック状態（コードブロック / テーブルはバッファしてから出力）
 enum BlockState {
     Normal,
     CodeBlock,
+    Table,
 }
 
 fn main() -> io::Result<()> {
@@ -29,6 +34,7 @@ fn main() -> io::Result<()> {
     let mut stdout = io::stdout().lock();
     let mut state = BlockState::Normal;
     let mut code_buf: Vec<String> = Vec::new();
+    let mut table_buf: Vec<String> = Vec::new();
 
     for line in stdin.lock().lines() {
         let line = line?;
@@ -37,12 +43,14 @@ fn main() -> io::Result<()> {
         match &state {
             BlockState::Normal => {
                 if fence_start(trimmed).is_some() {
-                    // コードブロック開始 → バッファに貯める
                     state = BlockState::CodeBlock;
                     code_buf.clear();
                     code_buf.push(trimmed.to_string());
+                } else if is_table_row(trimmed) {
+                    state = BlockState::Table;
+                    table_buf.clear();
+                    table_buf.push(trimmed.to_string());
                 } else {
-                    // 通常行をその場で整形して出力
                     format_line(trimmed, &mut stdout)?;
                     stdout.flush()?;
                 }
@@ -50,19 +58,33 @@ fn main() -> io::Result<()> {
             BlockState::CodeBlock => {
                 code_buf.push(trimmed.to_string());
                 if is_fence(trimmed, &code_buf[0]) {
-                    // コードブロック終了 → バッファを整形して一括出力
                     output_code_block(&code_buf, &ps, &ts, &mut stdout)?;
                     stdout.flush()?;
                     state = BlockState::Normal;
                     code_buf.clear();
                 }
             }
+            BlockState::Table => {
+                if trimmed.is_empty() || !is_table_row(trimmed) {
+                    output_table(&table_buf, &mut stdout)?;
+                    stdout.flush()?;
+                    state = BlockState::Normal;
+                    table_buf.clear();
+                    format_line(trimmed, &mut stdout)?;
+                    stdout.flush()?;
+                } else {
+                    table_buf.push(trimmed.to_string());
+                }
+            }
         }
     }
 
-    // 入力終了時、コードブロックが閉じていない場合はそのまま出力
     if !code_buf.is_empty() {
         output_code_block(&code_buf, &ps, &ts, &mut stdout)?;
+        stdout.flush()?;
+    }
+    if !table_buf.is_empty() {
+        output_table(&table_buf, &mut stdout)?;
         stdout.flush()?;
     }
 
@@ -195,6 +217,111 @@ fn output_code_block(
         writeln!(w, "{DIM}{}{RESET}", lines.last().unwrap())?;
     }
 
+    Ok(())
+}
+
+/// 行が GFM テーブル行か（先頭が | で、もう一つ | がある）
+fn is_table_row(line: &str) -> bool {
+    let s = line.trim_start();
+    s.starts_with('|') && s.len() > 1 && s[1..].contains('|')
+}
+
+/// テーブル行をセルに分割（前後の | で区切られた部分を trim）
+fn parse_table_cells(line: &str) -> Vec<String> {
+    let parts: Vec<String> = line.split('|').map(|s| s.trim().to_string()).collect();
+    if parts.len() < 2 {
+        return Vec::new();
+    }
+    parts[1..parts.len() - 1].to_vec()
+}
+
+/// 区切り行か（各セルが - または : のみで構成）
+fn is_separator_row(cells: &[String]) -> bool {
+    if cells.is_empty() {
+        return false;
+    }
+    cells.iter().all(|c| {
+        let t = c.trim();
+        !t.is_empty() && t.chars().all(|x| x == '-' || x == ':')
+    })
+}
+
+/// セルの表示幅（ターミナル列数。全角=2・半角=1。ANSI は考慮しない）
+fn cell_width(s: &str) -> usize {
+    s.width()
+}
+
+/// テーブル行バッファを列幅揃えして出力（枠は BOLD+CYAN、ヘッダは BOLD+YELLOW、データ行に行番号）
+fn output_table(lines: &[String], w: &mut impl Write) -> io::Result<()> {
+    if lines.is_empty() {
+        return Ok(());
+    }
+    let rows: Vec<Vec<String>> = lines.iter().map(|s| parse_table_cells(s)).collect();
+    let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if ncols == 0 {
+        for line in lines {
+            writeln!(w, "{}", line)?;
+        }
+        return Ok(());
+    }
+    let mut widths = vec![0usize; ncols];
+    for row in &rows {
+        if !is_separator_row(row) {
+            for (j, cell) in row.iter().take(ncols).enumerate() {
+                widths[j] = widths[j].max(cell_width(cell));
+            }
+        }
+    }
+    let separator_idx = rows.iter().position(|r| is_separator_row(r));
+    let data_start = separator_idx.map(|idx| idx + 1).unwrap_or(1);
+    let n_data = rows
+        .iter()
+        .enumerate()
+        .filter(|(i, r)| *i >= data_start && !is_separator_row(r))
+        .count();
+    let row_num_width = if n_data <= 0 {
+        0
+    } else {
+        format!("{}", n_data).len()
+    };
+
+    for (i, row) in rows.iter().enumerate() {
+        let is_header = i == 0 && !is_separator_row(row);
+        let is_sep = is_separator_row(row);
+        let is_data = i >= data_start && !is_sep;
+
+        if is_data {
+            let row_num = i - data_start + 1;
+            write!(w, " {DIM}{:>width$}. {RESET}", row_num, width = row_num_width)?;
+        } else if row_num_width > 0 {
+            write!(w, "{}", " ".repeat(row_num_width + 3))?;
+        }
+
+        write!(w, "{TABLE_FRAME}|{RESET}")?;
+        if is_sep {
+            for j in 0..ncols {
+                let col_w = widths.get(j).copied().unwrap_or(0).max(1);
+                write!(w, " {TABLE_FRAME}{}{RESET} {TABLE_FRAME}|{RESET}", "-".repeat(col_w))?;
+            }
+        } else if is_header {
+            for j in 0..ncols {
+                let cell = row.get(j).map(|s| s.as_str()).unwrap_or("");
+                let col_w = widths.get(j).copied().unwrap_or(0);
+                let len = cell_width(cell);
+                let pad_len = col_w.saturating_sub(len);
+                write!(w, " {YELLOW}{BOLD}{}{RESET}{} {TABLE_FRAME}|{RESET}", cell, " ".repeat(pad_len))?;
+            }
+        } else {
+            for j in 0..ncols {
+                let cell = row.get(j).map(|s| s.as_str()).unwrap_or("");
+                let col_w = widths.get(j).copied().unwrap_or(0);
+                let len = cell_width(cell);
+                let pad_len = col_w.saturating_sub(len);
+                write!(w, " {}{} {TABLE_FRAME}|{RESET}", cell, " ".repeat(pad_len))?;
+            }
+        }
+        writeln!(w)?;
+    }
     Ok(())
 }
 
