@@ -43,6 +43,8 @@ pub struct App {
     /// 構造化ログ（ファイルへ JSONL）。エラー時のコンソール表示とは別。main で lifecycle/error に利用予定。
     #[allow(dead_code)]
     pub logger: Arc<dyn Log>,
+    /// 現在のターミナル幅（列数）。main の history ls 表示幅に使用。
+    pub get_terminal_width: Box<dyn Fn() -> usize + Send + Sync>,
 }
 
 /// 配線: 標準アダプタで App を組み立てる（Unix 専用）
@@ -106,6 +108,14 @@ pub fn wire_aish() -> App {
         reviewed_history_reader,
     );
     let init_use_case = InitUseCase::new(Arc::clone(&env_resolver), Arc::clone(&fs));
+    let get_terminal_width: Box<dyn Fn() -> usize + Send + Sync> = Box::new(|| {
+        const STDOUT_FD: std::os::unix::io::RawFd = 1;
+        crate::adapter::platform::get_winsize(STDOUT_FD)
+            .ok()
+            .map(|w| w.ws_col as usize)
+            .filter(|&w| w > 0)
+            .unwrap_or(120)
+    });
     App {
         path_resolver,
         fs,
@@ -123,5 +133,6 @@ pub fn wire_aish() -> App {
         history_use_case,
         init_use_case,
         logger,
+        get_terminal_width,
     }
 }

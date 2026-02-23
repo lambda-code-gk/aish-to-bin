@@ -111,7 +111,8 @@ impl StdReviewedHistoryReader {
     }
 }
 
-const FIRST_LINE_MAX_CHARS: usize = 20;
+/// 一覧用の先頭行はここでは切らず、main のターミナル幅に任せる（十分な長さを渡す）
+const FIRST_LINE_MAX_CHARS: usize = 500;
 
 impl ReviewedHistoryReader for StdReviewedHistoryReader {
     fn list_entries(

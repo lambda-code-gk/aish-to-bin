@@ -124,7 +124,8 @@ impl UseCaseRunner for Runner {
                     user_only,
                     assistant_only,
                 )?;
-                print_history_list(&entries);
+                let width = (self.app.get_terminal_width)();
+                print_history_list(&entries, width);
                 Ok(0)
             }
             Command::HistoryGet { ids } => {
@@ -251,10 +252,49 @@ fn print_memory_get(entries: &[crate::domain::MemoryEntry]) {
     }
 }
 
+/// 表示幅（桁）で文字列を切り詰める。全角は2桁として扱う。はみ出る場合は "..." を付与。
 #[cfg(unix)]
-fn print_history_list(entries: &[crate::domain::HistoryListEntry]) {
+fn truncate_by_display_width(s: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+    const ELLIPSIS_WIDTH: usize = 3;
+    let content_max = max_width.saturating_sub(ELLIPSIS_WIDTH);
+    let mut w = 0usize;
+    let mut last_end = 0;
+    for (i, c) in s.char_indices() {
+        let cw = c.width().unwrap_or(1);
+        if w + cw > content_max {
+            return format!("{}...", &s[..last_end]);
+        }
+        w += cw;
+        last_end = i + c.len_utf8();
+    }
+    s.to_string()
+}
+
+#[cfg(unix)]
+fn print_history_list(entries: &[crate::domain::HistoryListEntry], width: usize) {
+    /// ID 列の表示幅（8文字・9文字の両方で縦が揃うように）
+    const ID_WIDTH: usize = 9;
+    const DATETIME_WIDTH: usize = 16;
+    const SEP: &str = " ";
+    /// 先頭行は少なくともこの桁数は表示する（幅検出が狭い場合でもプレビューが役に立つように）
+    const MIN_FIRST_LINE_WIDTH: usize = 50;
+    // ID は省略しない（history get で指定するため）。列を揃えるため ID_WIDTH でパディングする。
+    let reserved = ID_WIDTH + SEP.len() + DATETIME_WIDTH + SEP.len();
+    let first_line_max = width.saturating_sub(reserved).max(MIN_FIRST_LINE_WIDTH);
     for e in entries {
-        println!("{}\t{}\t{}", e.id, e.datetime, e.first_line);
+        let id = format!("{:<width$}", e.id, width = ID_WIDTH);
+        let dt_show = if e.datetime.len() <= DATETIME_WIDTH {
+            e.datetime.clone()
+        } else {
+            format!(
+                "{}...",
+                &e.datetime[..e.datetime.floor_char_boundary(DATETIME_WIDTH.saturating_sub(3))]
+            )
+        };
+        let dt = format!("{:16}", dt_show);
+        let first_line = truncate_by_display_width(&e.first_line, first_line_max);
+        println!("{}{}{}{}{}", id, SEP, dt, SEP, first_line);
     }
 }
 
