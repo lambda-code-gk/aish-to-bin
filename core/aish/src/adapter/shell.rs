@@ -14,8 +14,6 @@ use crate::adapter::platform::{get_winsize, TermMode};
 use crate::adapter::prompt_ready_detector::PromptReadyDetector;
 use crate::adapter::terminal::TerminalBuffer;
 use crate::domain::SessionEvent;
-use crate::ports::outbound::ShellRunner;
-use libc;
 
 const PENDING_INPUT_FILENAME: &str = "pending_input.json";
 const PROMPT_SUGGESTION_FILENAME: &str = "prompt_suggestion.txt";
@@ -51,7 +49,7 @@ impl StdShellRunner {
 }
 
 #[cfg(unix)]
-impl ShellRunner for StdShellRunner {
+impl crate::ports::outbound::ShellRunner for StdShellRunner {
     fn run(&self, session_dir: &Path, home_dir: &Path) -> Result<i32, Error> {
         run_shell(
             session_dir,
@@ -215,6 +213,29 @@ fn policy_status_str(p: &PolicyStatus) -> &'static str {
     }
 }
 
+/// セッション終了時にセッションIDを stderr に表示するガード
+#[cfg(unix)]
+struct SessionEndNotify {
+    display_id: String,
+}
+
+#[cfg(unix)]
+impl Drop for SessionEndNotify {
+    fn drop(&mut self) {
+        eprintln!("aish: session ended: {}", self.display_id);
+    }
+}
+
+/// セッションIDの表示用文字列を取得（ディレクトリ名、取得できない場合はフルパス）
+#[cfg(unix)]
+fn session_display_id(session_dir: &Path) -> String {
+    session_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(String::from)
+        .unwrap_or_else(|| session_dir.display().to_string())
+}
+
 /// アダプター経由でシェルを起動（Unix 専用）
 #[cfg(unix)]
 pub fn run_shell(
@@ -226,6 +247,12 @@ pub fn run_shell(
     signal: &dyn Signal,
     pty_spawn: &dyn PtySpawn,
 ) -> Result<i32, Error> {
+    let display_id = session_display_id(session_dir);
+    let _end_notify = SessionEndNotify {
+        display_id: display_id.clone(),
+    };
+    eprintln!("aish: session started: {}", display_id);
+
     let session_dir_value = common::domain::SessionDir::new(session_dir.to_path_buf());
     let event_hub = build_event_hub(Some(&session_dir_value), env, fs.clone(), false);
     let fs_ref = fs.as_ref();
