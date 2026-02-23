@@ -23,6 +23,7 @@ impl std::fmt::Display for ExternalPluginId {
 }
 
 /// トランスポート種別（将来 MCP / HTTP 等に拡張）
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginTransportType {
@@ -83,6 +84,7 @@ pub struct ExternalToolDescriptor {
 }
 
 /// 外部ツール呼び出しリクエスト（call_tool の params）
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalToolCallRequest {
     pub name: String,
@@ -99,6 +101,7 @@ pub struct ExternalToolCallResponse {
 /// 外部プラグイン関連エラー（fail-closed でプラグインのみ無効化する際に利用）
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ExternalPluginError {
+    #[allow(dead_code)]
     #[error("Invalid manifest: {0}")]
     InvalidManifest(String),
     #[error("Plugin start failed: {0}")]

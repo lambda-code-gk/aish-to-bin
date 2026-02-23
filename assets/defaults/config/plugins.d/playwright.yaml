@@ -1,0 +1,11 @@
+id: playwright
+version: "0.1.0"
+transport:
+  type: stdio
+  command: node
+  args:
+    - "path/to/external-tools/playwright-plugin/plugin.mjs"
+timeouts:
+  startup_ms: 15000
+  call_ms: 60000
+enabled: true

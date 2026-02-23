@@ -15,5 +15,6 @@ regex = "1.10"
 thiserror = "1.0"
 
 [dev-dependencies]
+anyhow = "1"
 tempfile = "3.8"
 

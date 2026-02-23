@@ -6,17 +6,45 @@ use crate::domain::external_plugin::{
     ExternalPluginError, ExternalToolCallResponse, ExternalToolDescriptor, PluginTimeouts,
     StdioTransport,
 };
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 /// 応答 1 行の最大バイト数（巨大 JSON で固まらないように）
 const MAX_RESPONSE_LINE_BYTES: usize = 2 * 1024 * 1024;
-/// stderr 収集の先頭・末尾それぞれの最大バイト数（将来イベント用）
-const STDERR_HEAD_TAIL_BYTES: usize = 4096;
+/// stderr 末尾バッファの最大バイト数（無制限蓄積を防ぐ）
+const STDERR_TAIL_MAX_BYTES: usize = 4096;
+
+/// stderr の捨て読み＋末尾のみ保持（デッドロック防止・デバッグ用）。サイズ上限あり。
+#[derive(Default)]
+struct StderrCapture {
+    total_bytes: AtomicUsize,
+    tail: Mutex<Vec<u8>>,
+}
+
+impl StderrCapture {
+    fn push(&self, data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
+        self.total_bytes
+            .fetch_add(data.len(), std::sync::atomic::Ordering::Relaxed);
+        let mut tail = match self.tail.lock() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+        tail.extend_from_slice(data);
+        let n = tail.len();
+        if n > STDERR_TAIL_MAX_BYTES {
+            let drop_len = n - STDERR_TAIL_MAX_BYTES;
+            tail.drain(0..drop_len);
+        }
+    }
+}
 
 /// JSON-RPC 2.0 リクエスト
 #[derive(serde::Serialize)]
@@ -28,17 +56,14 @@ struct JsonRpcRequest {
     params: Option<serde_json::Value>,
 }
 
-/// JSON-RPC 2.0 成功レスポンス
+/// JSON-RPC 2.0 成功レスポンス（id 検証用に必須）
 #[derive(serde::Deserialize)]
 struct JsonRpcSuccess {
-    #[allow(dead_code)]
-    jsonrpc: Option<String>,
-    #[allow(dead_code)]
-    id: Option<serde_json::Value>,
+    id: serde_json::Value,
     result: Option<serde_json::Value>,
 }
 
-/// JSON-RPC 2.0 エラーレスポンス
+/// JSON-RPC 2.0 エラーレスポンス（id 検証用に必須）
 #[derive(serde::Deserialize)]
 struct JsonRpcErrorPayload {
     code: i64,
@@ -47,26 +72,82 @@ struct JsonRpcErrorPayload {
 
 #[derive(serde::Deserialize)]
 struct JsonRpcErrorResponse {
-    #[allow(dead_code)]
-    jsonrpc: Option<String>,
-    #[allow(dead_code)]
-    id: Option<serde_json::Value>,
+    id: serde_json::Value,
     error: JsonRpcErrorPayload,
+}
+
+/// 1 行をパースした結果（success または RPC error）
+enum JsonRpcParseResult {
+    Success(serde_json::Value),
+    RpcError { code: i64, message: String },
+}
+
+/// JSON-RPC の id を u64 に変換。数値または数値文字列のみ許可。
+fn json_rpc_id_to_u64(v: &serde_json::Value) -> Option<u64> {
+    match v {
+        serde_json::Value::Number(n) => n.as_u64(),
+        serde_json::Value::String(s) => s.parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+/// レスポンス 1 行をパースし、expected_id と一致することを検証。不一致・parse 失敗は Err。
+fn parse_json_rpc_response_line(
+    line: &str,
+    expected_id: u64,
+) -> Result<JsonRpcParseResult, ExternalPluginError> {
+    if let Ok(err_resp) = serde_json::from_str::<JsonRpcErrorResponse>(line) {
+        let got = json_rpc_id_to_u64(&err_resp.id);
+        if got != Some(expected_id) {
+            return Err(ExternalPluginError::MalformedResponse(format!(
+                "response id mismatch: expected {}, got {:?}",
+                expected_id, err_resp.id
+            )));
+        }
+        return Ok(JsonRpcParseResult::RpcError {
+            code: err_resp.error.code,
+            message: err_resp.error.message,
+        });
+    }
+    let succ: JsonRpcSuccess = serde_json::from_str(line).map_err(|e| {
+        ExternalPluginError::MalformedResponse(format!("parse response: {}", e))
+    })?;
+    let got = json_rpc_id_to_u64(&succ.id);
+    if got != Some(expected_id) {
+        return Err(ExternalPluginError::MalformedResponse(format!(
+            "response id mismatch: expected {}, got {:?}",
+            expected_id, succ.id
+        )));
+    }
+    match succ.result {
+        Some(r) => Ok(JsonRpcParseResult::Success(r)),
+        None => Err(ExternalPluginError::MalformedResponse(
+            "missing result".to_string(),
+        )),
+    }
+}
+
+/// spawn 後の子プロセスを kill + wait する。失敗時は主エラーを優先し副次情報として扱う。
+fn cleanup_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// 起動済みプラグインプロセスと stdio で JSON-RPC 通信するクライアント
 pub struct ExternalPluginStdioClient {
-    #[allow(dead_code)]
     child: Child,
     stdin: Mutex<Option<ChildStdin>>,
     /// Receiver は Sync でないため Mutex でラップして共有可能にする
     stdout_rx: Mutex<mpsc::Receiver<Result<String, ExternalPluginError>>>,
     next_id: std::sync::atomic::AtomicU64,
     call_timeout_ms: u64,
+    /// stderr の捨て読み＋末尾バッファ（デッドロック防止・デバッグ用）
+    #[allow(dead_code)]
+    stderr_capture: Arc<StderrCapture>,
 }
 
 impl ExternalPluginStdioClient {
-    /// プロセスを起動し、initialize まで完了させる。失敗時は Err、プロセスは kill される。
+    /// プロセスを起動し、initialize まで完了させる。失敗時は Err、子プロセスは kill + wait する。
     pub fn start(
         transport: &StdioTransport,
         env: &std::collections::HashMap<String, String>,
@@ -88,12 +169,30 @@ impl ExternalPluginStdioClient {
             .map_err(|e| ExternalPluginError::StartFailed(format!("spawn failed: {}", e)))?;
 
         let mut stdin = child.stdin.take().ok_or_else(|| {
+            cleanup_child(&mut child);
             ExternalPluginError::StartFailed("stdin not captured".to_string())
         })?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| ExternalPluginError::StartFailed("stdout not captured".to_string()))?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            cleanup_child(&mut child);
+            ExternalPluginError::StartFailed("stdout not captured".to_string())
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            cleanup_child(&mut child);
+            ExternalPluginError::StartFailed("stderr not captured".to_string())
+        })?;
+
+        let stderr_capture = Arc::new(StderrCapture::default());
+        let cap = Arc::clone(&stderr_capture);
+        thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let mut r = BufReader::new(stderr);
+            while let Ok(n) = r.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                cap.push(&buf[..n]);
+            }
+        });
 
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
@@ -127,25 +226,51 @@ impl ExternalPluginStdioClient {
         };
         let line = serde_json::to_string(&req)
             .map_err(|e| ExternalPluginError::StartFailed(format!("serialize: {}", e)))?;
-        stdin.write_all(line.as_bytes()).map_err(|e| {
-            ExternalPluginError::StartFailed(format!("write: {}", e))
-        })?;
-        stdin.write_all(b"\n").map_err(|e| {
-            ExternalPluginError::StartFailed(format!("write newline: {}", e))
-        })?;
-        stdin.flush().map_err(|e| {
-            ExternalPluginError::StartFailed(format!("flush: {}", e))
-        })?;
+        if let Err(e) = stdin.write_all(line.as_bytes())
+            .and_then(|_| stdin.write_all(b"\n"))
+            .and_then(|_| stdin.flush())
+        {
+            cleanup_child(&mut child);
+            return Err(ExternalPluginError::StartFailed(format!("write: {}", e)));
+        }
 
-        let response = rx
-            .recv_timeout(Duration::from_millis(startup_ms))
-            .map_err(|_| {
-                ExternalPluginError::Timeout(format!("initialize timeout ({} ms)", startup_ms))
-            })?;
-        let line = response?;
-        let _: JsonRpcSuccess = serde_json::from_str(&line).map_err(|e| {
-            ExternalPluginError::StartFailed(format!("initialize response: {}", e))
-        })?;
+        let response = rx.recv_timeout(Duration::from_millis(startup_ms));
+        let line = match response {
+            Err(_) => {
+                cleanup_child(&mut child);
+                return Err(ExternalPluginError::Timeout(format!(
+                    "initialize timeout ({} ms)",
+                    startup_ms
+                )));
+            }
+            Ok(Err(e)) => {
+                cleanup_child(&mut child);
+                return Err(e);
+            }
+            Ok(Ok(l)) => l,
+        };
+
+        let parsed = match parse_json_rpc_response_line(&line, 1) {
+            Ok(p) => p,
+            Err(e) => {
+                cleanup_child(&mut child);
+                return Err(if line.is_empty() || line.starts_with('{') {
+                    ExternalPluginError::StartFailed(format!("initialize response: {}", e))
+                } else {
+                    e
+                });
+            }
+        };
+        match parsed {
+            JsonRpcParseResult::RpcError { code, message } => {
+                cleanup_child(&mut child);
+                return Err(ExternalPluginError::StartFailed(format!(
+                    "initialize failed: JSON-RPC error {}: {}",
+                    code, message
+                )));
+            }
+            JsonRpcParseResult::Success(_) => {}
+        }
 
         Ok(Self {
             child,
@@ -153,6 +278,7 @@ impl ExternalPluginStdioClient {
             stdout_rx: Mutex::new(rx),
             next_id: std::sync::atomic::AtomicU64::new(2),
             call_timeout_ms: call_ms,
+            stderr_capture,
         })
     }
 
@@ -204,18 +330,15 @@ impl ExternalPluginStdioClient {
             })?;
         let line = response?;
 
-        if let Ok(err_resp) = serde_json::from_str::<JsonRpcErrorResponse>(&line) {
-            return Err(ExternalPluginError::ToolCallFailed(format!(
-                "JSON-RPC error {}: {}",
-                err_resp.error.code, err_resp.error.message
-            )));
+        match parse_json_rpc_response_line(&line, id)? {
+            JsonRpcParseResult::RpcError { code, message } => {
+                Err(ExternalPluginError::ToolCallFailed(format!(
+                    "JSON-RPC error {}: {}",
+                    code, message
+                )))
+            }
+            JsonRpcParseResult::Success(v) => Ok(v),
         }
-        let succ: JsonRpcSuccess = serde_json::from_str(&line).map_err(|e| {
-            ExternalPluginError::MalformedResponse(format!("parse response: {}", e))
-        })?;
-        succ.result.ok_or_else(|| {
-            ExternalPluginError::MalformedResponse("missing result".to_string())
-        })
     }
 
     /// list_tools を呼び、ツール定義一覧を返す
@@ -251,10 +374,16 @@ impl ExternalPluginStdioClient {
     }
 }
 
+impl Drop for ExternalPluginStdioClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::external_plugin::PluginTimeouts;
 
     #[test]
     fn list_tools_parses_descriptors() {

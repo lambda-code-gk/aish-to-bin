@@ -36,7 +36,7 @@ enabled: true
 
 | フィールド | 必須 | 説明 |
 |-----------|------|------|
-| `id` | ○ | プラグイン識別子（一意推奨） |
+| `id` | ○ | プラグイン識別子。**一意必須**。重複時は先に処理した manifest のみ有効化し、後続は `external_plugin.skipped_id_conflict` でスキップする（誤配送防止）。 |
 | `version` | ○ | バージョン文字列 |
 | `transport.type` | ○ | MVP は `stdio` のみ |
 | `transport.command` | ○ | 起動するコマンド |
@@ -46,9 +46,14 @@ enabled: true
 | `timeouts.call_ms` | - | call_tool 1 回あたりのタイムアウト（ms）。省略時 30000 |
 | `enabled` | - | `false` のときスキップ。省略時 `true` |
 
+## stdio の使い方
+
+- **stdout**: JSON-RPC 専用。1 行 1 JSON でリクエストへの応答のみを出力すること。ログやデバッグ出力は stdout に書かない（応答の id 不一致や parse エラーの原因になる）。
+- **stderr**: デバッグ・ログ用。ホストは stderr を読み捨て（drain）してパイプ詰まりを防ぎ、末尾のみバッファに保持する場合がある。サイズ制限あり。内容は transcript/イベントに出す場合はマスク・切り詰めを前提とする。
+
 ## JSON-RPC メソッド（MVP）
 
-いずれも **1 行 1 JSON**（stdout に 1 行ずつレスポンスを返す）。
+いずれも **1 行 1 JSON**（stdout に 1 行ずつレスポンスを返す）。レスポンスの `id` はリクエストの `id` と一致すること（不一致時は protocol error で fail-closed）。
 
 ### initialize
 
@@ -84,6 +89,7 @@ enabled: true
 | `external_plugin.start_requested` | プロセス起動試行 |
 | `external_plugin.started` | 起動成功 |
 | `external_plugin.start_failed` | 起動失敗 |
+| `external_plugin.skipped_id_conflict` | plugin_id 重複のためスキップ（先勝ち） |
 | `external_plugin.tools_listed` | list_tools 成功 |
 | `external_plugin.tool_name_conflict` | 同名ツールをスキップ |
 | `external_tool.call_requested` | 外部ツール呼び出し開始 |

@@ -1,6 +1,7 @@
 //! 信頼ディレクトリからプラグインを発見・起動し、list_tools で取得したツールを Tool として返す。
 //!
 //! fail-closed: 起動失敗・list_tools 失敗したプラグインはスキップし、他は継続。
+//! plugin_id は一意必須。重複時は先勝ち（最初に処理した manifest のみ有効化、後続は skipped_id_conflict でスキップ）。
 
 use crate::adapter::external_plugin_manifest_loader::discover_manifests;
 use crate::adapter::external_plugin_stdio_client::ExternalPluginStdioClient;
@@ -10,6 +11,7 @@ use crate::domain::external_plugin::{ExternalPluginId, PluginTransport};
 use common::domain::event::{Event, RunId, SessionId};
 use common::event_hub::EventHubHandle;
 use common::ports::outbound::{EnvResolver, FileSystem};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// プラグインを発見・起動し、外部ツールの Tool 一覧を返す。Executor は各 Proxy が共有する。
@@ -28,10 +30,27 @@ pub fn load_external_plugins(
 
     let executor = Arc::new(ExternalToolExecutorImpl::new());
     let mut tools: Vec<Arc<dyn common::tool::Tool>> = Vec::new();
-    let mut registered_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut registered_names: HashSet<String> = HashSet::new();
+    // plugin_id 重複時は先勝ち。後続はスキップして誤配送を防ぐ。
+    let mut seen_plugin_ids: HashSet<String> = HashSet::new();
 
     for entry in entries {
         let plugin_id = ExternalPluginId::new(entry.manifest.id.clone());
+        if !seen_plugin_ids.insert(entry.manifest.id.clone()) {
+            if let Some(ref hub) = event_hub {
+                hub.emit(Event {
+                    v: 1,
+                    session_id: session_id.clone(),
+                    run_id: run_id.clone(),
+                    kind: "external_plugin.skipped_id_conflict".to_string(),
+                    payload: serde_json::json!({
+                        "plugin_id": plugin_id.0,
+                        "manifest_path": entry.manifest_path.to_string_lossy(),
+                    }),
+                });
+            }
+            continue;
+        }
         let (transport, env_map) = match &entry.manifest.transport {
             PluginTransport::Stdio(t) => (t, &entry.manifest.env),
         };
@@ -85,8 +104,6 @@ pub fn load_external_plugins(
         }
 
         let client = Arc::new(client);
-        executor.register(plugin_id.clone(), Arc::clone(&client));
-
         let descriptors = match client.list_tools() {
             Ok(d) => d,
             Err(e) => {
@@ -105,6 +122,8 @@ pub fn load_external_plugins(
                 continue;
             }
         };
+
+        executor.register(plugin_id.clone(), Arc::clone(&client));
 
         if let Some(ref hub) = event_hub {
             let tool_names: Vec<&str> = descriptors.iter().map(|d| d.name.as_str()).collect();
