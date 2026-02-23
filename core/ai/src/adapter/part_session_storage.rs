@@ -52,7 +52,7 @@ impl SessionResponseSaver for PartSessionStorage {
         let id = self.id_gen.next_id();
         let filename = format!("part_{}_user.txt", id);
         let file_path = session_dir.as_ref().join(&filename);
-        let mut body = content.to_string();
+        let mut body = format!("user message: {}", content.trim_end());
         if !body.ends_with('\n') {
             body.push('\n');
         }

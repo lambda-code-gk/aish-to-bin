@@ -252,6 +252,15 @@ fn print_memory_get(entries: &[crate::domain::MemoryEntry]) {
     }
 }
 
+/// プレビュー中の aish プロンプト部分を "...$ " に置換する（表示を簡潔にするため）。
+#[cfg(unix)]
+fn collapse_prompt_in_preview(s: &str) -> std::borrow::Cow<'_, str> {
+    use regex::Regex;
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\(aish:[^)]*\)[^$]*\$ ").unwrap());
+    re.replace(s, "...$ ")
+}
+
 /// 表示幅（桁）で文字列を切り詰める。全角は2桁として扱う。はみ出る場合は "..." を付与。
 #[cfg(unix)]
 fn truncate_by_display_width(s: &str, max_width: usize) -> String {
@@ -293,7 +302,8 @@ fn print_history_list(entries: &[crate::domain::HistoryListEntry], width: usize)
             )
         };
         let dt = format!("{:16}", dt_show);
-        let first_line = truncate_by_display_width(&e.first_line, first_line_max);
+        let first_line = collapse_prompt_in_preview(&e.first_line);
+        let first_line = truncate_by_display_width(first_line.as_ref(), first_line_max);
         println!("{}{}{}{}{}", id, SEP, dt, SEP, first_line);
     }
 }

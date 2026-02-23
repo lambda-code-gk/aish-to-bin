@@ -19,6 +19,7 @@ dependencies = [
  "clap_complete",
  "common",
  "libc",
+ "regex",
  "serde",
  "serde_json",
  "unicode-width",
