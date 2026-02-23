@@ -157,17 +157,25 @@ fn output_code_block(
     }
 
     let lang = extract_lang(lines[0].trim_end());
-    let theme = ts
-        .themes
-        .get("base16-ocean.dark")
-        .or_else(|| ts.themes.values().next());
-
-    let (syntax, do_highlight) = match (lang, theme) {
-        (Some(l), Some(_th)) => match resolve_syntax(ps, l) {
+    let (syntax, do_highlight) = match lang {
+        Some(l) => match resolve_syntax(ps, l) {
             Some(syn) => (syn, true),
             None => (ps.find_syntax_plain_text(), false),
         },
-        _ => (ps.find_syntax_plain_text(), false),
+        None => (ps.find_syntax_plain_text(), false),
+    };
+
+    // シンタックスハイライト有効時は通常の明るさのテーマ、それ以外は暗めのテーマ
+    let theme = if do_highlight {
+        ts.themes
+            .get("Solarized (light)")
+            .or_else(|| ts.themes.get("InspiredGitHub"))
+            .or_else(|| ts.themes.get("base16-ocean.light"))
+            .or_else(|| ts.themes.values().next())
+    } else {
+        ts.themes
+            .get("base16-ocean.dark")
+            .or_else(|| ts.themes.values().next())
     };
 
     let theme = match theme {
