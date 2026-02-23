@@ -18,7 +18,7 @@
                          wiring がここで「adapter を usecase に注入」
 ```
 
-- **CLI**: `main.rs` と `cli/`。引数解析・用法表示・エラー表示・終了コード。`parse_args()` で `Config` を取得し、**wiring で組み立てた App の Run だけを呼ぶ**。
+- **CLI**: `main.rs` と `cli/`。引数解析・用法表示・エラー表示・終了コード。`parse_args()` で `Config` を取得し、必要に応じて **wiring で提供されるポート（例: `ResolveModeConfig`, `ResolveSystemPromptFromHooks`）で Config を補完**したうえで、`Runner` を通じて usecase を呼ぶ。
 - **usecase**: アプリの手続き（`AiUseCase`, `TaskUseCase`, `ShellUseCase` 等）。**port（trait）経由でのみ** I/O や外界に触れる。
 - **ports**: インターフェース定義。usecase は「outbound」の trait にのみ依存する。adapter はその trait を実装する。
 - **adapters**: 具体実装（FS・プロセス・LLM・承認・タスク実行等）。**wiring 以外から生成・参照されない**。
@@ -52,8 +52,8 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
   `StdTaskRunner::new(...)`, `PartSessionStorage::new(...)` 等、具象アダプタの `new` / ファクトリは `wiring.rs` 内だけに書く。
 - **usecase は trait（port）だけを受け取る**  
   `AiUseCase::new(fs, history_loader, response_saver, ...)` のように、引数はすべて `Arc<dyn SomePort>` などの trait 型。wiring が adapter を `Arc<dyn SomePort>` にしたうえで渡す。
-- **main の役割はコマンド分岐と wiring 呼び出しのみ**  
-  `let config = parse_args()?;` → `let app = wire_ai();`（または `wire_aish()`）→ `Runner { app }.run(config)` のような流れにする。ビジネスロジックや I/O の詳細は main に書かない。
+- **main の役割はコマンド分岐と wiring 呼び出しが中心**  
+  `let config = parse_args()?;` → `let app = wire_ai();`（または `wire_aish()`）→ `Runner { app }.run(config)` の流れを基本としつつ、必要に応じて wiring から提供されるポート（例: `ResolveModeConfig`, `ResolveSystemPromptFromHooks`）を用いて Config を最小限に補完してよい。ビジネスロジックや OS 依存の詳細は main に書かない。
 
 ### 4. Inbound / Outbound port の役割
 
@@ -80,7 +80,7 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 - **AISH**: CUI 自動化フレームワーク（LLM 連携）。シェルスクリプトから Rust への刷新中。
 - **core/common**: `ai` / `aish` 共通。エラー型、session、LLM ドライバ・プロバイダ、Part ID、Port trait（FileSystem, Process, Clock 等）と標準実装、Tool trait / ToolRegistry。**ai 専用・aish 専用のユースケースは置かない。**  
   - Outbound の trait のうち **Tool** と **LlmProvider** は、ドメイン型（ToolContext, Message 等）との循環参照を避けるため、それぞれ `common::tool` と `common::llm::provider` に定義し、`common::ports::outbound` から re-export している。その他の outbound trait は `ports/outbound` に定義。
-- **core/ai**: `ai` コマンド。main → cli → wiring → UseCaseRunner。usecase: `app.rs`（AiUseCase）, `task.rs`（TaskUseCase）, `agent_loop.rs`。adapter: sinks, task, part_session_storage, approval, tools 等。
+- **core/ai**: `ai` コマンド。main → cli → wiring → UseCaseRunner。usecase: `app.rs`（AiUseCase）, `task.rs`（TaskUseCase）, `agent_loop.rs`。adapter: sinks, task, part_session_storage, approval, tools, resolve_system_prompt_from_hooks 等。CLI 層では、`-S/--system` 未指定時に hooks ベースでシステムプロンプトを解決して `Config` を補完する（解決順: `$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）。
 - **core/aish**: `aish` コマンド。main → cli → wiring → UseCaseRunner。usecase: shell, truncate_console_log, clear 等。adapter: shell, terminal, platform, logfmt 等。
 
 ビルド・テストはプロジェクトルートで `./build.sh`, `./tests/units.sh`, `./tests/integration.sh`。個別は `cd core/ai && cargo test` 等。
@@ -91,7 +91,7 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 
 - **TDD**: 失敗するテストを先に書く → 通す最小実装 → リファクタ。テスト省略禁止。
 - **エラー**: usecase 内は `Result<T, common::error::Error>`。CLI 境界で `exit_code()` / `is_usage()` により終了コード・用法表示を決定。
-- **common 肥大化防止**: 2 crate 以上で共有され安定したものだけ common に置く。ai 専用・aish 専用は各 crate の adapter / usecase に置く。OS 副作用のある具象ツール実装は `core/*/adapter/` に置く。
+- **common 肥大化防止**: 2 crate 以上で共有され安定したものだけ common に置く。ai 専用・aish 専用は各 crate の adapter / usecase に置く。OS 副作用のある具象ツール実装は `core/*/adapter/` に置く。システムプロンプトの注入は hooks ベースのアダプタ（`ResolveSystemPromptFromHooks`）で行い、usecase からは直接扱わない。
 
 ---
 
@@ -113,6 +113,6 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 ## 更新履歴
 
 - **2026年2月**: common の port & adapter 整理。adapter から port の re-export を削除し、usecase は `common::ports::outbound` から trait を参照。StdIdGenerator を adapter に移動。Tool / LlmProvider が ports 外に定義されている理由を明記。
-- **2026年2月**: システムプロンプト（sysq）を廃止。common の `system_prompt`、EnvResolver の system.d 関連、aish の sysq サブコマンド・UseCase・Adapter、ai の ResolveSystemInstruction を削除。`-S` 未指定時は system instruction なし。
+- **2026年2月**: 旧 sysq（システムプロンプトの専用サブコマンド/UseCase/Adapter）を廃止。代わりに hooks ベースのシステムプロンプト解決（`ResolveSystemPromptFromHooks`）を導入し、`-S` 未指定時は hooks（`$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）からの解決を試行する仕様に統一。
 - **2026年2月**: アーキテクチャを「逆流防止」の判断基準として整理。依存方向・usecase 禁止事項・wiring 責務・inbound/outbound・実装時チェックリストを明文化。長さを抑え実務で参照しやすい形に変更。
 - **2026年1月**: common / ai / aish の状態・モジュール・CLI を現状に合わせて見直し。
