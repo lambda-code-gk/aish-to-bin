@@ -48,6 +48,9 @@ pub trait EnvResolver: Send + Sync {
     /// 未設定なら $XDG_STATE_HOME/aish/log.jsonl（XDG_STATE_HOME 未設定時は ~/.local/state/aish/log.jsonl）。
     fn resolve_log_file_path(&self) -> Result<PathBuf, Error>;
 
+    /// ツール実行回数の上限（AI_MAX_TOOL_CALLS）を環境変数から取得
+    fn ai_max_tool_calls(&self) -> Option<usize>;
+
     /// グローバル transcript ファイルのパス（セッション無し実行時の出力先）
     /// AISH_HOME が設定されていれば $AISH_HOME/state/transcript.jsonl。
     /// 未設定なら $XDG_STATE_HOME/aish/transcript.jsonl（XDG_STATE_HOME 未設定時は ~/.local/state/aish/transcript.jsonl）。

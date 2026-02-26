@@ -253,6 +253,39 @@ pub fn run_shell(
     };
     eprintln!("aish: session started: {}", display_id);
 
+    let aish_home_set = env::var("AISH_HOME").map(|v| !v.is_empty()).unwrap_or(false);
+    let source = if aish_home_set { "AISH_HOME" } else { "XDG" };
+
+    if let Ok(dirs) = env.resolve_dirs() {
+        if aish_home_set {
+            eprintln!("aish:   source: {}", source);
+        } else {
+            let mut xdg_vars = Vec::new();
+            if env::var("XDG_CONFIG_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+                xdg_vars.push("XDG_CONFIG_HOME");
+            }
+            if env::var("XDG_DATA_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+                xdg_vars.push("XDG_DATA_HOME");
+            }
+            if env::var("XDG_STATE_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+                xdg_vars.push("XDG_STATE_HOME");
+            }
+            if env::var("XDG_CACHE_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+                xdg_vars.push("XDG_CACHE_HOME");
+            }
+
+            if xdg_vars.is_empty() {
+                eprintln!("aish:   source: XDG (HOME fallback)");
+            } else {
+                eprintln!("aish:   source: XDG ({})", xdg_vars.join(","));
+            }
+        }
+        eprintln!("aish:   config: {}", dirs.config_dir.display());
+        eprintln!("aish:   session: {}", dirs.sessions_dir().display());
+    } else {
+        eprintln!("aish:   source: {}", source);
+    }
+
     let session_dir_value = common::domain::SessionDir::new(session_dir.to_path_buf());
     let event_hub = build_event_hub(Some(&session_dir_value), env, fs.clone(), false);
     let fs_ref = fs.as_ref();

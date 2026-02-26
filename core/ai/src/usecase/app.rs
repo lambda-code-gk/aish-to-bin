@@ -390,6 +390,9 @@ impl AiUseCase {
 
         const DEFAULT_MAX_TURNS: usize = 16;
         let max_turns = max_turns_override.unwrap_or(DEFAULT_MAX_TURNS);
+        let max_tool_calls = self.deps.policy.env_resolver.ai_max_tool_calls()
+            .unwrap_or_else(|| max_turns.saturating_mul(4));
+
         let command_rules_path = match self.deps.policy.env_resolver.resolve_command_rules_path() {
             Ok(p) => p,
             Err(e) => {
@@ -464,7 +467,7 @@ impl AiUseCase {
             );
 
             let outcome = match agent_loop
-                .run_until_done(&messages, max_turns, max_turns)
+                .run_until_done(&messages, max_turns, max_tool_calls)
                 .map_err(|e| e.with_context(ctx.clone()))
             {
                 Ok(o) => o,

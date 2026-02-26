@@ -107,6 +107,12 @@ impl EnvResolver for StdEnvResolver {
         Ok(dirs.state_dir.join(TRANSCRIPT_FILENAME))
     }
 
+    fn ai_max_tool_calls(&self) -> Option<usize> {
+        env::var("AI_MAX_TOOL_CALLS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+    }
+
     fn resolve_dirs(&self) -> Result<Dirs, Error> {
         let home = env::var("HOME")
             .ok()

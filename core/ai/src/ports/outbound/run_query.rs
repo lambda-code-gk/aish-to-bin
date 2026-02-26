@@ -10,6 +10,8 @@ use common::event_hub::EventHubHandle;
 /// TaskUseCase がタスク未存在時に利用する。AiUseCase が実装する。
 /// `query` が None のときは「resume」意図（保存された続き用状態から再開）。Some のときは通常のクエリ送信。
 /// `max_turns_override`: エージェントループの上限。None のときは既定値（16）。手動テストでは環境変数 AI_MAX_TURNS を渡す。
+/// ツール実行回数の上限は AI_MAX_TOOL_CALLS 環境変数で調整可能（未指定時は max_turns * 4）。
+/// ツール実行直後に上限到達しても、結果を文章化するための finalization を 1回だけ試行する。
 /// `tool_allowlist`: モードで指定した場合のツール許可リスト。None のときは全ツール。
 /// `event_hub`: session_dir が決まった場所で生成した EventHub のハンドル。run.started / run.completed 等の emit に使う。
 pub trait RunQuery: Send + Sync {

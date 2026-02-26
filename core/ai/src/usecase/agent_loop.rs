@@ -222,10 +222,20 @@ impl AgentLoop {
     /// 受信したイベントは即座に Sink へ emit し、ストリーミング表示する。
     /// tool_execution_cap: このターンで実行するツール呼び出しの上限。None なら無制限。
     /// 戻り値: (new_messages, run_state, assistant_text)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn run_once(
         &mut self,
         messages: &[Msg],
         tool_execution_cap: Option<usize>,
+    ) -> Result<(Vec<Msg>, RunState, String), Error> {
+        self.run_once_impl(messages, tool_execution_cap, true)
+    }
+
+    fn run_once_impl(
+        &mut self,
+        messages: &[Msg],
+        tool_execution_cap: Option<usize>,
+        tools_enabled: bool,
     ) -> Result<(Vec<Msg>, RunState, String), Error> {
         let (system_opt, query, history) = msgs_to_provider(messages);
         let system_instruction = system_opt.as_deref();
@@ -241,7 +251,7 @@ impl AgentLoop {
         }
         let provider_start = std::time::Instant::now();
         let tool_defs = self.tool_registry.list_definitions();
-        let tools_ref = if tool_defs.is_empty() {
+        let tools_ref = if !tools_enabled || tool_defs.is_empty() {
             None
         } else {
             Some(tool_defs.as_slice())
@@ -298,16 +308,22 @@ impl AgentLoop {
             match ev {
                 LlmEvent::TextDelta(s) | LlmEvent::ReasoningDelta(s) => assistant_text.push_str(s),
                 LlmEvent::ToolCallBegin { call_id, name, thought_signature } => {
-                    accumulator.on_begin(call_id.clone(), name.clone(), thought_signature.clone());
+                    if tools_enabled {
+                        accumulator.on_begin(call_id.clone(), name.clone(), thought_signature.clone());
+                    }
                 }
                 LlmEvent::ToolCallArgsDelta { json_fragment, .. } => {
-                    accumulator.on_args_delta(json_fragment.clone());
+                    if tools_enabled {
+                        accumulator.on_args_delta(json_fragment.clone());
+                    }
                 }
                 LlmEvent::ToolCallEnd { call_id } => {
-                    if let Some(tc) = accumulator.on_end(call_id.clone())? {
-                        pending_tool_calls.push(tc);
+                    if tools_enabled {
+                        if let Some(tc) = accumulator.on_end(call_id.clone())? {
+                            pending_tool_calls.push(tc);
+                        }
+                        run_state = RunState::ExecutingTools;
                     }
-                    run_state = RunState::ExecutingTools;
                 }
                 LlmEvent::Completed { .. } => {
                     if run_state != RunState::ExecutingTools {
@@ -463,25 +479,54 @@ impl AgentLoop {
         let max_tool_calls = initial_tool_count.saturating_add(max_additional_tool_calls);
         let mut messages = initial_messages.to_vec();
         let mut last_assistant_text = String::new();
+        let mut last_state = RunState::StreamingModel;
+
         for _ in 0..max_turns {
             let current_tool_count = count_tool_results(&messages);
             if current_tool_count >= max_tool_calls {
-                return Ok(AgentLoopOutcome::ReachedLimit(
-                    messages.clone(),
-                    last_assistant_text.clone(),
-                ));
-            }
-            let cap = max_tool_calls.saturating_sub(current_tool_count);
-            let (new_messages, state, assistant_text) = self.run_once(&messages, Some(cap))?;
-            last_assistant_text = assistant_text;
-            let tool_count_after = count_tool_results(&new_messages);
-            messages = new_messages;
-            if tool_count_after >= max_tool_calls {
+                // messages 末尾が ToolResult かつ text が空なら finalization を試す
+                if messages.last().map_or(false, |m| matches!(m, Msg::ToolResult { .. }))
+                    && last_assistant_text.trim().is_empty()
+                {
+                    let (msgs2, _state2, text2) = self.run_once_impl(&messages, Some(0), false)?;
+                    messages = msgs2;
+                    last_assistant_text = if text2.trim().is_empty() {
+                        "Agent loop reached the limit after tool execution. State saved for resume. Run `ai --continue` or increase AI_MAX_TURNS / AI_MAX_TOOL_CALLS.".to_string()
+                    } else {
+                        text2
+                    };
+                }
                 return Ok(AgentLoopOutcome::ReachedLimit(
                     messages,
                     last_assistant_text,
                 ));
             }
+            let cap = max_tool_calls.saturating_sub(current_tool_count);
+            let (new_messages, state, assistant_text) = self.run_once_impl(&messages, Some(cap), true)?;
+            last_assistant_text = assistant_text;
+            last_state = state.clone();
+            let tool_count_after = count_tool_results(&new_messages);
+            messages = new_messages;
+
+            if tool_count_after >= max_tool_calls {
+                // messages 末尾が ToolResult かつ text が空なら finalization を試す
+                if messages.last().map_or(false, |m| matches!(m, Msg::ToolResult { .. }))
+                    && last_assistant_text.trim().is_empty()
+                {
+                    let (msgs2, _state2, text2) = self.run_once_impl(&messages, Some(0), false)?;
+                    messages = msgs2;
+                    last_assistant_text = if text2.trim().is_empty() {
+                        "Agent loop reached the limit after tool execution. State saved for resume. Run `ai --continue` or increase AI_MAX_TURNS / AI_MAX_TOOL_CALLS.".to_string()
+                    } else {
+                        text2
+                    };
+                }
+                return Ok(AgentLoopOutcome::ReachedLimit(
+                    messages,
+                    last_assistant_text,
+                ));
+            }
+
             match state {
                 RunState::Done => return Ok(AgentLoopOutcome::Done(messages, last_assistant_text)),
                 RunState::ExecutingTools => continue,
@@ -490,6 +535,18 @@ impl AgentLoop {
                 }
             }
         }
+
+        // max_turns 到達時
+        if last_state == RunState::ExecutingTools {
+            let (msgs2, _state2, text2) = self.run_once_impl(&messages, Some(0), false)?;
+            messages = msgs2;
+            last_assistant_text = if text2.trim().is_empty() {
+                "Agent loop reached the limit after tool execution. State saved for resume. Run `ai --continue` or increase AI_MAX_TURNS / AI_MAX_TOOL_CALLS.".to_string()
+            } else {
+                text2
+            };
+        }
+
         Ok(AgentLoopOutcome::ReachedLimit(messages, last_assistant_text))
     }
 }

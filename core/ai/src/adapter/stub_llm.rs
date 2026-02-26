@@ -44,7 +44,43 @@ mod stub {
             Ok(())
         }
     }
+
+    /// テスト用: tools の有無で返すイベントを変えられる Stub
+    pub struct ToolAwareStubLlm {
+        pub with_tools: Vec<LlmEvent>,
+        pub without_tools: Vec<LlmEvent>,
+    }
+
+    impl ToolAwareStubLlm {
+        pub fn new(with_tools: Vec<LlmEvent>, without_tools: Vec<LlmEvent>) -> Self {
+            Self {
+                with_tools,
+                without_tools,
+            }
+        }
+    }
+
+    impl LlmEventStream for ToolAwareStubLlm {
+        fn stream_events(
+            &self,
+            _query: &str,
+            _system_instruction: Option<&str>,
+            _history: &[Message],
+            tools: Option<&[ToolDef]>,
+            callback: &mut dyn FnMut(LlmEvent) -> Result<(), Error>,
+        ) -> Result<(), Error> {
+            let events = if tools.is_some() {
+                &self.with_tools
+            } else {
+                &self.without_tools
+            };
+            for ev in events {
+                callback(ev.clone())?;
+            }
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
-pub use stub::StubLlm;
+pub use stub::{StubLlm, ToolAwareStubLlm};

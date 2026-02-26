@@ -9,7 +9,7 @@ use common::sink::{AgentEvent, EventSink};
 use common::tool::{Tool, ToolContext, ToolError, ToolRegistry};
 use serde_json::Value;
 
-use crate::adapter::stub_llm::StubLlm;
+use crate::adapter::stub_llm::{StubLlm, ToolAwareStubLlm};
 use crate::domain::approval::StubApproval;
 use crate::ports::outbound::LlmEventStream;
 use crate::usecase::agent_loop::{
@@ -342,5 +342,65 @@ fn test_agent_loop_run_until_done_capped_by_tool_calls() {
             );
         }
         AgentLoopOutcome::Done(_, _) => panic!("expected ReachedLimit (tool call cap)"),
+    }
+}
+
+#[test]
+fn test_agent_loop_run_until_done_finalization_on_limit() {
+    let with_tools = vec![
+        LlmEvent::ToolCallBegin {
+            call_id: "c1".to_string(),
+            name: "echo".to_string(),
+            thought_signature: None,
+        },
+        LlmEvent::ToolCallArgsDelta {
+            call_id: "c1".to_string(),
+            json_fragment: r#"{"message": "hi"}"#.to_string(),
+        },
+        LlmEvent::ToolCallEnd {
+            call_id: "c1".to_string(),
+        },
+        LlmEvent::Completed {
+            finish: FinishReason::ToolCalls,
+        },
+    ];
+    let without_tools = vec![
+        LlmEvent::TextDelta("final summary".to_string()),
+        LlmEvent::Completed {
+            finish: FinishReason::Stop,
+        },
+    ];
+    let stub = Arc::new(ToolAwareStubLlm::new(with_tools, without_tools));
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(common::tool::EchoTool::new()));
+    let ctx = ToolContext::new(None);
+    let sinks: Vec<Box<dyn EventSink>> = vec![];
+    let approver = Arc::new(StubApproval::approved());
+    let mut loop_ = AgentLoop::new(
+        stub,
+        registry,
+        ctx,
+        sinks,
+        approver,
+        Some("run_shell"),
+        None,
+        None,
+        SessionId::new(""),
+        RunId::new(""),
+    );
+
+    let messages = vec![Msg::user("echo")];
+    // max_turns=1 で 1回目に tool call が発生するようにする
+    let outcome = loop_.run_until_done(&messages, 1, 100).unwrap();
+
+    match &outcome {
+        AgentLoopOutcome::ReachedLimit(msgs, text) => {
+            // 1ターン目で tool call 実行 -> max_turns 到達 -> finalization ターンが走るはず
+            assert_eq!(text, "final summary");
+            // messages には User, Assistant(empty), ToolCall, ToolResult, Assistant(final summary) が入るはず
+            // (run_once_impl で assistant_text が空でも pending_tool_calls があれば Assistant を追加する)
+            assert!(msgs.iter().any(|m| matches!(m, Msg::Assistant(s) if s == "final summary")));
+        }
+        AgentLoopOutcome::Done(_, _) => panic!("expected ReachedLimit"),
     }
 }

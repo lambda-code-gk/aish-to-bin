@@ -23,6 +23,8 @@ impl Default for NoContinuePrompt {
 
 impl ContinueAfterLimitPrompt for NoContinuePrompt {
     fn ask_continue(&self) -> Result<bool, Error> {
+        eprintln!("Agent loop reached the limit. State saved for resume.");
+        eprintln!("Run `ai --continue` to resume, or increase AI_MAX_TURNS / AI_MAX_TOOL_CALLS.");
         Ok(false)
     }
 }
