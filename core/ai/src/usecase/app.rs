@@ -1,6 +1,6 @@
 use crate::domain::{DryRunInfo, LifecycleEvent, QueryOutcome};
 use crate::ports::outbound::{
-    AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextMessageBuilder,
+    AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextPackBuilder,
     ContinueAfterLimitPrompt, DryRunReportSink, EventSinkFactory, InterruptChecker, LifecycleHooks,
     LlmEventStreamFactory, PrepareSessionForSensitiveCheck, ProfileLister, QueryPlacement,
     ResolveMemoryDir, ResolveProfileAndModel, RunQuery, SessionHistoryLoader, SessionResponseSaver,
@@ -37,7 +37,7 @@ pub struct AiDeps {
 pub struct SessionDeps {
     pub fs: Arc<dyn FileSystem>,
     pub history_loader: Arc<dyn SessionHistoryLoader>,
-    pub context_message_builder: Arc<dyn ContextMessageBuilder>,
+    pub context_pack_builder: Arc<dyn ContextPackBuilder>,
     pub response_saver: Arc<dyn SessionResponseSaver>,
     pub agent_state_saver: Arc<dyn AgentStateSaver>,
     pub agent_state_loader: Arc<dyn AgentStateLoader>,
@@ -123,7 +123,7 @@ impl AiUseCase {
             .deps.model.resolve_profile_and_model
             .resolve(provider.as_ref(), model.as_ref())?;
 
-        let messages: Vec<Msg> = match query {
+        let (messages, budget_report) = match query {
             None => {
                 let dir = session_dir.as_ref().ok_or_else(|| {
                     Error::invalid_argument("No continuation state. Use -c with a session or provide a message.")
@@ -133,11 +133,12 @@ impl AiUseCase {
                         "No continuation state. Use -c with a session or provide a message.",
                     ));
                 }
-                self.deps.session.agent_state_loader
+                let msgs = self.deps.session.agent_state_loader
                     .load(dir)?
                     .ok_or_else(|| {
                         Error::invalid_argument("No continuation state. Use -c with a session or provide a message.")
-                    })?
+                    })?;
+                (msgs, None)
             }
             Some(q) => {
                 let (history_messages, query_placement) = if self.session_is_valid(&session_dir) {
@@ -150,12 +151,13 @@ impl AiUseCase {
                 } else {
                     (Vec::new(), QueryPlacement::AppendAtEnd)
                 };
-                self.deps.session.context_message_builder.build(
+                let pack = self.deps.session.context_pack_builder.build(
                     &history_messages,
                     Some(q),
                     system_instruction,
                     query_placement,
-                )
+                )?;
+                (pack.messages, Some(pack.budget_report))
             }
         };
 
@@ -183,6 +185,7 @@ impl AiUseCase {
             tool_allowlist: tool_allowlist.map(|s| s.to_vec()),
             tools_enabled,
             messages,
+            budget_report,
         })
     }
 
@@ -335,23 +338,74 @@ impl AiUseCase {
                     let loaded = self.deps.session.history_loader.load(dir);
                     match loaded {
                         Ok(history) => {
-                            // valid session: save_user → load しているので query は履歴に含まれている
                             (history.messages().to_vec(), QueryPlacement::AlreadyInHistory)
                         }
                         Err(_) => {
-                            // load 失敗時でも query を欠落させないため、空履歴 + 末尾追加にフォールバック
                             (Vec::new(), QueryPlacement::AppendAtEnd)
                         }
                     }
                 } else {
                     (Vec::new(), QueryPlacement::AppendAtEnd)
                 };
-                self.deps.session.context_message_builder.build(
+                let pack = match self.deps.session.context_pack_builder.build(
                     &history_messages,
                     Some(q),
                     system_instruction,
                     query_placement,
-                )
+                ) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        let elapsed_ms = run_start.elapsed().as_millis() as u64;
+                        if let Some(ref hub) = event_hub {
+                            let mut payload = serde_json::json!({
+                                "reason": "context_pack_build",
+                                "message": e.to_string(),
+                                "exit_code": e.exit_code(),
+                                "error_kind": format!("{:?}", e),
+                                "elapsed_ms": elapsed_ms,
+                            });
+                            if sessionless {
+                                payload["sessionless"] = serde_json::json!(true);
+                            }
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "run.failed".to_string(),
+                                payload,
+                            });
+                        }
+                        self.try_save_agent_state_on_error(&session_dir, &[]);
+                        return Err(e);
+                    }
+                };
+
+                if let Some(ref hub) = event_hub {
+                    let report = &pack.budget_report;
+                    hub.emit(Event {
+                        v: 1,
+                        session_id: session_id.clone(),
+                        run_id: run_id.clone(),
+                        kind: "context.pack_built".to_string(),
+                        payload: serde_json::json!({
+                            "budget": {
+                                "max_messages": report.budget.max_messages,
+                                "max_chars": report.budget.max_chars,
+                            },
+                            "input": {
+                                "message_count": report.input.message_count,
+                                "char_count": report.input.char_count,
+                            },
+                            "output": {
+                                "message_count": report.output.message_count,
+                                "char_count": report.output.char_count,
+                            },
+                            "decisions": report.decisions,
+                        }),
+                    });
+                }
+
+                pack.messages
             }
         };
 

@@ -18,7 +18,7 @@ use crate::adapter::{
     ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy, NoContinuePrompt,
     NoopInterruptChecker, NonInteractiveToolApproval, PartSessionStorage, PassThroughReducer,
     ReadFileTool, ReplaceFileTool, ReviewedTailViewStrategy, SelfImproveHandler, SigintChecker,
-    StdCommandAllowRulesLoader, StdContextMessageBuilder, StdEventSinkFactory, StdLlmCompletion,
+    StdCommandAllowRulesLoader, StdContextPackBuilder, StdEventSinkFactory, StdLlmCompletion,
     StdLlmEventStreamFactory, StdProfileLister, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel, StdResolveSystemPromptFromHooks, StdoutDryRunReportSink, StdTaskRunner,
     ShellTool, TailWindowReducer, WriteFileTool,
     HistoryGetTool, HistorySearchTool, QueueShellSuggestionTool, SaveMemoryTool, SearchMemoryTool,
@@ -26,7 +26,7 @@ use crate::adapter::{
 use crate::adapter::lifecycle::LifecycleHandler;
 use crate::domain::{ContextBudget, Query};
 use crate::ports::outbound::{
-    AgentStateLoader, AgentStateSaver, ContextMessageBuilder, DryRunReportSink, LifecycleHooks,
+    AgentStateLoader, AgentStateSaver, ContextPackBuilder, DryRunReportSink, LifecycleHooks,
     LlmCompletion, PrepareSessionForSensitiveCheck, ResolveModeConfig, ResolveSystemPromptFromHooks,
     RunQuery, SessionHistoryLoader, SessionResponseSaver, TaskRunner,
 };
@@ -197,13 +197,13 @@ fn build_session_deps(
     let agent_state_loader: Arc<dyn AgentStateLoader> =
         Arc::clone(&agent_state_storage) as Arc<dyn AgentStateLoader>;
 
-    let context_message_builder: Arc<dyn ContextMessageBuilder> =
-        Arc::new(StdContextMessageBuilder::new(reducer, budget));
+    let context_pack_builder: Arc<dyn ContextPackBuilder> =
+        Arc::new(StdContextPackBuilder::new(reducer, budget));
 
     SessionDeps {
         fs: Arc::clone(fs),
         history_loader,
-        context_message_builder,
+        context_pack_builder,
         response_saver,
         agent_state_saver,
         agent_state_loader,

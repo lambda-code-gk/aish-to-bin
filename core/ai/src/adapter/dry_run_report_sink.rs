@@ -64,6 +64,27 @@ impl DryRunReportSink for StdoutDryRunReportSink {
                 println!("    {}", line);
             }
         }
+        if let Some(ref report) = info.budget_report {
+            println!("--- budget report ---");
+            println!(
+                "budget: max_messages={} max_chars={}",
+                report.budget.max_messages, report.budget.max_chars
+            );
+            println!(
+                "input: messages={} chars={}",
+                report.input.message_count, report.input.char_count
+            );
+            println!(
+                "output: messages={} chars={}",
+                report.output.message_count, report.output.char_count
+            );
+            for d in &report.decisions {
+                println!(
+                    "decision: stage={} action={} reason={}",
+                    d.stage, d.action, d.reason
+                );
+            }
+        }
         println!("=== end dry run ===");
         Ok(())
     }

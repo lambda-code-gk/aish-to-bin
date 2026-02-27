@@ -1,8 +1,10 @@
 //! ai 固有のドメイン型（型と不変条件）
 
 pub mod approval;
+pub mod budget_report;
 pub mod command;
 pub mod compaction;
+pub mod context_pack;
 pub mod dry_run_info;
 pub mod external_plugin;
 pub mod mode_config;
@@ -15,7 +17,9 @@ pub mod memory_entry;
 pub mod query;
 pub mod task_name;
 pub use approval::{Approval, ToolApproval};
+pub use budget_report::*;
 pub use command::AiCommand;
+pub use context_pack::*;
 pub use dry_run_info::DryRunInfo;
 pub use mode_config::ModeConfig;
 pub use compaction::CompactionRecord;

@@ -1,5 +1,6 @@
 //! dry run 時の出力用ペイロード（usecase が返し、CLI が表示する）
 
+use super::BudgetReport;
 use common::msg::Msg;
 
 /// dry run で LLM を呼ばずに返す情報（プロファイル・モデル・システムプロンプト・メッセージ列など）
@@ -14,4 +15,5 @@ pub struct DryRunInfo {
     pub tool_allowlist: Option<Vec<String>>,
     pub tools_enabled: Vec<String>,
     pub messages: Vec<Msg>,
+    pub budget_report: Option<BudgetReport>,
 }
