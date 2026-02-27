@@ -138,12 +138,34 @@ impl UseCaseRunner for Runner {
                 print_history_get(&entries);
                 Ok(0)
             }
+            Command::PolicyExplain => run_ai_policy_explain(),
+            Command::ConfigExplain => run_ai_config_explain(),
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
                 "Command '{}' is not implemented.",
                 name
             ))),
         }
     }
+}
+
+/// ai --policy-explain を実行し、終了コードを返す（stdout/stderr はそのまま）
+#[cfg(unix)]
+fn run_ai_policy_explain() -> Result<i32, Error> {
+    let status = process::Command::new("ai")
+        .arg("--policy-explain")
+        .status()
+        .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
+    Ok(status.code().unwrap_or(1))
+}
+
+/// ai --config-explain を実行し、終了コードを返す（stdout/stderr はそのまま）
+#[cfg(unix)]
+fn run_ai_config_explain() -> Result<i32, Error> {
+    let status = process::Command::new("ai")
+        .arg("--config-explain")
+        .status()
+        .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
+    Ok(status.code().unwrap_or(1))
 }
 
 /// セッションが明示的に指定されているかをチェック（CLI 境界）
@@ -469,6 +491,8 @@ mod tests {
                         .get(&path_input, session_explicitly_specified, &ids)?;
                 Ok(0)
             }
+            Command::PolicyExplain => Ok(0),
+            Command::ConfigExplain => Ok(0),
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
                 "Command '{}' is not implemented.",
                 name

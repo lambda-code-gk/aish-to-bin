@@ -16,6 +16,7 @@ use cli::{config_to_command, parse_args, print_completion, Config, ParseOutcome}
 use domain::{AiCommand, TaskName};
 use ports::inbound::UseCaseRunner;
 use common::event_hub::{build_event_hub, EventHubHandle};
+use std::sync::Arc;
 use wiring::{wire_ai, App};
 
 /// Command をディスパッチする Runner（match は main レイヤーに集約）
@@ -139,6 +140,22 @@ impl Runner {
                 println!("{}", name);
             }
         }
+        Ok(0)
+    }
+
+    fn run_policy_explain(&self) -> Result<i32, Error> {
+        let info = self.app.policy_use_case.explain()?;
+        let json =
+            serde_json::to_string_pretty(&info).map_err(|e| Error::json(e.to_string()))?;
+        println!("{}", json);
+        Ok(0)
+    }
+
+    fn run_config_explain(&self) -> Result<i32, Error> {
+        let info = self.app.config_use_case.explain()?;
+        let json =
+            serde_json::to_string_pretty(&info).map_err(|e| Error::json(e.to_string()))?;
+        println!("{}", json);
         Ok(0)
     }
 
@@ -289,6 +306,8 @@ impl UseCaseRunner for Runner {
             }
             AiCommand::ListProfiles => self.run_list_profiles(),
             AiCommand::ListTools { profile } => self.run_list_tools(profile),
+            AiCommand::PolicyExplain => self.run_policy_explain(),
+            AiCommand::ConfigExplain => self.run_config_explain(),
             AiCommand::Task {
                 name,
                 args,
@@ -422,6 +441,8 @@ fn cmd_name_for_log(cmd: &AiCommand) -> &'static str {
         AiCommand::Help => "help",
         AiCommand::ListProfiles => "list-profiles",
         AiCommand::ListTools { .. } => "list-tools",
+        AiCommand::PolicyExplain => "policy-explain",
+        AiCommand::ConfigExplain => "config-explain",
         AiCommand::Task { .. } => "task",
         AiCommand::Resume { .. } => "resume",
         AiCommand::Query { .. } => "query",
@@ -482,6 +503,7 @@ fn print_help() {
     println!("  -h, --help                    Show this help message");
     println!("  -L, --list-profiles           List currently available provider profiles (from profiles.json + built-ins)");
     println!("  --list-tools                  List tools enabled for the given profile (use with -p, e.g. -p echo)");
+    println!("  --policy-explain              Show resolved policy, rule order, and example outcomes (used by aish policy explain)");
     println!("  -c, --continue                Resume the agent loop from the last saved state (after turn limit or error). Uses AISH_SESSION when set.");
     println!("  --no-interactive              Do not prompt for confirmations (CI-friendly: tool approval denied, no continue, leakscan deny).");
     println!("  -v, --verbose                 Emit verbose debug logs to stderr (for troubleshooting).");

@@ -170,6 +170,24 @@ fn build_clap_command() -> clap::Command {
             .subcommand(memory)
             .subcommand(history)
             .subcommand(
+                clap::Command::new("policy")
+                    .about("Policy-related commands (explain: show resolved policy and examples)")
+                    .subcommand_required(true)
+                    .subcommand(
+                        clap::Command::new("explain")
+                            .about("Show resolved policy, rule order, and examples (calls ai --policy-explain)"),
+                    ),
+            )
+            .subcommand(
+                clap::Command::new("config")
+                    .about("Config-related commands (explain: show resolved config and sources)")
+                    .subcommand_required(true)
+                    .subcommand(
+                        clap::Command::new("explain")
+                            .about("Show resolved config and sources (calls ai --config-explain)"),
+                    ),
+            )
+            .subcommand(
                 clap::Command::new("resume")
                     .about("Resume last or specified session")
                     .arg(
@@ -282,6 +300,19 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
             command_args.extend(args);
             (Some("history".to_string()), command_args, false, false, None)
         }
+        Some(("policy", policy_m)) => {
+            let (sub, args) = match policy_m.subcommand() {
+                Some(("explain", _)) => ("explain", vec![]),
+                _ => ("", vec![]),
+            };
+            let mut command_args = if sub.is_empty() {
+                vec![]
+            } else {
+                vec![sub.to_string()]
+            };
+            command_args.extend(args);
+            (Some("policy".to_string()), command_args, false, false, None)
+        }
         Some((name, _)) => (Some(name.to_string()), vec![], false, false, None),
     };
 
@@ -319,7 +350,7 @@ pub fn print_completion(shell: Shell) {
 }
 
 fn emit_fallback_completion(shell: Shell) {
-    let subcommands = "clear history init memory mute unmute resume rollout sessions shell truncate_console_log";
+    let subcommands = "clear history init memory mute unmute policy resume rollout sessions shell truncate_console_log";
     let global_opts = "-h --help -s --session-dir -d --home-dir -v --verbose --generate";
     let memory_subs = "list get remove";
     let history_subs = "ls get";

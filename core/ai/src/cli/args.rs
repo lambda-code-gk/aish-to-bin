@@ -12,6 +12,10 @@ pub struct Config {
     pub list_profiles: bool,
     /// --list-tools: 指定プロバイダで有効なツール一覧を表示（-p と併用でプロバイダ指定）
     pub list_tools: bool,
+    /// --policy-explain: 解決済みポリシー・ルール順・代表例を表示
+    pub policy_explain: bool,
+    /// --config-explain: 解決済み設定と source を表示
+    pub config_explain: bool,
     /// -c / --continue: 保存された会話状態から再開する
     pub continue_flag: bool,
     /// --no-interactive: 確認プロンプトを出さず CI 等でブロックしない（承認は常に拒否・続行はしない・leakscan ヒットは拒否）
@@ -37,6 +41,8 @@ impl Default for Config {
             help: false,
             list_profiles: false,
             list_tools: false,
+            policy_explain: false,
+            config_explain: false,
             continue_flag: false,
             non_interactive: false,
             verbose: false,
@@ -85,6 +91,18 @@ fn build_clap_command() -> clap::Command {
             clap::Arg::new("list-tools")
                 .long("list-tools")
                 .help("List tools enabled for the given profile (use with -p/--profile, e.g. -p echo)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("policy-explain")
+                .long("policy-explain")
+                .help("Show resolved policy, rule order, and example outcomes (for aish policy explain)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("config-explain")
+                .long("config-explain")
+                .help("Show resolved config and sources (for aish config explain)")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -178,6 +196,8 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
     let help = matches.get_flag("help");
     let list_profiles = matches.get_flag("list-profiles");
     let list_tools = matches.get_flag("list-tools");
+    let policy_explain = matches.get_flag("policy-explain");
+    let config_explain = matches.get_flag("config-explain");
     let continue_flag = matches.get_flag("continue");
     let non_interactive = matches.get_flag("no-interactive");
     let verbose = matches.get_flag("verbose");
@@ -206,6 +226,8 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
         help,
         list_profiles,
         list_tools,
+        policy_explain,
+        config_explain,
         continue_flag,
         non_interactive,
         verbose,
@@ -335,6 +357,14 @@ pub fn config_to_command(config: Config) -> AiCommand {
         return AiCommand::ListTools {
             profile: config.profile,
         };
+    }
+
+    if config.policy_explain {
+        return AiCommand::PolicyExplain;
+    }
+
+    if config.config_explain {
+        return AiCommand::ConfigExplain;
     }
 
     if config.continue_flag {

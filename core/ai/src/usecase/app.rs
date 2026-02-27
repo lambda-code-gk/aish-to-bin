@@ -1,10 +1,10 @@
-use crate::domain::{DryRunInfo, LifecycleEvent, QueryOutcome};
+use crate::domain::{DryRunInfo, LifecycleEvent, PolicyVerdict, QueryOutcome};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextArtifactStore,
     ContextPackBuilder, ContinueAfterLimitPrompt, DryRunReportSink, EventSinkFactory,
-    InterruptChecker, LifecycleHooks, LlmEventStreamFactory, PrepareSessionForSensitiveCheck,
-    ProfileLister, QueryPlacement, ResolveMemoryDir, ResolveProfileAndModel, RunQuery,
-    SessionHistoryLoader, SessionResponseSaver, ToolApproval,
+    InterruptChecker, LifecycleHooks, LlmEventStreamFactory, PolicyEngine,
+    PrepareSessionForSensitiveCheck, ProfileLister, QueryPlacement, ResolveMemoryDir,
+    ResolveProfileAndModel, RunQuery, SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopOutcome};
 use common::ports::outbound::EnvResolver;
@@ -39,6 +39,7 @@ pub struct SessionDeps {
     pub history_loader: Arc<dyn SessionHistoryLoader>,
     pub context_pack_builder: Arc<dyn ContextPackBuilder>,
     pub artifact_store: Arc<dyn ContextArtifactStore>,
+    pub policy_engine: Arc<dyn PolicyEngine>,
     pub response_saver: Arc<dyn SessionResponseSaver>,
     pub agent_state_saver: Arc<dyn AgentStateSaver>,
     pub agent_state_loader: Arc<dyn AgentStateLoader>,
@@ -381,6 +382,65 @@ impl AiUseCase {
                     }
                 };
 
+                // --- egress policy ---
+                match self.deps.session.policy_engine.evaluate_egress_context_pack(&pack, self.deps.non_interactive) {
+                    Ok(PolicyVerdict::Allow { value, decision }) => {
+                        pack = value;
+                        if let Some(ref hub) = event_hub {
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "policy.evaluated".to_string(),
+                                payload: decision.to_event_payload(),
+                            });
+                        }
+                    }
+                    Ok(PolicyVerdict::RequireApproval { decision, .. }) | Ok(PolicyVerdict::Deny { decision }) => {
+                        let elapsed_ms = run_start.elapsed().as_millis() as u64;
+                        if let Some(ref hub) = event_hub {
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "policy.evaluated".to_string(),
+                                payload: decision.to_event_payload(),
+                            });
+                            let mut payload = serde_json::json!({
+                                "reason": "egress_policy_blocked",
+                                "message": format!("Egress blocked: {} ({})", decision.reason, decision.status),
+                                "exit_code": 1,
+                                "elapsed_ms": elapsed_ms,
+                            });
+                            if sessionless {
+                                payload["sessionless"] = serde_json::json!(true);
+                            }
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "run.failed".to_string(),
+                                payload,
+                            });
+                        }
+                        self.try_save_agent_state_on_error(&session_dir, &[]);
+                        return Err(Error::system(format!(
+                            "Context pack blocked by egress policy: {} ({})",
+                            decision.reason, decision.status
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = self.deps.obs.log.log(&LogRecord {
+                            ts: now_iso8601(),
+                            level: LogLevel::Warn,
+                            message: format!("Egress policy evaluation failed: {}", e),
+                            layer: Some("usecase".to_string()),
+                            kind: Some("policy".to_string()),
+                            fields: None,
+                        });
+                    }
+                }
+
                 if let Some(dir) = session_dir.as_ref() {
                     if !pack.attachments.is_empty() {
                         match self.deps.session.artifact_store.store(dir, &run_id, &pack.attachments) {
@@ -539,7 +599,8 @@ impl AiUseCase {
                 tool_context,
                 sinks,
                 Arc::clone(&self.deps.policy.approver),
-                Some("run_shell"),
+                Arc::clone(&self.deps.session.policy_engine),
+                self.deps.non_interactive,
                 Some(Arc::clone(&self.deps.policy.interrupt_checker)),
                 event_hub.clone(),
                 session_id.clone(),

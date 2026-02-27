@@ -57,6 +57,11 @@ pub enum Command {
     /// reviewed 履歴取得（history get <id> ...）
     HistoryGet { ids: Vec<String> },
 
+    /// policy explain（ai --policy-explain を実行）
+    PolicyExplain,
+    /// config explain（ai --config-explain を実行）
+    ConfigExplain,
+
     /// 未知のコマンド（エラー用）
     Unknown(String),
 }
@@ -76,6 +81,24 @@ impl Command {
                 _ => {
                     let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
                     return Command::Unknown(format!("memory {}", sub).trim_end().to_string());
+                }
+            }
+        }
+        if name == "policy" {
+            match args.first().map(|s| s.as_str()) {
+                Some("explain") => return Command::PolicyExplain,
+                _ => {
+                    let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
+                    return Command::Unknown(format!("policy {}", sub).trim_end().to_string());
+                }
+            }
+        }
+        if name == "config" {
+            match args.first().map(|s| s.as_str()) {
+                Some("explain") => return Command::ConfigExplain,
+                _ => {
+                    let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
+                    return Command::Unknown(format!("config {}", sub).trim_end().to_string());
                 }
             }
         }
@@ -239,5 +262,11 @@ mod tests {
     fn test_parse_with_args_history_get() {
         let cmd = Command::parse_with_args("history", &["get".to_string(), "001".to_string(), "002".to_string()]);
         assert!(matches!(&cmd, Command::HistoryGet { ids } if ids == &["001".to_string(), "002".to_string()]));
+    }
+
+    #[test]
+    fn test_parse_with_args_policy_explain() {
+        let cmd = Command::parse_with_args("policy", &["explain".to_string()]);
+        assert_eq!(cmd, Command::PolicyExplain);
     }
 }

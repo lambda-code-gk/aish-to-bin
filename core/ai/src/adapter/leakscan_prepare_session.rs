@@ -363,7 +363,7 @@ mod tests {
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
         let prep = LeakscanPrepareSession::new(
             fs.clone(),
-            script_path,
+            script_path.clone(),
             rules_path,
             None,
             true,
@@ -375,7 +375,29 @@ mod tests {
         std::fs::write(&part_path, part_content).unwrap();
 
         let session_dir_ref = common::domain::SessionDir::new(session_dir.clone());
-        prep.prepare(&session_dir_ref).unwrap();
+        // ETXTBSY (os error 26) が出ることがあるため、リトライする
+        let mut last_err = None;
+        for _ in 0..5 {
+            match prep.prepare(&session_dir_ref) {
+                Ok(()) => {
+                    last_err = None;
+                    break;
+                }
+                Err(e) => {
+                    let msg = e.to_string();
+                    let is_etxtbsy = msg.contains("os error 26") || msg.contains("Text file busy");
+                    if is_etxtbsy {
+                        last_err = Some(e);
+                        std::thread::sleep(std::time::Duration::from_millis(25));
+                        continue;
+                    }
+                    panic!("prepare failed: {}", e);
+                }
+            }
+        }
+        if let Some(e) = last_err {
+            panic!("prepare failed after retries (ETXTBSY): {}", e);
+        }
 
         let reviewed_path = session_dir.join(REVIEWED_DIR).join("reviewed_ABC12_user.txt");
         assert!(fs.exists(&reviewed_path), "reviewed file should exist");

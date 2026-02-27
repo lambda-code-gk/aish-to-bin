@@ -27,6 +27,8 @@ pub enum AiCommand {
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
     },
+    /// config explain: 解決済み設定と source を表示
+    ConfigExplain,
     /// 保存された会話状態から再開（-c/--continue 指定時のみ）
     Resume {
         profile: Option<ProviderName>,
@@ -46,4 +48,6 @@ pub enum AiCommand {
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
     },
+    /// policy explain: 解決済みポリシー・ルール順・代表例を表示
+    PolicyExplain,
 }

@@ -85,7 +85,7 @@ fn duplicate_plugin_id_skips_second_and_emits_event() {
         eprintln!("skip: python3 not found");
         return;
     }
-    let temp = std::env::temp_dir().join("aish_loader_dup_test");
+    let temp = std::env::temp_dir().join(format!("aish_loader_dup_test_{}", std::process::id()));
     let _ = std::fs::create_dir_all(temp.join(".aish").join("plugins.d"));
     let script_path = write_working_mock_plugin(&temp);
     let script_str = script_path.to_string_lossy().into_owned();
@@ -110,20 +110,34 @@ transport:
 "#,
         script_str
     );
-    std::fs::write(temp.join(".aish").join("plugins.d").join("01_first.yaml"), &yaml1).unwrap();
-    std::fs::write(temp.join(".aish").join("plugins.d").join("02_second.yaml"), &yaml2).unwrap();
+    let plugins_d = temp.join(".aish").join("plugins.d");
+    std::fs::write(plugins_d.join("01_first.yaml"), &yaml1).unwrap();
+    std::fs::write(plugins_d.join("02_second.yaml"), &yaml2).unwrap();
 
     let collected = Arc::new(Mutex::new(Vec::<EventRecord>::new()));
     let hub = EventHub::new(vec![Box::new(CollectingSink(Arc::clone(&collected)))]);
     let handle = EventHubHandle(Arc::new(Mutex::new(hub)));
 
     let old_home = std::env::var("HOME").ok();
+    let old_aish_home = std::env::var("AISH_HOME").ok();
     std::env::set_var("HOME", temp.as_os_str());
+    std::env::set_var("AISH_HOME", temp.as_os_str());
+    let config_plugins_d = temp.join("config").join("plugins.d");
+    let _ = std::fs::create_dir_all(&config_plugins_d);
+    std::fs::write(config_plugins_d.join("01_first.yaml"), &yaml1).unwrap();
+    std::fs::write(config_plugins_d.join("02_second.yaml"), &yaml2).unwrap();
+
     let tools = load_external_plugins(
         Arc::new(StdFileSystem),
         Arc::new(StdEnvResolver),
         Some(handle),
     );
+
+    if let Some(h) = old_aish_home {
+        std::env::set_var("AISH_HOME", h);
+    } else {
+        std::env::remove_var("AISH_HOME");
+    }
     if let Some(h) = old_home {
         std::env::set_var("HOME", h);
     } else {
@@ -153,8 +167,8 @@ fn list_tools_failure_does_not_register_plugin() {
         eprintln!("skip: python3 not found");
         return;
     }
-    let temp = std::env::temp_dir().join("aish_loader_bad_list_test");
-    let _ = std::fs::create_dir_all(temp.join(".aish").join("plugins.d"));
+    let temp = std::env::temp_dir().join(format!("aish_loader_bad_list_test_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(temp.join("config").join("plugins.d"));
     let script_path = write_bad_list_tools_plugin(&temp);
     let script_str = script_path.to_string_lossy().into_owned();
 
@@ -168,19 +182,19 @@ transport:
 "#,
         script_str
     );
-    std::fs::write(temp.join(".aish").join("plugins.d").join("only.yaml"), &yaml).unwrap();
+    std::fs::write(temp.join("config").join("plugins.d").join("only.yaml"), &yaml).unwrap();
 
-    let old_home = std::env::var("HOME").ok();
-    std::env::set_var("HOME", temp.as_os_str());
+    let old_aish_home = std::env::var("AISH_HOME").ok();
+    std::env::set_var("AISH_HOME", temp.as_os_str());
     let tools = load_external_plugins(
         Arc::new(StdFileSystem),
         Arc::new(StdEnvResolver),
         None,
     );
-    if let Some(h) = old_home {
-        std::env::set_var("HOME", h);
+    if let Some(h) = old_aish_home {
+        std::env::set_var("AISH_HOME", h);
     } else {
-        std::env::remove_var("HOME");
+        std::env::remove_var("AISH_HOME");
     }
 
     assert_eq!(tools.len(), 0, "list_tools failure must not register any tool");

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use common::domain::event::{RunId, SessionId};
+use common::error::Error;
 use common::llm::events::{FinishReason, LlmEvent};
 use common::msg::Msg;
 use common::sink::{AgentEvent, EventSink};
@@ -11,7 +12,8 @@ use serde_json::Value;
 
 use crate::adapter::stub_llm::{StubLlm, ToolAwareStubLlm};
 use crate::domain::approval::StubApproval;
-use crate::ports::outbound::LlmEventStream;
+use crate::domain::{ContextPack, PolicyDecision, PolicyVerdict};
+use crate::ports::outbound::{LlmEventStream, PolicyEngine};
 use crate::usecase::agent_loop::{
     count_tool_results, msgs_to_provider, AgentLoop, AgentLoopOutcome, RunState,
 };
@@ -29,6 +31,104 @@ impl EventSink for StubEventSink {
     }
     fn on_end(&mut self) -> Result<(), common::error::Error> {
         Ok(())
+    }
+}
+
+/// テスト用: すべて Allow を返す PolicyEngine
+struct AllowAllPolicyEngine;
+impl PolicyEngine for AllowAllPolicyEngine {
+    fn evaluate_egress_context_pack(
+        &self,
+        pack: &ContextPack,
+        _non_interactive: bool,
+    ) -> Result<PolicyVerdict<ContextPack>, Error> {
+        Ok(PolicyVerdict::Allow {
+            value: pack.clone(),
+            decision: PolicyDecision {
+                v: 1,
+                scope: "egress".to_string(),
+                subject: "context_pack".to_string(),
+                status: "allowed".to_string(),
+                reason: "stub".to_string(),
+                details: serde_json::json!({}),
+            },
+        })
+    }
+    fn evaluate_tool_call(
+        &self,
+        tool_name: &str,
+        _tool_args: &Value,
+        tool_ctx: &ToolContext,
+        _non_interactive: bool,
+    ) -> Result<PolicyVerdict<ToolContext>, Error> {
+        Ok(PolicyVerdict::Allow {
+            value: tool_ctx.clone(),
+            decision: PolicyDecision {
+                v: 1,
+                scope: "tool".to_string(),
+                subject: tool_name.to_string(),
+                status: "allowed".to_string(),
+                reason: "stub".to_string(),
+                details: serde_json::json!({}),
+            },
+        })
+    }
+}
+
+/// テスト用: shell ツールに RequireApproval を返す PolicyEngine
+struct ShellRequireApprovalPolicyEngine;
+impl PolicyEngine for ShellRequireApprovalPolicyEngine {
+    fn evaluate_egress_context_pack(
+        &self,
+        pack: &ContextPack,
+        _non_interactive: bool,
+    ) -> Result<PolicyVerdict<ContextPack>, Error> {
+        Ok(PolicyVerdict::Allow {
+            value: pack.clone(),
+            decision: PolicyDecision {
+                v: 1,
+                scope: "egress".to_string(),
+                subject: "context_pack".to_string(),
+                status: "allowed".to_string(),
+                reason: "stub".to_string(),
+                details: serde_json::json!({}),
+            },
+        })
+    }
+    fn evaluate_tool_call(
+        &self,
+        tool_name: &str,
+        tool_args: &Value,
+        tool_ctx: &ToolContext,
+        _non_interactive: bool,
+    ) -> Result<PolicyVerdict<ToolContext>, Error> {
+        if tool_name == "run_shell" {
+            let command = tool_args.get("command").and_then(Value::as_str).unwrap_or("");
+            Ok(PolicyVerdict::RequireApproval {
+                value: tool_ctx.clone().with_allow_unsafe(true),
+                decision: PolicyDecision {
+                    v: 1,
+                    scope: "tool".to_string(),
+                    subject: "run_shell".to_string(),
+                    status: "warn".to_string(),
+                    reason: "approval_required".to_string(),
+                    details: serde_json::json!({}),
+                },
+                prompt: command.to_string(),
+            })
+        } else {
+            Ok(PolicyVerdict::Allow {
+                value: tool_ctx.clone(),
+                decision: PolicyDecision {
+                    v: 1,
+                    scope: "tool".to_string(),
+                    subject: tool_name.to_string(),
+                    status: "allowed".to_string(),
+                    reason: "stub".to_string(),
+                    details: serde_json::json!({}),
+                },
+            })
+        }
     }
 }
 
@@ -124,7 +224,8 @@ fn test_agent_loop_run_once_text_only() {
     let ctx = ToolContext::new(None);
     let sinks: Vec<Box<dyn EventSink>> = vec![Box::new(StubEventSink::new())];
     let approver = Arc::new(StubApproval::approved());
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(AllowAllPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("Hi")];
     let (new_msgs, state, assistant_text) = loop_.run_once(&messages, None).unwrap();
     assert_eq!(state, RunState::Done);
@@ -158,7 +259,8 @@ fn test_agent_loop_run_once_with_tool_call() {
     let sinks: Vec<Box<dyn EventSink>> = vec![];
     let approver = Arc::new(StubApproval::approved());
     let stub = Arc::new(stub);
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(AllowAllPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("echo hello")];
     let (new_msgs, state, _text) = loop_.run_once(&messages, None).unwrap();
 
@@ -194,7 +296,8 @@ fn test_agent_loop_shell_tool_denied() {
     let sinks: Vec<Box<dyn EventSink>> = vec![];
     let approver = Arc::new(StubApproval::denied());
     let stub = Arc::new(stub);
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(ShellRequireApprovalPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("run it")];
     let (new_msgs, state, _text) = loop_.run_once(&messages, None).unwrap();
 
@@ -233,7 +336,8 @@ fn test_agent_loop_shell_tool_approved() {
     let sinks: Vec<Box<dyn EventSink>> = vec![];
     let approver = Arc::new(StubApproval::approved());
     let stub = Arc::new(stub);
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(ShellRequireApprovalPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("run it")];
     let (new_msgs, state, _text) = loop_.run_once(&messages, None).unwrap();
 
@@ -272,7 +376,8 @@ fn test_agent_loop_run_until_done_reached_limit() {
     let sinks: Vec<Box<dyn EventSink>> = vec![Box::new(StubEventSink::new())];
     let approver = Arc::new(StubApproval::approved());
     let stub = Arc::new(stub);
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(AllowAllPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("echo")];
     let outcome = loop_.run_until_done(&messages, 2, 100).unwrap();
     match &outcome {
@@ -290,7 +395,8 @@ fn test_agent_loop_run_until_done_done() {
     let ctx = ToolContext::new(None);
     let sinks: Vec<Box<dyn EventSink>> = vec![Box::new(StubEventSink::new())];
     let approver = Arc::new(StubApproval::approved());
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(AllowAllPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("Hi")];
     let outcome = loop_.run_until_done(&messages, 16, 16).unwrap();
     match &outcome {
@@ -330,7 +436,8 @@ fn test_agent_loop_run_until_done_capped_by_tool_calls() {
     let ctx = ToolContext::new(None);
     let sinks: Vec<Box<dyn EventSink>> = vec![Box::new(StubEventSink::new())];
     let approver = Arc::new(StubApproval::approved());
-    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, Some("run_shell"), None, None, SessionId::new(""), RunId::new(""));
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(AllowAllPolicyEngine);
+    let mut loop_ = AgentLoop::new(stub, registry, ctx, sinks, approver, policy_engine, false, None, None, SessionId::new(""), RunId::new(""));
     let messages = vec![Msg::user("echo many")];
     let outcome = loop_.run_until_done(&messages, 10, 3).unwrap();
     match &outcome {
@@ -376,13 +483,15 @@ fn test_agent_loop_run_until_done_finalization_on_limit() {
     let ctx = ToolContext::new(None);
     let sinks: Vec<Box<dyn EventSink>> = vec![];
     let approver = Arc::new(StubApproval::approved());
+    let policy_engine: Arc<dyn PolicyEngine> = Arc::new(AllowAllPolicyEngine);
     let mut loop_ = AgentLoop::new(
         stub,
         registry,
         ctx,
         sinks,
         approver,
-        Some("run_shell"),
+        policy_engine,
+        false,
         None,
         None,
         SessionId::new(""),

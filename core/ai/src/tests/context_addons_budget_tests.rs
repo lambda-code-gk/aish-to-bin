@@ -71,6 +71,7 @@ fn test_addons_budget_limits_to_one() {
         vec![selector],
         ContextBudget { max_messages: 1, max_chars: 100_000 },
         PathBuf::from("."),
+        None,
     );
 
     let history = vec![LlmMessage::user("history")];
@@ -110,6 +111,7 @@ fn test_addons_inserted_before_query() {
         vec![selector],
         ContextBudget { max_messages: 10, max_chars: 100_000 },
         PathBuf::from("."),
+        None,
     );
 
     let history = vec![LlmMessage::user("history msg")];
@@ -142,6 +144,7 @@ fn test_selector_failure_recorded_as_decision() {
         vec![failing],
         ContextBudget { max_messages: 8, max_chars: 8_000 },
         PathBuf::from("."),
+        None,
     );
 
     let history = vec![LlmMessage::user("hello")];
@@ -169,6 +172,7 @@ fn test_addons_char_budget_limits() {
         vec![selector],
         ContextBudget { max_messages: 10, max_chars: 100 },
         PathBuf::from("."),
+        None,
     );
 
     let history = vec![LlmMessage::user("history")];

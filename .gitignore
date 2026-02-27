@@ -30,3 +30,5 @@ home/cache/
 home/tmp/
 home/logs/
 home/data/
+
+**/node_modules

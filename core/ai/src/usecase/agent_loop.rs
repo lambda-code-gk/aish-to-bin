@@ -3,7 +3,8 @@
 //! 直列の transaction script をやめ、RunState で遷移する。
 //! LLM から ToolCallEnd が来たら tool 実行フェーズへ遷移し、結果を messages に注入する。
 
-use crate::ports::outbound::{Approval, InterruptChecker, LlmEventStream, ToolApproval};
+use crate::domain::PolicyVerdict;
+use crate::ports::outbound::{Approval, InterruptChecker, LlmEventStream, PolicyEngine, ToolApproval};
 use common::domain::event::{Event, RunId, SessionId};
 use common::error::Error;
 use common::event_hub::EventHubHandle;
@@ -11,7 +12,7 @@ use common::llm::events::{FinishReason, LlmEvent};
 use common::llm::provider::Message;
 use common::msg::Msg;
 use common::sink::{AgentEvent, EventSink};
-use common::tool::{is_command_allowed, ToolContext, ToolRegistry};
+use common::tool::{ToolContext, ToolRegistry};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -167,8 +168,8 @@ pub struct AgentLoop {
     tool_context: ToolContext,
     sinks: Vec<Box<dyn EventSink>>,
     approver: Arc<dyn ToolApproval>,
-    /// シェル系ツールの名前（allowlist 不一致時に承認を求める）。例: "run_shell"
-    shell_tool_name: Option<&'static str>,
+    policy_engine: Arc<dyn PolicyEngine>,
+    non_interactive: bool,
     /// Ctrl+C 等の割り込み検知。Some のときストリームコールバック内でチェックする
     interrupt_checker: Option<Arc<dyn InterruptChecker>>,
     /// transcript / HumanLog 用。Some のとき provider.* / policy.* を emit
@@ -184,7 +185,8 @@ impl AgentLoop {
         tool_context: ToolContext,
         sinks: Vec<Box<dyn EventSink>>,
         approver: Arc<dyn ToolApproval>,
-        shell_tool_name: Option<&'static str>,
+        policy_engine: Arc<dyn PolicyEngine>,
+        non_interactive: bool,
         interrupt_checker: Option<Arc<dyn InterruptChecker>>,
         event_hub: Option<EventHubHandle>,
         session_id: SessionId,
@@ -196,7 +198,8 @@ impl AgentLoop {
             tool_context,
             sinks,
             approver,
-            shell_tool_name,
+            policy_engine,
+            non_interactive,
             interrupt_checker,
             event_hub,
             session_id,
@@ -349,61 +352,79 @@ impl AgentLoop {
                 // 履歴にツール呼び出し自体を記録（直前の assistant メッセージに紐付く）
                 new_messages.push(Msg::tool_call(call_id.clone(), name.clone(), args.clone(), thought_signature.clone()));
 
-                // シェル系ツールの場合は allowlist 判定と承認を行う
-                let effective_ctx = if self.shell_tool_name.map_or(false, |s| s == name.as_str()) {
-                    let command = args.get("command").and_then(Value::as_str).unwrap_or("");
-                    let effective = if is_command_allowed(command, &self.tool_context.command_allow_rules) {
+                let verdict = self.policy_engine.evaluate_tool_call(
+                    name.as_str(),
+                    &args,
+                    &self.tool_context,
+                    self.non_interactive,
+                )?;
+                let effective_ctx = match verdict {
+                    PolicyVerdict::Allow { value, decision } => {
                         if let Some(ref hub) = self.event_hub {
                             hub.emit(Event {
                                 v: 1,
                                 session_id: self.session_id.clone(),
                                 run_id: self.run_id.clone(),
                                 kind: "policy.evaluated".to_string(),
-                                payload: serde_json::json!({
-                                    "tool": name.as_str(),
-                                    "status": "allowed",
-                                    "reason": "allowlist",
-                                    "program": command.split_whitespace().next().unwrap_or(""),
-                                    "args_preview": command.split_whitespace().skip(1).take(3).collect::<Vec<_>>().join(" "),
-                                }),
+                                payload: decision.to_event_payload(),
                             });
                         }
-                        self.tool_context.clone()
-                    } else {
-                        // allowlist 不一致 → 承認を求める（Ctrl+C で Err が返る）
-                        match self.approver.approve_unsafe_shell(command) {
+                        value
+                    }
+                    PolicyVerdict::RequireApproval { value, decision, prompt } => {
+                        if self.non_interactive {
+                            let mut deny_decision = decision.clone();
+                            deny_decision.status = "blocked".to_string();
+                            deny_decision.reason = "approval_required_non_interactive".to_string();
+                            if let Some(ref hub) = self.event_hub {
+                                hub.emit(Event {
+                                    v: 1,
+                                    session_id: self.session_id.clone(),
+                                    run_id: self.run_id.clone(),
+                                    kind: "policy.evaluated".to_string(),
+                                    payload: deny_decision.to_event_payload(),
+                                });
+                            }
+                            let msg = "PermissionDenied: non-interactive mode".to_string();
+                            self.emit(&AgentEvent::ToolError {
+                                call_id: call_id.clone(),
+                                name: name.clone(),
+                                args: args.clone(),
+                                message: msg.clone(),
+                            })?;
+                            new_messages.push(Msg::tool_result(
+                                &call_id,
+                                &name,
+                                serde_json::json!({ "error": msg }),
+                            ));
+                            continue;
+                        }
+                        match self.approver.approve_unsafe_shell(&prompt) {
                             Ok(Approval::Approved) => {
+                                let mut approved_decision = decision;
+                                approved_decision.reason = "user_approved".to_string();
                                 if let Some(ref hub) = self.event_hub {
                                     hub.emit(Event {
                                         v: 1,
                                         session_id: self.session_id.clone(),
                                         run_id: self.run_id.clone(),
                                         kind: "policy.evaluated".to_string(),
-                                        payload: serde_json::json!({
-                                            "tool": name.as_str(),
-                                            "status": "warn",
-                                            "reason": "user_approved",
-                                            "program": command.split_whitespace().next().unwrap_or(""),
-                                            "args_preview": command.split_whitespace().skip(1).take(3).collect::<Vec<_>>().join(" "),
-                                        }),
+                                        payload: approved_decision.to_event_payload(),
                                     });
                                 }
-                                self.tool_context.clone().with_allow_unsafe(true)
+                                value
                             }
                             Ok(Approval::Denied) => {
+                                let mut denied_decision = decision;
+                                denied_decision.status = "blocked".to_string();
+                                denied_decision.reason = "denied_by_user".to_string();
                                 if let Some(ref hub) = self.event_hub {
                                     hub.emit(Event {
                                         v: 1,
                                         session_id: self.session_id.clone(),
                                         run_id: self.run_id.clone(),
                                         kind: "policy.evaluated".to_string(),
-                                        payload: serde_json::json!({
-                                            "tool": name.as_str(),
-                                            "status": "blocked",
-                                            "reason": "denied by user",
-                                            "program": command.split_whitespace().next().unwrap_or(""),
-                                            "args_preview": command.split_whitespace().skip(1).take(3).collect::<Vec<_>>().join(" "),
-                                        }),
+                                        payload: denied_decision.to_event_payload(),
                                     });
                                 }
                                 let msg = "denied by user".to_string();
@@ -418,15 +439,35 @@ impl AgentLoop {
                                     &name,
                                     serde_json::json!({ "error": msg }),
                                 ));
-                                continue; // 次のツールへ
+                                continue;
                             }
                             Err(e) => return Err(e),
                         }
-                    };
-                    effective
-                } else {
-                    // シェル系以外はそのまま実行
-                    self.tool_context.clone()
+                    }
+                    PolicyVerdict::Deny { decision } => {
+                        if let Some(ref hub) = self.event_hub {
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: self.session_id.clone(),
+                                run_id: self.run_id.clone(),
+                                kind: "policy.evaluated".to_string(),
+                                payload: decision.to_event_payload(),
+                            });
+                        }
+                        let msg = "PermissionDenied: blocked by policy".to_string();
+                        self.emit(&AgentEvent::ToolError {
+                            call_id: call_id.clone(),
+                            name: name.clone(),
+                            args: args.clone(),
+                            message: msg.clone(),
+                        })?;
+                        new_messages.push(Msg::tool_result(
+                            &call_id,
+                            &name,
+                            serde_json::json!({ "error": msg }),
+                        ));
+                        continue;
+                    }
                 };
 
                 match self.tool_registry.call(name.as_str(), args.clone(), &effective_ctx) {

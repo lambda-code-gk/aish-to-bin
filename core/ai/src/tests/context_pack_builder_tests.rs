@@ -22,6 +22,7 @@ fn make_passthrough_builder() -> StdContextPackBuilder {
         vec![],
         no_addons_budget(),
         PathBuf::from("."),
+        None,
     )
 }
 
@@ -35,6 +36,7 @@ fn make_tail_builder(max_messages: usize, max_chars: usize) -> StdContextPackBui
         vec![],
         no_addons_budget(),
         PathBuf::from("."),
+        None,
     )
 }
 

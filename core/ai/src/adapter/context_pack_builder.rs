@@ -2,9 +2,12 @@
 
 use crate::domain::{
     Budget, BudgetDecision, BudgetReport, BudgetStats, ContextAddon, ContextBudget, ContextPack,
-    HistoryReducer, Query,
+    HistoryReducer, Query, SensitiveFilterOutcome,
 };
-use crate::ports::outbound::{ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement};
+use crate::ports::outbound::{
+    ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
+    SensitiveTextFilter,
+};
 use common::error::Error;
 use common::llm::provider::Message as LlmMessage;
 use common::msg::Msg;
@@ -64,6 +67,7 @@ pub struct StdContextPackBuilder {
     selectors: Vec<Arc<dyn ContextAddonSelector>>,
     addons_budget: ContextBudget,
     project_root: PathBuf,
+    sensitive_filter: Option<Arc<dyn SensitiveTextFilter>>,
 }
 
 impl StdContextPackBuilder {
@@ -73,6 +77,7 @@ impl StdContextPackBuilder {
         selectors: Vec<Arc<dyn ContextAddonSelector>>,
         addons_budget: ContextBudget,
         project_root: PathBuf,
+        sensitive_filter: Option<Arc<dyn SensitiveTextFilter>>,
     ) -> Self {
         Self {
             reducer,
@@ -80,7 +85,32 @@ impl StdContextPackBuilder {
             selectors,
             addons_budget,
             project_root,
+            sensitive_filter,
         }
+    }
+}
+
+fn msg_text_content(msg: &Msg) -> Option<&str> {
+    match msg {
+        Msg::System(s) | Msg::User(s) | Msg::Assistant(s) => Some(s.as_str()),
+        _ => None,
+    }
+}
+
+fn replace_msg_text(msg: &Msg, new_text: String) -> Msg {
+    match msg {
+        Msg::System(_) => Msg::system(new_text),
+        Msg::User(_) => Msg::user(new_text),
+        Msg::Assistant(_) => Msg::assistant(new_text),
+        other => other.clone(),
+    }
+}
+
+fn truncate_verbose(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}...(truncated)", &s[..max])
     }
 }
 
@@ -162,6 +192,95 @@ impl ContextPackBuilder for StdContextPackBuilder {
 
         // sort by priority desc (higher = more important)
         candidates.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+        // --- Phase 2.5: sensitive filter on addon candidates ---
+        if let Some(ref filter) = self.sensitive_filter {
+            let mut filtered = Vec::with_capacity(candidates.len());
+            for mut addon in candidates {
+                let mut denied = false;
+                if let Some(text) = msg_text_content(&addon.msg) {
+                    match filter.filter(text) {
+                        Ok(SensitiveFilterOutcome::Clean) => {}
+                        Ok(SensitiveFilterOutcome::Deny { verbose }) => {
+                            decisions.push(BudgetDecision {
+                                stage: "addon.sensitive".to_string(),
+                                action: "deny".to_string(),
+                                reason: "leakscan".to_string(),
+                                details: serde_json::json!({
+                                    "addon_id": addon.id,
+                                    "kind": addon.kind,
+                                    "target": "msg",
+                                    "verbose": truncate_verbose(&verbose, 2000),
+                                }),
+                            });
+                            denied = true;
+                        }
+                        Ok(SensitiveFilterOutcome::Masked { masked, verbose }) => {
+                            decisions.push(BudgetDecision {
+                                stage: "addon.sensitive".to_string(),
+                                action: "mask".to_string(),
+                                reason: "leakscan".to_string(),
+                                details: serde_json::json!({
+                                    "addon_id": addon.id,
+                                    "kind": addon.kind,
+                                    "target": "msg",
+                                    "verbose": truncate_verbose(&verbose, 2000),
+                                }),
+                            });
+                            addon.msg = replace_msg_text(&addon.msg, masked);
+                        }
+                        Err(_) => {}
+                    }
+                }
+                if denied {
+                    continue;
+                }
+                if let Some(ref att) = addon.attachment {
+                    if let Some(ref content) = att.content {
+                        match filter.filter(content) {
+                            Ok(SensitiveFilterOutcome::Clean) => {}
+                            Ok(SensitiveFilterOutcome::Deny { verbose }) => {
+                                decisions.push(BudgetDecision {
+                                    stage: "addon.sensitive".to_string(),
+                                    action: "deny".to_string(),
+                                    reason: "leakscan".to_string(),
+                                    details: serde_json::json!({
+                                        "addon_id": addon.id,
+                                        "kind": addon.kind,
+                                        "target": "attachment",
+                                        "verbose": truncate_verbose(&verbose, 2000),
+                                    }),
+                                });
+                                continue;
+                            }
+                            Ok(SensitiveFilterOutcome::Masked { masked, verbose }) => {
+                                decisions.push(BudgetDecision {
+                                    stage: "addon.sensitive".to_string(),
+                                    action: "mask".to_string(),
+                                    reason: "leakscan".to_string(),
+                                    details: serde_json::json!({
+                                        "addon_id": addon.id,
+                                        "kind": addon.kind,
+                                        "target": "attachment",
+                                        "verbose": truncate_verbose(&verbose, 2000),
+                                    }),
+                                });
+                                let new_hash = crate::domain::hash64(&masked);
+                                let new_bytes = masked.len() as u64;
+                                let mut new_att = att.clone();
+                                new_att.content = Some(masked);
+                                new_att.bytes = new_bytes;
+                                new_att.hash64 = new_hash;
+                                addon.attachment = Some(new_att);
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                }
+                filtered.push(addon);
+            }
+            candidates = filtered;
+        }
 
         // --- Phase 3: budget-fit addons ---
         let baseline_chars = msgs_char_total(&msgs);
