@@ -1,6 +1,8 @@
 //! 結合テスト（アダプタ経由で I/O を行うテスト）
 
 mod agent_loop_tests;
+mod context_addons_budget_tests;
+mod context_artifact_store_tests;
 mod context_message_builder_tests;
 mod context_pack_builder_tests;
 mod manifest_reviewed_session_storage_tests;

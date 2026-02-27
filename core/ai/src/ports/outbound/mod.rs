@@ -3,6 +3,8 @@
 pub mod agent_state_storage;
 pub mod compaction_strategy;
 pub mod approval;
+pub mod context_addon_selector;
+pub mod context_artifact_store;
 pub mod external_tool_executor;
 pub mod dry_run_report_sink;
 pub mod command_allow_rules_loader;
@@ -32,6 +34,8 @@ pub use approval::{Approval, ToolApproval};
 pub use external_tool_executor::ExternalToolExecutor;
 pub use dry_run_report_sink::DryRunReportSink;
 pub use command_allow_rules_loader::CommandAllowRulesLoader;
+pub use context_addon_selector::{ContextAddonInput, ContextAddonSelector};
+pub use context_artifact_store::ContextArtifactStore;
 pub use context_message_builder::{ContextMessageBuilder, QueryPlacement};
 pub use context_pack_builder::ContextPackBuilder;
 pub use continue_prompt::ContinueAfterLimitPrompt;

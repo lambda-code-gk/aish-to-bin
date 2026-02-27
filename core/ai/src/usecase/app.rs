@@ -1,10 +1,10 @@
 use crate::domain::{DryRunInfo, LifecycleEvent, QueryOutcome};
 use crate::ports::outbound::{
-    AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextPackBuilder,
-    ContinueAfterLimitPrompt, DryRunReportSink, EventSinkFactory, InterruptChecker, LifecycleHooks,
-    LlmEventStreamFactory, PrepareSessionForSensitiveCheck, ProfileLister, QueryPlacement,
-    ResolveMemoryDir, ResolveProfileAndModel, RunQuery, SessionHistoryLoader, SessionResponseSaver,
-    ToolApproval,
+    AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextArtifactStore,
+    ContextPackBuilder, ContinueAfterLimitPrompt, DryRunReportSink, EventSinkFactory,
+    InterruptChecker, LifecycleHooks, LlmEventStreamFactory, PrepareSessionForSensitiveCheck,
+    ProfileLister, QueryPlacement, ResolveMemoryDir, ResolveProfileAndModel, RunQuery,
+    SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopOutcome};
 use common::ports::outbound::EnvResolver;
@@ -38,6 +38,7 @@ pub struct SessionDeps {
     pub fs: Arc<dyn FileSystem>,
     pub history_loader: Arc<dyn SessionHistoryLoader>,
     pub context_pack_builder: Arc<dyn ContextPackBuilder>,
+    pub artifact_store: Arc<dyn ContextArtifactStore>,
     pub response_saver: Arc<dyn SessionResponseSaver>,
     pub agent_state_saver: Arc<dyn AgentStateSaver>,
     pub agent_state_loader: Arc<dyn AgentStateLoader>,
@@ -347,7 +348,7 @@ impl AiUseCase {
                 } else {
                     (Vec::new(), QueryPlacement::AppendAtEnd)
                 };
-                let pack = match self.deps.session.context_pack_builder.build(
+                let mut pack = match self.deps.session.context_pack_builder.build(
                     &history_messages,
                     Some(q),
                     system_instruction,
@@ -380,8 +381,31 @@ impl AiUseCase {
                     }
                 };
 
+                if let Some(dir) = session_dir.as_ref() {
+                    if !pack.attachments.is_empty() {
+                        match self.deps.session.artifact_store.store(dir, &run_id, &pack.attachments) {
+                            Ok(stored) => pack.attachments = stored,
+                            Err(e) => {
+                                let _ = self.deps.obs.log.log(&LogRecord {
+                                    ts: now_iso8601(),
+                                    level: LogLevel::Warn,
+                                    message: format!("Failed to store context artifacts: {}", e),
+                                    layer: Some("usecase".to_string()),
+                                    kind: Some("artifact".to_string()),
+                                    fields: None,
+                                });
+                            }
+                        }
+                    }
+                }
+
                 if let Some(ref hub) = event_hub {
                     let report = &pack.budget_report;
+                    let artifact_refs: Vec<&str> = pack
+                        .attachments
+                        .iter()
+                        .filter_map(|a| a.artifact_rel_path.as_deref())
+                        .collect();
                     hub.emit(Event {
                         v: 1,
                         session_id: session_id.clone(),
@@ -401,6 +425,8 @@ impl AiUseCase {
                                 "char_count": report.output.char_count,
                             },
                             "decisions": report.decisions,
+                            "attachments_count": pack.attachments.len(),
+                            "artifact_refs": artifact_refs,
                         }),
                     });
                 }

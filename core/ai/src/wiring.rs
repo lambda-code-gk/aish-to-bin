@@ -13,22 +13,25 @@ use common::tool::EchoTool;
 
 use crate::adapter::{
     external_plugin_loader,
-    CliContinuePrompt, CliToolApproval, CompositeLifecycleHooks, DeterministicCompactionStrategy,
-    FileAgentStateStorage, GetMemoryContentTool, GrepTool, LeakscanPrepareSession,
-    ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy, NoContinuePrompt,
-    NoopInterruptChecker, NonInteractiveToolApproval, PartSessionStorage, PassThroughReducer,
-    ReadFileTool, ReplaceFileTool, ReviewedTailViewStrategy, SelfImproveHandler, SigintChecker,
-    StdCommandAllowRulesLoader, StdContextPackBuilder, StdEventSinkFactory, StdLlmCompletion,
-    StdLlmEventStreamFactory, StdProfileLister, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel, StdResolveSystemPromptFromHooks, StdoutDryRunReportSink, StdTaskRunner,
-    ShellTool, TailWindowReducer, WriteFileTool,
-    HistoryGetTool, HistorySearchTool, QueueShellSuggestionTool, SaveMemoryTool, SearchMemoryTool,
+    ChangedFilesSnippetSelector, CliContinuePrompt, CliToolApproval, CompositeLifecycleHooks,
+    DeterministicCompactionStrategy, FileAgentStateStorage, GetMemoryContentTool, GrepTool,
+    LeakscanPrepareSession, ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy,
+    NoContinuePrompt, NoopInterruptChecker, NonInteractiveToolApproval, PartSessionStorage,
+    PassThroughReducer, ReadFileTool, ReplaceFileTool, ReviewedTailViewStrategy, SelfImproveHandler,
+    SigintChecker, StdCommandAllowRulesLoader, StdContextArtifactStore, StdContextPackBuilder,
+    StdEventSinkFactory, StdLlmCompletion, StdLlmEventStreamFactory, StdProfileLister,
+    StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel,
+    StdResolveSystemPromptFromHooks, StdoutDryRunReportSink, StdTaskRunner, ShellTool,
+    TailWindowReducer, WriteFileTool, HistoryGetTool, HistorySearchTool,
+    QueueShellSuggestionTool, SaveMemoryTool, SearchMemoryTool,
 };
 use crate::adapter::lifecycle::LifecycleHandler;
 use crate::domain::{ContextBudget, Query};
 use crate::ports::outbound::{
-    AgentStateLoader, AgentStateSaver, ContextPackBuilder, DryRunReportSink, LifecycleHooks,
-    LlmCompletion, PrepareSessionForSensitiveCheck, ResolveModeConfig, ResolveSystemPromptFromHooks,
-    RunQuery, SessionHistoryLoader, SessionResponseSaver, TaskRunner,
+    AgentStateLoader, AgentStateSaver, ContextAddonSelector, ContextArtifactStore,
+    ContextPackBuilder, DryRunReportSink, LifecycleHooks, LlmCompletion,
+    PrepareSessionForSensitiveCheck, ResolveModeConfig, ResolveSystemPromptFromHooks, RunQuery,
+    SessionHistoryLoader, SessionResponseSaver, TaskRunner,
 };
 use crate::usecase::app::{AiDeps, AiUseCase, ModelDeps, ObsDeps, PolicyDeps, SessionDeps, SystemDeps, ToolingDeps};
 use crate::usecase::task::TaskUseCase;
@@ -197,13 +200,34 @@ fn build_session_deps(
     let agent_state_loader: Arc<dyn AgentStateLoader> =
         Arc::clone(&agent_state_storage) as Arc<dyn AgentStateLoader>;
 
+    let selectors: Vec<Arc<dyn ContextAddonSelector>> = vec![
+        Arc::new(ChangedFilesSnippetSelector::new(Arc::clone(fs), 8, 16_000, 200)),
+    ];
+    let addons_max_messages = std::env::var("AISH_CONTEXT_ADDONS_MAX_MESSAGES")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8);
+    let addons_max_chars = std::env::var("AISH_CONTEXT_ADDONS_MAX_CHARS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8_000);
+    let addons_budget = ContextBudget {
+        max_messages: addons_max_messages,
+        max_chars: addons_max_chars,
+    };
+    let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
     let context_pack_builder: Arc<dyn ContextPackBuilder> =
-        Arc::new(StdContextPackBuilder::new(reducer, budget));
+        Arc::new(StdContextPackBuilder::new(reducer, budget, selectors, addons_budget, project_root));
+
+    let artifact_store: Arc<dyn ContextArtifactStore> =
+        Arc::new(StdContextArtifactStore::new(Arc::clone(fs)));
 
     SessionDeps {
         fs: Arc::clone(fs),
         history_loader,
         context_pack_builder,
+        artifact_store,
         response_saver,
         agent_state_saver,
         agent_state_loader,

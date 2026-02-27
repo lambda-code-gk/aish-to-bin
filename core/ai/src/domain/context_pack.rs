@@ -17,7 +17,10 @@ pub struct ContextAttachment {
     pub kind: String,
     pub title: String,
     pub content_type: String,
-    pub content: String,
+    pub content: Option<String>,
+    pub artifact_rel_path: Option<String>,
+    pub bytes: u64,
+    pub hash64: String,
     pub source: Option<ContextSource>,
 }
 
