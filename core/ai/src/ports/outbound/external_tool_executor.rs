@@ -1,6 +1,8 @@
 //! 外部ツール実行 Outbound ポート
 //!
 //! プラグインの call_tool を中継する。usecase は知らず、Tool 実装（ExternalToolProxy）が使用する。
+//! 外部プラグイン対応用（将来有効化予定）。
+#![allow(dead_code)]
 
 use crate::domain::external_plugin::{ExternalPluginError, ExternalPluginId};
 use serde_json::Value;

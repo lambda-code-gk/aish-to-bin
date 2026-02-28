@@ -1,6 +1,8 @@
 //! 履歴＋クエリから Vec<Msg> を構築する標準アダプタ
 //!
 //! Phase B で HistoryReducer + ContextBudget を組み込む。
+//! StdContextMessageBuilder 等はテストで使用。
+#![allow(dead_code)]
 
 use crate::domain::Query;
 use crate::ports::outbound::{ContextMessageBuilder, QueryPlacement};

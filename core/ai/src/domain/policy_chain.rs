@@ -9,6 +9,8 @@ pub struct PolicyChain {
 }
 
 impl PolicyChain {
+    /// ルールチェーン構築用（wiring 等で使用予定）
+    #[allow(dead_code)]
     pub fn new(
         egress_rules: Vec<Arc<dyn EgressPolicyRule>>,
         tool_rules: Vec<Arc<dyn ToolPolicyRule>>,

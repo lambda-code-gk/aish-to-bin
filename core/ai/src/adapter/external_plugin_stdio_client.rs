@@ -1,6 +1,8 @@
 //! 外部プロセスと stdio で JSON-RPC 2.0 通信するクライアント
 //!
 //! 1 行 1 JSON。起動タイムアウト・呼び出しタイムアウト・応答サイズ制限・stderr 制限あり。
+//! 外部プラグイン対応用（将来有効化予定）。
+#![allow(dead_code)]
 
 use crate::domain::external_plugin::{
     ExternalPluginError, ExternalToolCallResponse, ExternalToolDescriptor, PluginTimeouts,

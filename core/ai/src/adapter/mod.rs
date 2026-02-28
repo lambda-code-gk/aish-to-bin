@@ -64,7 +64,10 @@ pub(crate) use context_addon_selectors_memory::MemorySelector;
 pub(crate) use context_artifact_store::StdContextArtifactStore;
 pub(crate) use daemon_event_appender::DaemonEventAppender;
 pub(crate) use fallback_event_appender::FallbackEventAppender;
+// 以下はテストで参照（context_message_builder_tests, context_pack_builder_tests）。本ビルドでは未使用のため allow。
+#[allow(unused_imports)]
 pub(crate) use context_message_builder::StdContextMessageBuilder;
+#[allow(unused_imports)]
 pub(crate) use context_pack_builder::{StdContextPackBuilder, StdContextPackBuilderWithAddons};
 pub(crate) use continue_prompt::{CliContinuePrompt, NoContinuePrompt};
 pub(crate) use dry_run_report_sink::StdoutDryRunReportSink;

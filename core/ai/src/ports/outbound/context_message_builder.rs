@@ -1,6 +1,8 @@
 //! 履歴＋クエリから LLM 用 Vec<Msg> を構築する Outbound ポート
 //!
 //! 選別/加工アルゴリズムの差し替えは wiring で完結する。
+//! StdContextMessageBuilder が実装。本 trait はテスト等で型として参照される。
+#![allow(dead_code)]
 
 use crate::domain::Query;
 use common::llm::provider::Message as LlmMessage;

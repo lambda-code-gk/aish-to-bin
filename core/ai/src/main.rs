@@ -16,7 +16,6 @@ use cli::{config_to_command, parse_args, parse_args_from_os, print_completion, C
 use domain::{AiCommand, TaskName};
 use ports::inbound::UseCaseRunner;
 use common::event_hub::{build_event_hub, EventHubHandle};
-use std::sync::Arc;
 use wiring::{wire_ai, App};
 
 /// Command をディスパッチする Runner（match は main レイヤーに集約）

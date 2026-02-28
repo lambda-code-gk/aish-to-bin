@@ -15,12 +15,10 @@ pub use entry::{run, run_with_args};
 pub(crate) use entry::Runner;
 
 mod entry {
-    use super::*;
     use common::domain::{ModelName, ProviderName, SessionDir};
     use common::error::Error;
     use common::event_hub::{build_event_hub, EventHubHandle};
     use common::ports::outbound::{now_iso8601, Log, LogLevel, LogRecord};
-    use std::sync::Arc;
 
     use crate::cli::{
         config_to_command, parse_args, parse_args_from_os, print_completion, Config, ParseOutcome,
@@ -530,7 +528,8 @@ mod entry {
         run_with_outcome(&outcome)
     }
 
-    /// Usage line for error output (used by binary main).
+    /// Usage line for error output (binary main のエラー表示用。現状は cli 側で直接表示しているため未使用)
+    #[allow(dead_code)]
     pub fn print_usage() {
         eprintln!("Usage: ai [options] [task] [message...]");
     }

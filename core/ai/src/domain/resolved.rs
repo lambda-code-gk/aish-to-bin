@@ -13,7 +13,8 @@ impl<T> Resolved<T> {
         Self { value, source }
     }
 
-    /// 値を写像しつつ source を保持する
+    /// 値を写像しつつ source を保持する（将来の設定変換用に予約）
+    #[allow(dead_code)]
     pub fn map<U, F>(self, f: F) -> Resolved<U>
     where
         F: FnOnce(T) -> U,

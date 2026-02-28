@@ -232,7 +232,8 @@ pub async fn run_status(socket_path: &std::path::Path) -> Result<(), Box<dyn std
     Ok(())
 }
 
-/// rebuild_derived RPC を送り、成功時は結果を返す
+/// rebuild_derived RPC を送り、成功時は結果を返す（main.rs の sessions サブコマンドで使用）
+#[allow(dead_code)]
 pub async fn run_rebuild_derived(
     socket_path: &std::path::Path,
     session_dir: &str,

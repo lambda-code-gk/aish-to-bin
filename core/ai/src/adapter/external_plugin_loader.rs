@@ -2,6 +2,8 @@
 //!
 //! fail-closed: 起動失敗・list_tools 失敗したプラグインはスキップし、他は継続。
 //! plugin_id は一意必須。重複時は先勝ち（最初に処理した manifest のみ有効化、後続は skipped_id_conflict でスキップ）。
+//! 外部プラグイン対応は将来有効化予定のため、現状は dead_code を許容。
+#![allow(dead_code)]
 
 use crate::adapter::external_plugin_manifest_loader::discover_manifests;
 use crate::adapter::external_plugin_stdio_client::ExternalPluginStdioClient;

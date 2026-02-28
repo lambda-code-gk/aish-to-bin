@@ -1,6 +1,8 @@
 //! 外部ツールプラグインのドメイン型（manifest / descriptor / error）
 //!
 //! AISH本体は個別ツール名を知らず、プラグインから取得した定義を動的登録する。
+//! 外部プラグイン対応用（将来有効化予定）。
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

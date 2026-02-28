@@ -1,4 +1,6 @@
 //! ExternalToolExecutor の実装。プラグイン ID ごとに Stdio クライアントを保持し、call_tool を中継する。
+//! 外部プラグイン対応用（将来有効化予定）。
+#![allow(dead_code)]
 
 use crate::adapter::external_plugin_stdio_client::ExternalPluginStdioClient;
 use crate::domain::external_plugin::{ExternalPluginError, ExternalPluginId};

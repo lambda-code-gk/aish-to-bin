@@ -20,7 +20,7 @@ use crate::adapter::{
     ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy, MemorySelector, NoContinuePrompt,
     NoopInterruptChecker, NonInteractiveToolApproval, PartSessionStorage, PassThroughReducer,
     ReadFileTool, ReplaceFileTool, ReviewedTailViewStrategy, SelfImproveHandler, ShellAllowlistRule,
-    SigintChecker, StdCommandAllowRulesLoader, StdContextArtifactStore, StdContextPackBuilder,
+    SigintChecker, StdCommandAllowRulesLoader, StdContextArtifactStore,
     StdContextPackBuilderWithAddons, StdEventSinkFactory, StdLlmCompletion, StdLlmEventStreamFactory,
     StdPolicyEngine, StdProfileLister, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel,
     StdResolveSystemPromptFromHooks, StdoutDryRunReportSink, StdSessionDerivedBuilder,

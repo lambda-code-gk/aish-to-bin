@@ -1,6 +1,8 @@
 //! 信頼ディレクトリからプラグイン manifest を読み込む
 //!
 //! MVP: ~/.config/aish/plugins.d/*.yaml と ~/.aish/plugins.d/*.yaml のみ。project 配下は読まない。
+//! 外部プラグイン対応用（将来有効化予定）。
+#![allow(dead_code)]
 
 use crate::domain::external_plugin::{
     PluginManifest, PluginManifestEntry, PluginTransport, StdioTransport,

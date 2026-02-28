@@ -1,29 +1,9 @@
 //! Phase 8: single binary aish with subcommands. Wiring only; delegates to ai and aish crates.
 
 use std::ffi::OsString;
-use std::process;
 
-fn main() {
-    let exit_code = match run() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("aish: {}", e);
-            e.exit_code()
-        }
-    };
-    process::exit(exit_code);
-}
-
-/// argv[0] のベース名が "ai" なら true（互換入口: ai として起動されたら aish ai にフォワード）
-fn invoked_as_ai() -> bool {
-    std::env::args_os()
-        .next()
-        .and_then(|a| a.into_string().ok())
-        .and_then(|s| std::path::Path::new(&s).file_stem().map(|st| st == "ai"))
-        .unwrap_or(false)
-}
-
-fn run() -> Result<i32, common::error::Error> {
+/// メイン処理。bin エントリ（ai / aish）から呼ばれる。
+pub fn run() -> Result<i32, common::error::Error> {
     use clap::builder::ArgAction;
 
     let mut args: Vec<OsString> = std::env::args_os().collect();
@@ -145,6 +125,15 @@ fn run() -> Result<i32, common::error::Error> {
             }
         }
     }
+}
+
+/// argv[0] のベース名が "ai" なら true（互換入口: ai として起動されたら aish ai にフォワード）
+fn invoked_as_ai() -> bool {
+    std::env::args_os()
+        .next()
+        .and_then(|a| a.into_string().ok())
+        .and_then(|s| std::path::Path::new(&s).file_stem().map(|st| st == "ai"))
+        .unwrap_or(false)
 }
 
 fn build_global_argv(matches: &clap::ArgMatches) -> Vec<OsString> {

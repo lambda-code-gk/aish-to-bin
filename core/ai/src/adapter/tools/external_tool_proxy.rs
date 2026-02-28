@@ -1,6 +1,8 @@
 //! 外部プラグインのツールを AISH の Tool として登録するプロキシ
 //!
 //! ツール名は本体にハードコードせず、プラグインの list_tools 結果をそのまま使う。
+//! 外部プラグイン対応用（将来有効化予定）。
+#![allow(dead_code)]
 
 use crate::ports::outbound::ExternalToolExecutor;
 use common::domain::event::{Event, RunId, SessionId};

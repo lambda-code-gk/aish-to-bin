@@ -301,7 +301,6 @@ fn entry_run_ai_sessions_rebuild_derived(
     session_id: Option<&str>,
     path_resolver: &std::sync::Arc<dyn common::ports::outbound::PathResolver>,
 ) -> Result<i32, Error> {
-    use common::ports::outbound::PathResolver;
     let home_dir = path_resolver.resolve_home_dir(path_input)?;
     let default_session = path_resolver.resolve_session_dir(path_input, &home_dir)?;
     let session_path = if let Some(id) = session_id {

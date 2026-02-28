@@ -2,6 +2,8 @@
 //!
 //! v0.1: StdContextPackBuilder(reducer, budget) は messages + budget_report のみ（attachments 空）。
 //! StdContextPackBuilderWithAddons は addons/selectors 対応（既存テスト用）。
+//! StdContextPackBuilder 等はテストで使用。
+#![allow(dead_code)]
 
 use crate::domain::{
     Budget, BudgetDecision, BudgetReport, BudgetStats, ContextAddon, ContextBudget, ContextPack,
