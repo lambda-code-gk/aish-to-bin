@@ -29,42 +29,25 @@ log_warn() {
     echo -e "${YELLOW}[WARN]${NC} $*"
 }
 
-# Rustプロジェクトのテストを実行する関数
+# Rustプロジェクトのテストを実行する関数（workspace 対応: -p でパッケージ指定）
 run_rust_test() {
     local project_name="$1"
-    local project_path="$2"
+    local package_name="$2"
     
     echo ""
     echo "========================================="
-    echo "Running: $project_name (cargo test)"
+    echo "Running: $project_name (cargo test -p $package_name)"
     echo "========================================="
     
-    if [ ! -d "$project_path" ]; then
-        log_error "Project directory not found: $project_path"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        FAILED_TESTS+=("$project_name (directory not found)")
-        return 1
-    fi
-    
-    if [ ! -f "$project_path/Cargo.toml" ]; then
-        log_error "Cargo.toml not found: $project_path/Cargo.toml"
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        FAILED_TESTS+=("$project_name (Cargo.toml not found)")
-        return 1
-    fi
-    
-    # テスト実行
-    cd "$project_path"
-    if cargo test; then
+    cd "$PROJECT_ROOT"
+    if cargo test -p "$package_name"; then
         log_info "✓ $project_name PASSED"
         TESTS_PASSED=$((TESTS_PASSED + 1))
-        cd "$PROJECT_ROOT"
         return 0
     else
         log_error "✗ $project_name FAILED"
         TESTS_FAILED=$((TESTS_FAILED + 1))
         FAILED_TESTS+=("$project_name")
-        cd "$PROJECT_ROOT"
         return 1
     fi
 }
@@ -80,11 +63,11 @@ main() {
     # Rustプロジェクトのテストを実行
     log_info "Running Rust project tests..."
     
-    # core/ai
-    run_rust_test "core/ai" "$PROJECT_ROOT/core/ai" || true
+    # core/ai (workspace package name: ai)
+    run_rust_test "core/ai" "ai" || true
     
-    # core/aish
-    run_rust_test "core/aish" "$PROJECT_ROOT/core/aish" || true
+    # core/aish (workspace package name: aish)
+    run_rust_test "core/aish" "aish" || true
     
     # 結果サマリー
     echo ""

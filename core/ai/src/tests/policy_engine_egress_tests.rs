@@ -1,15 +1,18 @@
-//! StdPolicyEngine: egress 判定のテスト
+//! StdPolicyEngine: egress 判定のテスト（Phase 5: rule chain + sensitive_filter）
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::adapter::leakscan_text_filter::SensitiveAction;
-use crate::adapter::{EgressSensitiveRule, StaticToolProfileProvider, StdPolicyEngine};
+use crate::adapter::{
+    EgressBudgetHardCapRule, EgressSensitiveRule, ShellAllowlistRule, StaticToolProfileProvider,
+    StdPolicyEngine, ToolModeRule,
+};
 use crate::domain::{
+    PolicyChain, SensitiveAction, ToolMode, ToolProfile,
     BudgetReport, Budget, BudgetStats, ContextAttachment, ContextPack, PolicyVerdict,
     SensitiveFilterOutcome,
 };
-use crate::ports::outbound::{PolicyEngine, SensitiveTextFilter};
+use crate::ports::outbound::{PolicyEngine, SensitiveTextFilter, ToolProfileProvider};
 use common::error::Error;
 use common::msg::Msg;
 
@@ -55,6 +58,14 @@ impl SensitiveTextFilter for DenyOnSecretFilter {
     }
 }
 
+/// 常に Err を返す SensitiveTextFilter（fail-closed 検証用）
+struct FailingFilter;
+impl SensitiveTextFilter for FailingFilter {
+    fn filter(&self, _content: &str) -> Result<SensitiveFilterOutcome, Error> {
+        Err(Error::system("scan failed".to_string()))
+    }
+}
+
 /// "SECRET" を含むテキストを "***" にマスクする SensitiveTextFilter
 struct MaskOnSecretFilter;
 impl SensitiveTextFilter for MaskOnSecretFilter {
@@ -75,16 +86,36 @@ fn make_egress_engine(
     filter: Option<Arc<dyn SensitiveTextFilter>>,
     action: SensitiveAction,
 ) -> StdPolicyEngine {
-    let egress_rules: Vec<Arc<dyn crate::domain::EgressPolicyRule>> = vec![Arc::new(
-        EgressSensitiveRule {
+    let egress_rules: Vec<Arc<dyn crate::domain::EgressPolicyRule>> = vec![
+        Arc::new(EgressBudgetHardCapRule {
+            hard_cap_chars: usize::MAX,
+        }),
+        Arc::new(EgressSensitiveRule {
             filter,
             action,
-        },
-    )];
-    let chain = crate::domain::PolicyChain::new(egress_rules, vec![]);
-    let profiles = HashMap::new();
-    let provider = Arc::new(StaticToolProfileProvider::new(profiles));
-    StdPolicyEngine::new(chain, provider)
+        }),
+    ];
+    let run_shell_profile = ToolProfile {
+        tool_name: "run_shell".to_string(),
+        mode: ToolMode::RequireApproval,
+        capabilities: vec![],
+        notes: None,
+    };
+    let mut profiles = HashMap::new();
+    profiles.insert("run_shell".to_string(), run_shell_profile);
+    let tool_profiles: Arc<dyn ToolProfileProvider> =
+        Arc::new(StaticToolProfileProvider::new(profiles));
+    let tool_rules: Vec<Arc<dyn crate::domain::ToolPolicyRule>> = vec![
+        Arc::new(ShellAllowlistRule {
+            shell_tool_name: "run_shell",
+        }),
+        Arc::new(ToolModeRule),
+    ];
+    let chain = PolicyChain {
+        egress_rules,
+        tool_rules,
+    };
+    StdPolicyEngine::new(chain, tool_profiles)
 }
 
 #[test]
@@ -185,6 +216,23 @@ fn test_mask_filter_on_attachment() {
             assert_ne!(att.hash64, "0000000000000000", "hash should be recalculated");
         }
         _ => panic!("expected Allow with masked attachment"),
+    }
+}
+
+#[test]
+fn test_filter_error_returns_deny_fail_closed() {
+    let pe = make_egress_engine(
+        Some(Arc::new(FailingFilter) as Arc<dyn SensitiveTextFilter>),
+        SensitiveAction::Mask,
+    );
+    let pack = simple_pack(vec![Msg::user("hello")]);
+    let verdict = pe.evaluate_egress_context_pack(&pack, false).unwrap();
+    match verdict {
+        PolicyVerdict::Deny { decision } => {
+            assert_eq!(decision.reason, "sensitive_scan_error");
+            assert_eq!(decision.status, "blocked");
+        }
+        _ => panic!("expected Deny on filter error (fail-closed)"),
     }
 }
 

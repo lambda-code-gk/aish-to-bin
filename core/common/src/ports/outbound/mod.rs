@@ -7,8 +7,11 @@ pub mod fs;
 pub mod log;
 pub mod path_resolver;
 pub mod process;
+pub mod session_event_store;
 pub mod sink;
 pub mod tool;
+pub mod mcp_host;
+pub mod event_appender;
 
 #[cfg(unix)]
 pub mod pty;
@@ -25,8 +28,14 @@ pub use fs::{FileMetadata, FileSystem};
 pub use log::{Log, LogLevel, LogRecord, now_iso8601};
 pub use path_resolver::{PathResolver, PathResolverInput};
 pub use process::Process;
+pub use session_event_store::SessionEventStore;
 pub use sink::{AgentEvent, EventSink};
 pub use tool::Tool;
+pub use mcp_host::{
+    McpCallContext, McpCallResult, McpHost, McpServerDescriptor, McpServerId, McpToolId,
+    ToolDescriptor,
+};
+pub use event_appender::EventAppender;
 pub use id_generator::IdGenerator;
 pub use llm_provider::LlmProvider;
 

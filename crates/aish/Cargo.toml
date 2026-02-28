@@ -1,0 +1,19 @@
+[package]
+name = "aish-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Single-binary CLI (wiring only); subcommands: ai, shell, sessions, policy, config"
+
+[[bin]]
+name = "aish"
+path = "src/main.rs"
+
+[[bin]]
+name = "ai"
+path = "src/main.rs"
+
+[dependencies]
+ai = { path = "../../core/ai" }
+aish = { path = "../../core/aish" }
+clap = { version = "4", features = ["derive"] }
+common = { path = "../../core/common" }

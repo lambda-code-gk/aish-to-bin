@@ -64,6 +64,9 @@ impl DryRunReportSink for StdoutDryRunReportSink {
                 println!("    {}", line);
             }
         }
+        if let Some(count) = info.attachments_count {
+            println!("attachments_count: {} (dry-run: artifact 保存なし)", count);
+        }
         if let Some(ref report) = info.budget_report {
             println!("--- budget report ---");
             println!(
@@ -78,6 +81,12 @@ impl DryRunReportSink for StdoutDryRunReportSink {
                 "output: messages={} chars={}",
                 report.output.message_count, report.output.char_count
             );
+            let addon_keeps = report.decisions.iter().filter(|d| d.stage == "addon.select" && d.action == "keep").count();
+            let addon_drops = report.decisions.iter().filter(|d| d.stage == "addon.select" && d.action == "drop").count();
+            let addon_errors = report.decisions.iter().filter(|d| d.stage == "addon.selector" && d.action == "error").count();
+            if addon_keeps > 0 || addon_drops > 0 || addon_errors > 0 {
+                println!("addons: {} kept, {} dropped, {} selector error(s)", addon_keeps, addon_drops, addon_errors);
+            }
             for d in &report.decisions {
                 println!(
                     "decision: stage={} action={} reason={}",

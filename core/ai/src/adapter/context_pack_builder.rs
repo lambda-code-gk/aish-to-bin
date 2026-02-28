@@ -1,4 +1,7 @@
-//! 履歴＋クエリ＋addons から ContextPack を構築する標準アダプタ
+//! 履歴＋クエリ（＋addons）から ContextPack を構築する標準アダプタ
+//!
+//! v0.1: StdContextPackBuilder(reducer, budget) は messages + budget_report のみ（attachments 空）。
+//! StdContextPackBuilderWithAddons は addons/selectors 対応（既存テスト用）。
 
 use crate::domain::{
     Budget, BudgetDecision, BudgetReport, BudgetStats, ContextAddon, ContextBudget, ContextPack,
@@ -13,6 +16,28 @@ use common::llm::provider::Message as LlmMessage;
 use common::msg::Msg;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+/// LlmMessage の概算文字数（監査用。tool_calls / tool_call_id / tool_name を含む）
+fn approx_char_count_llm(m: &LlmMessage) -> usize {
+    let mut n = m.content.len();
+    if let Some(ref tcs) = m.tool_calls {
+        for tc in tcs {
+            n += tc.name.len();
+            n += serde_json::to_string(&tc.args).map(|s| s.len()).unwrap_or(0);
+        }
+    }
+    if let Some(ref s) = m.tool_call_id {
+        n += s.len();
+    }
+    if let Some(ref s) = m.tool_name {
+        n += s.len();
+    }
+    n
+}
+
+fn count_chars_llm_messages(messages: &[LlmMessage]) -> usize {
+    messages.iter().map(approx_char_count_llm).sum()
+}
 
 fn history_to_msgs(messages: &[LlmMessage]) -> Vec<Msg> {
     let mut msgs = Vec::with_capacity(messages.len());
@@ -49,6 +74,94 @@ fn count_chars_llm(messages: &[LlmMessage]) -> usize {
     messages.iter().map(|m| m.content.len()).sum()
 }
 
+/// v0.1: 履歴＋クエリのみ。attachments は常に空。StdContextMessageBuilder と同等の messages。
+pub struct StdContextPackBuilder {
+    reducer: Arc<dyn HistoryReducer>,
+    budget: ContextBudget,
+}
+
+impl StdContextPackBuilder {
+    pub fn new(reducer: Arc<dyn HistoryReducer>, budget: ContextBudget) -> Self {
+        Self { reducer, budget }
+    }
+}
+
+impl ContextPackBuilder for StdContextPackBuilder {
+    fn build(
+        &self,
+        history: &[LlmMessage],
+        query: Option<&Query>,
+        system_instruction: Option<&str>,
+        query_placement: QueryPlacement,
+    ) -> Result<ContextPack, Error> {
+        let all_messages: Vec<LlmMessage> = if query_placement == QueryPlacement::AppendAtEnd {
+            if let Some(q) = query {
+                let mut v = history.to_vec();
+                v.push(LlmMessage::user(q.as_ref()));
+                v
+            } else {
+                history.to_vec()
+            }
+        } else {
+            history.to_vec()
+        };
+
+        let input_count = all_messages.len();
+        let input_chars = count_chars_llm_messages(&all_messages);
+
+        let reduced = self.reducer.reduce(&all_messages, self.budget);
+        let output_count = reduced.len();
+        let output_chars = count_chars_llm_messages(&reduced);
+
+        let action = if output_count == input_count {
+            "keep"
+        } else {
+            "truncate"
+        };
+        let mut msgs = Vec::new();
+        if let Some(s) = system_instruction {
+            msgs.push(Msg::system(s));
+        }
+        msgs.extend(history_to_msgs(&reduced));
+
+        let internal_msgs_count = msgs.len();
+        let budget_report = BudgetReport {
+            v: 1,
+            budget: Budget {
+                max_messages: self.budget.max_messages,
+                max_chars: self.budget.max_chars,
+            },
+            input: BudgetStats {
+                message_count: input_count,
+                char_count: input_chars,
+            },
+            output: BudgetStats {
+                message_count: output_count,
+                char_count: output_chars,
+            },
+            decisions: vec![BudgetDecision {
+                stage: "history.reduce".to_string(),
+                action: action.to_string(),
+                reason: "history_reducer".to_string(),
+                details: serde_json::json!({
+                    "input_messages": input_count,
+                    "output_messages": output_count,
+                    "input_chars": input_chars,
+                    "output_chars": output_chars,
+                    "internal_msgs_count": internal_msgs_count,
+                }),
+            }],
+        };
+
+        Ok(ContextPack {
+            v: 1,
+            messages: msgs,
+            attachments: vec![],
+            budget_report,
+        })
+    }
+}
+
 fn msg_char_len(msg: &Msg) -> usize {
     match msg {
         Msg::System(s) | Msg::User(s) | Msg::Assistant(s) => s.len(),
@@ -61,7 +174,8 @@ fn msgs_char_total(msgs: &[Msg]) -> usize {
     msgs.iter().map(msg_char_len).sum()
 }
 
-pub struct StdContextPackBuilder {
+/// Addons/selectors 対応の ContextPackBuilder（テスト・将来拡張用）
+pub struct StdContextPackBuilderWithAddons {
     reducer: Arc<dyn HistoryReducer>,
     budget: ContextBudget,
     selectors: Vec<Arc<dyn ContextAddonSelector>>,
@@ -70,7 +184,7 @@ pub struct StdContextPackBuilder {
     sensitive_filter: Option<Arc<dyn SensitiveTextFilter>>,
 }
 
-impl StdContextPackBuilder {
+impl StdContextPackBuilderWithAddons {
     pub fn new(
         reducer: Arc<dyn HistoryReducer>,
         budget: ContextBudget,
@@ -114,7 +228,7 @@ fn truncate_verbose(s: &str, max: usize) -> String {
     }
 }
 
-impl ContextPackBuilder for StdContextPackBuilder {
+impl ContextPackBuilder for StdContextPackBuilderWithAddons {
     fn build(
         &self,
         history: &[LlmMessage],
@@ -201,6 +315,19 @@ impl ContextPackBuilder for StdContextPackBuilder {
                 if let Some(text) = msg_text_content(&addon.msg) {
                     match filter.filter(text) {
                         Ok(SensitiveFilterOutcome::Clean) => {}
+                        Ok(SensitiveFilterOutcome::Hit { verbose }) => {
+                            decisions.push(BudgetDecision {
+                                stage: "addon.sensitive".to_string(),
+                                action: "allow".to_string(),
+                                reason: "leakscan".to_string(),
+                                details: serde_json::json!({
+                                    "addon_id": addon.id,
+                                    "kind": addon.kind,
+                                    "target": "msg",
+                                    "verbose": truncate_verbose(&verbose, 2000),
+                                }),
+                            });
+                        }
                         Ok(SensitiveFilterOutcome::Deny { verbose }) => {
                             decisions.push(BudgetDecision {
                                 stage: "addon.sensitive".to_string(),
@@ -229,7 +356,20 @@ impl ContextPackBuilder for StdContextPackBuilder {
                             });
                             addon.msg = replace_msg_text(&addon.msg, masked);
                         }
-                        Err(_) => {}
+                        Err(e) => {
+                            decisions.push(BudgetDecision {
+                                stage: "addon.sensitive".to_string(),
+                                action: "deny".to_string(),
+                                reason: "leakscan_error".to_string(),
+                                details: serde_json::json!({
+                                    "addon_id": addon.id,
+                                    "kind": addon.kind,
+                                    "target": "msg",
+                                    "verbose": truncate_verbose(&e.to_string(), 2000),
+                                }),
+                            });
+                            denied = true;
+                        }
                     }
                 }
                 if denied {
@@ -239,6 +379,19 @@ impl ContextPackBuilder for StdContextPackBuilder {
                     if let Some(ref content) = att.content {
                         match filter.filter(content) {
                             Ok(SensitiveFilterOutcome::Clean) => {}
+                            Ok(SensitiveFilterOutcome::Hit { verbose }) => {
+                                decisions.push(BudgetDecision {
+                                    stage: "addon.sensitive".to_string(),
+                                    action: "allow".to_string(),
+                                    reason: "leakscan".to_string(),
+                                    details: serde_json::json!({
+                                        "addon_id": addon.id,
+                                        "kind": addon.kind,
+                                        "target": "attachment",
+                                        "verbose": truncate_verbose(&verbose, 2000),
+                                    }),
+                                });
+                            }
                             Ok(SensitiveFilterOutcome::Deny { verbose }) => {
                                 decisions.push(BudgetDecision {
                                     stage: "addon.sensitive".to_string(),
@@ -273,7 +426,20 @@ impl ContextPackBuilder for StdContextPackBuilder {
                                 new_att.hash64 = new_hash;
                                 addon.attachment = Some(new_att);
                             }
-                            Err(_) => {}
+                            Err(e) => {
+                                decisions.push(BudgetDecision {
+                                    stage: "addon.sensitive".to_string(),
+                                    action: "deny".to_string(),
+                                    reason: "leakscan_error".to_string(),
+                                    details: serde_json::json!({
+                                        "addon_id": addon.id,
+                                        "kind": addon.kind,
+                                        "target": "attachment",
+                                        "verbose": truncate_verbose(&e.to_string(), 2000),
+                                    }),
+                                });
+                                continue;
+                            }
                         }
                     }
                 }
@@ -298,7 +464,13 @@ impl ContextPackBuilder for StdContextPackBuilder {
         let mut attachments = Vec::new();
 
         for addon in &candidates {
-            let addon_chars = msg_char_len(&addon.msg);
+            let attachment_chars = addon
+                .attachment
+                .as_ref()
+                .and_then(|a| a.content.as_ref())
+                .map(|s| s.len())
+                .unwrap_or(0);
+            let addon_chars = msg_char_len(&addon.msg) + attachment_chars;
             if used_msgs + 1 > addons_msg_limit || used_chars + addon_chars > addons_char_limit {
                 decisions.push(BudgetDecision {
                     stage: "addon.select".to_string(),

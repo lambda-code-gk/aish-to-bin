@@ -1,9 +1,8 @@
 //! StdContextPackBuilder の sensitive filter 統合テスト
 
-use crate::adapter::{PassThroughReducer, StdContextPackBuilder};
+use crate::adapter::{PassThroughReducer, StdContextPackBuilderWithAddons};
 use crate::domain::{
-    ContextAddon, ContextAttachment, ContextBudget, ContextSource,
-    SensitiveFilterOutcome,
+    ContextAddon, ContextAttachment, ContextBudget, ContextSource, SensitiveFilterOutcome,
 };
 use crate::ports::outbound::{
     ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
@@ -19,7 +18,9 @@ struct StubSelector {
     addons: Vec<ContextAddon>,
 }
 impl ContextAddonSelector for StubSelector {
-    fn name(&self) -> &str { "stub" }
+    fn name(&self) -> &str {
+        "stub"
+    }
     fn select(&self, _input: &ContextAddonInput) -> Result<Vec<ContextAddon>, Error> {
         Ok(self.addons.clone())
     }
@@ -83,11 +84,14 @@ fn test_deny_filter_drops_addon_with_decision() {
     });
     let filter: Arc<dyn SensitiveTextFilter> = Arc::new(DenyFilter);
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
         ContextBudget::legacy(),
         vec![selector],
-        ContextBudget { max_messages: 10, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 10,
+            max_chars: 100_000,
+        },
         PathBuf::from("."),
         Some(filter),
     );
@@ -97,14 +101,24 @@ fn test_deny_filter_drops_addon_with_decision() {
         .build(&history, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
-    let deny_decisions: Vec<_> = pack.budget_report.decisions.iter()
+    let deny_decisions: Vec<_> = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.sensitive" && d.action == "deny")
         .collect();
     assert!(!deny_decisions.is_empty(), "should have deny decision");
-    assert!(pack.attachments.is_empty(), "denied addon should have no attachments");
+    assert!(
+        pack.attachments.is_empty(),
+        "denied addon should have no attachments"
+    );
 
     let has_addon_msg = pack.messages.iter().any(|m| {
-        if let Msg::User(s) = m { s.contains("my secret content") } else { false }
+        if let Msg::User(s) = m {
+            s.contains("my secret content")
+        } else {
+            false
+        }
     });
     assert!(!has_addon_msg, "denied addon msg should not be in messages");
 }
@@ -117,11 +131,14 @@ fn test_mask_filter_replaces_addon_content_with_decision() {
     });
     let filter: Arc<dyn SensitiveTextFilter> = Arc::new(MaskFilter);
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
         ContextBudget::legacy(),
         vec![selector],
-        ContextBudget { max_messages: 10, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 10,
+            max_chars: 100_000,
+        },
         PathBuf::from("."),
         Some(filter),
     );
@@ -131,13 +148,20 @@ fn test_mask_filter_replaces_addon_content_with_decision() {
         .build(&history, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
-    let mask_decisions: Vec<_> = pack.budget_report.decisions.iter()
+    let mask_decisions: Vec<_> = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.sensitive" && d.action == "mask")
         .collect();
     assert!(mask_decisions.len() >= 1, "should have mask decision(s)");
 
     let has_redacted = pack.messages.iter().any(|m| {
-        if let Msg::User(s) = m { s.contains("[REDACTED]") } else { false }
+        if let Msg::User(s) = m {
+            s.contains("[REDACTED]")
+        } else {
+            false
+        }
     });
     assert!(has_redacted, "masked addon msg should contain [REDACTED]");
 }
@@ -150,11 +174,14 @@ fn test_clean_filter_passes_addon_through() {
     });
     let filter: Arc<dyn SensitiveTextFilter> = Arc::new(CleanFilter);
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
         ContextBudget::legacy(),
         vec![selector],
-        ContextBudget { max_messages: 10, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 10,
+            max_chars: 100_000,
+        },
         PathBuf::from("."),
         Some(filter),
     );
@@ -164,10 +191,20 @@ fn test_clean_filter_passes_addon_through() {
         .build(&history, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
-    let sensitive_decisions: Vec<_> = pack.budget_report.decisions.iter()
+    let sensitive_decisions: Vec<_> = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.sensitive")
         .collect();
-    assert!(sensitive_decisions.is_empty(), "clean should not generate sensitive decisions");
+    assert!(
+        sensitive_decisions.is_empty(),
+        "clean should not generate sensitive decisions"
+    );
 
-    assert_eq!(pack.attachments.len(), 1, "clean addon attachment should remain");
+    assert_eq!(
+        pack.attachments.len(),
+        1,
+        "clean addon attachment should remain"
+    );
 }

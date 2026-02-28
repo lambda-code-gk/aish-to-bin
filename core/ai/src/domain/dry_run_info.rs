@@ -16,4 +16,6 @@ pub struct DryRunInfo {
     pub tools_enabled: Vec<String>,
     pub messages: Vec<Msg>,
     pub budget_report: Option<BudgetReport>,
+    /// addons 由来の attachments 数（dry-run では artifact 保存しないが件数は表示用に持つ）
+    pub attachments_count: Option<usize>,
 }

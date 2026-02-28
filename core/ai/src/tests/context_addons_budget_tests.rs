@@ -1,8 +1,10 @@
 //! ContextPackBuilder の addons 予算テスト
 
-use crate::adapter::{PassThroughReducer, StdContextPackBuilder};
+use crate::adapter::{PassThroughReducer, StdContextPackBuilderWithAddons};
 use crate::domain::{ContextAddon, ContextAttachment, ContextBudget, ContextSource, Query};
-use crate::ports::outbound::{ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement};
+use crate::ports::outbound::{
+    ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
+};
 use common::error::Error;
 use common::llm::provider::Message as LlmMessage;
 use common::msg::Msg;
@@ -65,11 +67,17 @@ fn test_addons_budget_limits_to_one() {
         addons: vec![addon_a, addon_b],
     });
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
-        ContextBudget { max_messages: 100, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 100,
+            max_chars: 100_000,
+        },
         vec![selector],
-        ContextBudget { max_messages: 1, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 1,
+            max_chars: 100_000,
+        },
         PathBuf::from("."),
         None,
     );
@@ -80,10 +88,16 @@ fn test_addons_budget_limits_to_one() {
         .build(&history, Some(&query), None, QueryPlacement::AppendAtEnd)
         .expect("build should succeed");
 
-    let keep_count = pack.budget_report.decisions.iter()
+    let keep_count = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.select" && d.action == "keep")
         .count();
-    let drop_count = pack.budget_report.decisions.iter()
+    let drop_count = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.select" && d.action == "drop")
         .count();
     assert_eq!(keep_count, 1);
@@ -92,7 +106,10 @@ fn test_addons_budget_limits_to_one() {
     assert_eq!(pack.attachments.len(), 1);
 
     // "a" has higher priority so it should be kept
-    let kept_decision = pack.budget_report.decisions.iter()
+    let kept_decision = pack
+        .budget_report
+        .decisions
+        .iter()
         .find(|d| d.stage == "addon.select" && d.action == "keep")
         .unwrap();
     assert_eq!(kept_decision.details["addon_id"], "a");
@@ -105,11 +122,17 @@ fn test_addons_inserted_before_query() {
         addons: vec![addon],
     });
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
-        ContextBudget { max_messages: 100, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 100,
+            max_chars: 100_000,
+        },
         vec![selector],
-        ContextBudget { max_messages: 10, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 10,
+            max_chars: 100_000,
+        },
         PathBuf::from("."),
         None,
     );
@@ -117,19 +140,35 @@ fn test_addons_inserted_before_query() {
     let history = vec![LlmMessage::user("history msg")];
     let query = Query::new("my query");
     let pack = builder
-        .build(&history, Some(&query), Some("sys"), QueryPlacement::AppendAtEnd)
+        .build(
+            &history,
+            Some(&query),
+            Some("sys"),
+            QueryPlacement::AppendAtEnd,
+        )
         .expect("build should succeed");
 
     // last user message should be the query, not the addon
     let last = pack.messages.last().unwrap();
-    assert!(matches!(last, Msg::User(s) if s == "my query"), "query should be last user message");
+    assert!(
+        matches!(last, Msg::User(s) if s == "my query"),
+        "query should be last user message"
+    );
 
     // addon should be somewhere before the query
     let addon_pos = pack.messages.iter().position(|m| {
-        if let Msg::User(s) = m { s.contains("context info") } else { false }
+        if let Msg::User(s) = m {
+            s.contains("context info")
+        } else {
+            false
+        }
     });
     let query_pos = pack.messages.iter().rposition(|m| {
-        if let Msg::User(s) = m { s == "my query" } else { false }
+        if let Msg::User(s) = m {
+            s == "my query"
+        } else {
+            false
+        }
     });
     assert!(addon_pos.unwrap() < query_pos.unwrap());
 }
@@ -138,11 +177,14 @@ fn test_addons_inserted_before_query() {
 fn test_selector_failure_recorded_as_decision() {
     let failing: Arc<dyn ContextAddonSelector> = Arc::new(FailingSelector);
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
         ContextBudget::legacy(),
         vec![failing],
-        ContextBudget { max_messages: 8, max_chars: 8_000 },
+        ContextBudget {
+            max_messages: 8,
+            max_chars: 8_000,
+        },
         PathBuf::from("."),
         None,
     );
@@ -152,7 +194,10 @@ fn test_selector_failure_recorded_as_decision() {
         .build(&history, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed despite selector failure");
 
-    let error_decision = pack.budget_report.decisions.iter()
+    let error_decision = pack
+        .budget_report
+        .decisions
+        .iter()
         .find(|d| d.stage == "addon.selector" && d.action == "error");
     assert!(error_decision.is_some());
     assert_eq!(error_decision.unwrap().reason, "failing");
@@ -166,11 +211,17 @@ fn test_addons_char_budget_limits() {
         addons: vec![addon_big, addon_small],
     });
 
-    let builder = StdContextPackBuilder::new(
+    let builder = StdContextPackBuilderWithAddons::new(
         Arc::new(PassThroughReducer),
-        ContextBudget { max_messages: 100, max_chars: 100_000 },
+        ContextBudget {
+            max_messages: 100,
+            max_chars: 100_000,
+        },
         vec![selector],
-        ContextBudget { max_messages: 10, max_chars: 100 },
+        ContextBudget {
+            max_messages: 10,
+            max_chars: 100,
+        },
         PathBuf::from("."),
         None,
     );
@@ -180,10 +231,16 @@ fn test_addons_char_budget_limits() {
         .build(&history, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
-    let keep_count = pack.budget_report.decisions.iter()
+    let keep_count = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.select" && d.action == "keep")
         .count();
-    let drop_count = pack.budget_report.decisions.iter()
+    let drop_count = pack
+        .budget_report
+        .decisions
+        .iter()
         .filter(|d| d.stage == "addon.select" && d.action == "drop")
         .count();
 
@@ -192,7 +249,10 @@ fn test_addons_char_budget_limits() {
     assert_eq!(drop_count, 1);
     assert_eq!(keep_count, 1);
 
-    let kept = pack.budget_report.decisions.iter()
+    let kept = pack
+        .budget_report
+        .decisions
+        .iter()
         .find(|d| d.stage == "addon.select" && d.action == "keep")
         .unwrap();
     assert_eq!(kept.details["addon_id"], "small");

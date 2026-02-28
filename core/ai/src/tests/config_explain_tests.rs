@@ -1,5 +1,5 @@
-use crate::adapter::config_loader::{CliPolicyOverrides, StdConfigProvider};
 use crate::adapter::config_explain_provider::StdConfigExplainProvider;
+use crate::adapter::config_loader::{CliPolicyOverrides, StdConfigProvider};
 use crate::ports::outbound::ConfigExplainProvider;
 use common::adapter::{StdEnvResolver, StdFileSystem};
 
@@ -39,6 +39,7 @@ egress_sensitive_action = "mask"
     let provider = StdConfigProvider::new(
         std::sync::Arc::new(env_resolver),
         std::sync::Arc::new(fs),
+        project_dir.to_path_buf(),
         CliPolicyOverrides::default(),
     );
     let explain = StdConfigExplainProvider::new(std::sync::Arc::new(provider));
@@ -47,8 +48,7 @@ egress_sensitive_action = "mask"
     assert!(info.sources.len() >= 1);
     let keys: Vec<String> = info.sources.iter().map(|s| s.key.clone()).collect();
     assert!(
-        keys.iter()
-            .any(|k| k == "policy.egress_sensitive_action"),
+        keys.iter().any(|k| k == "policy.egress_sensitive_action"),
         "sources must contain policy.egress_sensitive_action"
     );
 
@@ -62,4 +62,3 @@ egress_sensitive_action = "mask"
     }
     let _ = std::env::set_current_dir(old_cwd);
 }
-

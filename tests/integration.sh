@@ -20,6 +20,33 @@ trap "rm -rf $TEST_DIR" EXIT
 BUILD_MODE="${BUILD_MODE:-release}"
 TARGET_DIR="$BUILD_MODE"
 
+# バイナリ配置ディレクトリ（AISH_BIN 対応 + 新CLI前提, P8-7）
+# AISH_BIN 未設定時は dist/bin を使い、なければ xtask dist で用意する
+resolve_bin_dir() {
+    local bin_dir
+    if [ -n "${AISH_BIN:-}" ]; then
+        if [ -d "$AISH_BIN" ]; then
+            bin_dir="$AISH_BIN"
+        else
+            bin_dir="$(dirname "$AISH_BIN")"
+        fi
+    else
+        bin_dir="$PROJECT_ROOT/dist/bin"
+        # dist/bin が既にあっても、ソース変更後は古い可能性があるため常に再生成する
+        log_info "Running xtask dist..." >&2
+        (cd "$PROJECT_ROOT" && cargo run -p xtask -- dist $([ "$BUILD_MODE" = "debug" ] && echo "--debug")) >&2 || return 1
+    fi
+    if [ ! -f "$bin_dir/aish" ]; then
+        log_error "aish binary not found in $bin_dir (set AISH_BIN to use another path)"
+        return 1
+    fi
+    if [ ! -f "$bin_dir/ai" ]; then
+        log_error "ai binary not found in $bin_dir (set AISH_BIN to use another path)"
+        return 1
+    fi
+    echo "$bin_dir"
+}
+
 # テスト結果のカウント
 TESTS_PASSED=0
 TESTS_FAILED=0
@@ -92,17 +119,11 @@ build_binary() {
     echo "$binary_path"
 }
 
-# aiコマンドの結合テスト
+# aiコマンドの結合テスト（AISH_BIN/dist の ai を使用）
 test_ai_binary() {
     test_case "ai command integration test"
     
-    # バイナリをビルド
-    local binary_path
-    if ! binary_path=$(build_binary "ai" "$PROJECT_ROOT/core/ai" "ai"); then
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        FAILED_TESTS+=("ai (build failed)")
-        return 1
-    fi
+    local binary_path="${AI_BIN_PATH:?}"
     
     log_info "Binary path: $binary_path"
     
@@ -151,17 +172,11 @@ test_ai_binary() {
     return 0
 }
 
-# aishコマンドの結合テスト
+# aishコマンドの結合テスト（AISH_BIN/dist の aish を使用）
 test_aish_binary() {
     test_case "aish command integration test"
     
-    # バイナリをビルド
-    local binary_path
-    if ! binary_path=$(build_binary "aish" "$PROJECT_ROOT/core/aish" "aish"); then
-        TESTS_FAILED=$((TESTS_FAILED + 1))
-        FAILED_TESTS+=("aish (build failed)")
-        return 1
-    fi
+    local binary_path="${AISH_BIN_PATH:?}"
     
     log_info "Binary path: $binary_path"
     
@@ -195,6 +210,7 @@ test_aish_binary() {
     fi
     
     # テスト2: エラーハンドリング（存在しないオプション）
+    # 64 = EX_USAGE (legacy), 2 = clap default (新CLI)
     log_info "Test 2: Error handling (invalid option)"
     if env -u AISH_SESSION -u AISH_HOME "$binary_path" -d "$test_home_dir" --invalid-option 2> "$TEST_DIR/aish_test2.stderr"; then
         log_error "✗ Should have failed with invalid option"
@@ -203,10 +219,10 @@ test_aish_binary() {
         return 1
     else
         local exit_code=$?
-        if [ $exit_code -eq 64 ]; then
+        if [ $exit_code -eq 64 ] || [ $exit_code -eq 2 ]; then
             log_info "✓ Correctly failed with invalid option (exit code: $exit_code)"
         else
-            log_error "✗ Wrong exit code for invalid option: expected 64, got $exit_code"
+            log_error "✗ Wrong exit code for invalid option: expected 64 or 2, got $exit_code"
             cat "$TEST_DIR/aish_test2.stderr"
             TESTS_FAILED=$((TESTS_FAILED + 1))
             FAILED_TESTS+=("aish (error handling)")
@@ -265,6 +281,100 @@ test_aish_binary() {
     fi
     log_info "✓ -s uses specified session dir for resume"
 
+    # テスト5: plugins/tools list（deny-by-default + enabled で tools に出る）
+    test_case "aish plugins/tools list (Phase9 MCP bridge)"
+    local proj_dir="$TEST_DIR/plugin_project"
+    mkdir -p "$proj_dir/.aish/plugins/dummy"
+    local plugin_py="$proj_dir/.aish/plugins/dummy/dummy_plugin.py"
+    cat > "$plugin_py" <<'PY'
+import json, sys, time
+def reply(req_id, result=None, error=None):
+    if error is not None:
+        out = {"jsonrpc":"2.0","id":req_id,"error":error}
+    else:
+        out = {"jsonrpc":"2.0","id":req_id,"result":result}
+    sys.stdout.write(json.dumps(out) + "\n")
+    sys.stdout.flush()
+
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    req = json.loads(line)
+    mid = req.get("method","")
+    rid = req.get("id",0)
+    if mid == "initialize":
+        reply(rid, {"ok": True})
+    elif mid == "list_tools":
+        reply(rid, [
+            {"name":"echo","description":"Dummy echo tool","input_schema":{"type":"object","properties":{"message":{"type":"string"}}}}
+        ])
+    elif mid == "call_tool":
+        params = req.get("params") or {}
+        name = params.get("name","")
+        args = params.get("arguments")
+        if name == "sleep":
+            time.sleep(2.0)
+        reply(rid, {"content":{"tool":name,"arguments":args}})
+    else:
+        reply(rid, None, {"code":-32601,"message":"method not found"})
+PY
+    local plugin_toml="$proj_dir/.aish/plugins/dummy/plugin.toml"
+    cat > "$plugin_toml" <<EOF
+id = "dummy"
+namespace = "dummy"
+display_name = "Dummy Plugin"
+command = "python3"
+args = ["$plugin_py"]
+enabled = false
+timeout_ms = 500
+EOF
+
+    log_info "Test 5.1: plugins list shows disabled plugin"
+    local out_plugins
+    out_plugins=$(cd "$proj_dir" && env -u AISH_SESSION -u AISH_HOME "$binary_path" -d "$test_home_dir" plugins list)
+    echo "$out_plugins" | grep -q "disabled[[:space:]]\+dummy" || {
+        log_error "✗ plugins list did not include disabled dummy plugin"
+        echo "$out_plugins"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("aish plugins list")
+        return 1
+    }
+    log_info "✓ plugins list includes dummy (disabled)"
+
+    log_info "Test 5.2: tools list does not include tools when disabled"
+    local out_tools_disabled
+    out_tools_disabled=$(cd "$proj_dir" && env -u AISH_SESSION -u AISH_HOME "$binary_path" -d "$test_home_dir" tools list)
+    if echo "$out_tools_disabled" | grep -q "dummy\\.echo"; then
+        log_error "✗ tools list included dummy.echo while plugin disabled"
+        echo "$out_tools_disabled"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("aish tools list (disabled)")
+        return 1
+    fi
+    log_info "✓ tools list excludes dummy tools when disabled"
+
+    log_info "Test 5.3: tools list includes tools when enabled=true"
+    cat > "$plugin_toml" <<EOF
+id = "dummy"
+namespace = "dummy"
+display_name = "Dummy Plugin"
+command = "python3"
+args = ["$plugin_py"]
+enabled = true
+timeout_ms = 500
+EOF
+    local out_tools_enabled
+    out_tools_enabled=$(cd "$proj_dir" && env -u AISH_SESSION -u AISH_HOME "$binary_path" -d "$test_home_dir" tools list)
+    echo "$out_tools_enabled" | grep -q "dummy\\.echo" || {
+        log_error "✗ tools list did not include dummy.echo when enabled"
+        echo "$out_tools_enabled"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("aish tools list (enabled)")
+        return 1
+    }
+    log_info "✓ tools list includes dummy.echo when enabled"
+
     log_info "aish integration test PASSED"
     TESTS_PASSED=$((TESTS_PASSED + 1))
     return 0
@@ -278,6 +388,17 @@ main() {
     echo "Project root: $PROJECT_ROOT"
     echo "Build mode: $BUILD_MODE"
     echo "Test directory: $TEST_DIR"
+    echo ""
+    
+    # バイナリ配置を解決（AISH_BIN または dist/bin）
+    local bin_dir
+    if ! bin_dir=$(resolve_bin_dir); then
+        log_error "Could not resolve binary directory"
+        exit 1
+    fi
+    export AI_BIN_PATH="$bin_dir/ai"
+    export AISH_BIN_PATH="$bin_dir/aish"
+    log_info "Using ai: $AI_BIN_PATH, aish: $AISH_BIN_PATH"
     echo ""
     
     # 結合テストを実行

@@ -185,7 +185,12 @@ transport:
     std::fs::write(temp.join("config").join("plugins.d").join("only.yaml"), &yaml).unwrap();
 
     let old_aish_home = std::env::var("AISH_HOME").ok();
+    let old_home = std::env::var("HOME").ok();
     std::env::set_var("AISH_HOME", temp.as_os_str());
+    // テスト環境の $HOME に既存の ~/.aish/plugins.d があると結果が混ざるため隔離する
+    let isolated_home = temp.join("home");
+    let _ = std::fs::create_dir_all(&isolated_home);
+    std::env::set_var("HOME", isolated_home.as_os_str());
     let tools = load_external_plugins(
         Arc::new(StdFileSystem),
         Arc::new(StdEnvResolver),
@@ -195,6 +200,11 @@ transport:
         std::env::set_var("AISH_HOME", h);
     } else {
         std::env::remove_var("AISH_HOME");
+    }
+    if let Some(h) = old_home {
+        std::env::set_var("HOME", h);
+    } else {
+        std::env::remove_var("HOME");
     }
 
     assert_eq!(tools.len(), 0, "list_tools failure must not register any tool");

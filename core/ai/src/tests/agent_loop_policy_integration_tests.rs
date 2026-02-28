@@ -116,6 +116,10 @@ fn test_deny_policy_emits_tool_error() {
         None,
         SessionId::new(""),
         RunId::new(""),
+        None,
+        None,
+        None,
+        None,
     );
     let messages = vec![Msg::user("run it")];
     let (new_msgs, state, _text) = loop_.run_once(&messages, None).unwrap();
@@ -214,6 +218,10 @@ fn test_non_interactive_require_approval_is_denied() {
         None,
         SessionId::new(""),
         RunId::new(""),
+        None,
+        None,
+        None,
+        None,
     );
     let messages = vec![Msg::user("run it")];
     let (new_msgs, state, _text) = loop_.run_once(&messages, None).unwrap();

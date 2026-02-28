@@ -33,6 +33,8 @@ pub enum Command {
 
     /// セッション一覧
     Sessions,
+    /// セッションの派生物を再生成（sessions rebuild-derived [--session <id>]）
+    SessionsRebuildDerived { session_id: Option<String> },
 
     /// 初期設定の展開（init [--force] [--dry-run] [--defaults-dir DIR]）
     Init {
@@ -61,6 +63,18 @@ pub enum Command {
     PolicyExplain,
     /// config explain（ai --config-explain を実行）
     ConfigExplain,
+
+    /// 外部プラグイン一覧（plugins list）
+    PluginsList,
+    /// 外部ツール一覧（tools list）
+    ToolsList,
+
+    /// 単一ライタ daemon: 起動（foreground）
+    DaemonStart,
+    /// 単一ライタ daemon: ping
+    DaemonPing,
+    /// 単一ライタ daemon: status（ping ベース）
+    DaemonStatus,
 
     /// 未知のコマンド（エラー用）
     Unknown(String),
@@ -99,6 +113,35 @@ impl Command {
                 _ => {
                     let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
                     return Command::Unknown(format!("config {}", sub).trim_end().to_string());
+                }
+            }
+        }
+        if name == "plugins" {
+            match args.first().map(|s| s.as_str()) {
+                Some("list") | None => return Command::PluginsList,
+                _ => {
+                    let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
+                    return Command::Unknown(format!("plugins {}", sub).trim_end().to_string());
+                }
+            }
+        }
+        if name == "daemon" {
+            match args.first().map(|s| s.as_str()) {
+                Some("start") => return Command::DaemonStart,
+                Some("ping") => return Command::DaemonPing,
+                Some("status") => return Command::DaemonStatus,
+                _ => {
+                    let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
+                    return Command::Unknown(format!("daemon {}", sub).trim_end().to_string());
+                }
+            }
+        }
+        if name == "tools" {
+            match args.first().map(|s| s.as_str()) {
+                Some("list") | None => return Command::ToolsList,
+                _ => {
+                    let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
+                    return Command::Unknown(format!("tools {}", sub).trim_end().to_string());
                 }
             }
         }
@@ -147,6 +190,8 @@ impl Command {
                 dry_run: false,
                 defaults_dir: None,
             },
+            "plugins" => Command::PluginsList,
+            "tools" => Command::ToolsList,
             _ => Command::Unknown(s.to_string()),
         }
     }

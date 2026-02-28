@@ -1,0 +1,8 @@
+[package]
+name = "capture"
+version = "0.1.0"
+edition = "2021"
+description = "PTY / log capture (adapter). Phase8 slot; boundary with orchestrator."
+
+[lib]
+path = "src/lib.rs"

@@ -35,8 +35,5 @@ fn test_unregistered_tool_returns_require_approval_fail_closed() {
     assert_eq!(p.tool_name, "unknown_tool");
     assert_eq!(p.mode, ToolMode::RequireApproval);
     assert!(p.capabilities.is_empty());
-    assert_eq!(
-        p.notes.as_deref(),
-        Some("default profile (require_approval)")
-    );
+    assert_eq!(p.notes.as_deref(), Some("default"));
 }

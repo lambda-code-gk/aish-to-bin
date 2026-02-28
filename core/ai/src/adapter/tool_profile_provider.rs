@@ -1,4 +1,4 @@
-use crate::domain::{ToolCapability, ToolMode, ToolProfile};
+use crate::domain::{ToolMode, ToolProfile};
 use crate::ports::outbound::ToolProfileProvider;
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ impl ToolProfileProvider for StaticToolProfileProvider {
             tool_name: tool_name.to_string(),
             mode: ToolMode::RequireApproval,
             capabilities: Vec::new(),
-            notes: Some("default profile (require_approval)".to_string()),
+            notes: Some("default".to_string()),
         }
     }
 }

@@ -5,25 +5,10 @@ use crate::domain::{ContextBudget, Query};
 use crate::ports::outbound::{ContextPackBuilder, QueryPlacement};
 use common::llm::provider::Message as LlmMessage;
 use common::msg::Msg;
-use std::path::PathBuf;
 use std::sync::Arc;
 
-fn no_addons_budget() -> ContextBudget {
-    ContextBudget {
-        max_messages: 0,
-        max_chars: 0,
-    }
-}
-
 fn make_passthrough_builder() -> StdContextPackBuilder {
-    StdContextPackBuilder::new(
-        Arc::new(PassThroughReducer),
-        ContextBudget::legacy(),
-        vec![],
-        no_addons_budget(),
-        PathBuf::from("."),
-        None,
-    )
+    StdContextPackBuilder::new(Arc::new(PassThroughReducer), ContextBudget::legacy())
 }
 
 fn make_tail_builder(max_messages: usize, max_chars: usize) -> StdContextPackBuilder {
@@ -33,10 +18,6 @@ fn make_tail_builder(max_messages: usize, max_chars: usize) -> StdContextPackBui
             max_messages,
             max_chars,
         },
-        vec![],
-        no_addons_budget(),
-        PathBuf::from("."),
-        None,
     )
 }
 
@@ -46,7 +27,12 @@ fn test_append_at_end_adds_query_and_budget_report() {
     let history = vec![LlmMessage::user("prior")];
     let query = Query::new("new query");
     let pack = builder
-        .build(&history, Some(&query), Some("sys"), QueryPlacement::AppendAtEnd)
+        .build(
+            &history,
+            Some(&query),
+            Some("sys"),
+            QueryPlacement::AppendAtEnd,
+        )
         .expect("build should succeed");
 
     assert!(pack.messages.len() >= 2);
@@ -75,7 +61,11 @@ fn test_already_in_history_does_not_duplicate_query() {
         )
         .expect("build should succeed");
 
-    let user_count = pack.messages.iter().filter(|m| matches!(m, Msg::User(_))).count();
+    let user_count = pack
+        .messages
+        .iter()
+        .filter(|m| matches!(m, Msg::User(_)))
+        .count();
     assert_eq!(user_count, 2);
     let last = pack.messages.last().unwrap();
     assert!(matches!(last, Msg::User(s) if s == "already in history"));
@@ -86,7 +76,12 @@ fn test_resume_no_query() {
     let builder = make_passthrough_builder();
     let history = vec![LlmMessage::user("only one")];
     let pack = builder
-        .build(&history, None, Some("sys"), QueryPlacement::AlreadyInHistory)
+        .build(
+            &history,
+            None,
+            Some("sys"),
+            QueryPlacement::AlreadyInHistory,
+        )
         .expect("build should succeed");
 
     assert_eq!(pack.messages.len(), 2);
@@ -106,7 +101,12 @@ fn test_tail_window_truncates_and_reports() {
         .build(&history, Some(&query), None, QueryPlacement::AppendAtEnd)
         .expect("build should succeed");
 
-    let history_decision = pack.budget_report.decisions.iter().find(|d| d.stage == "history.reduce").unwrap();
+    let history_decision = pack
+        .budget_report
+        .decisions
+        .iter()
+        .find(|d| d.stage == "history.reduce")
+        .unwrap();
     assert_eq!(history_decision.action, "truncate");
 
     assert_eq!(pack.messages.len(), 2);
@@ -126,7 +126,12 @@ fn test_tail_window_char_budget() {
         .build(&history, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
-    let history_decision = pack.budget_report.decisions.iter().find(|d| d.stage == "history.reduce").unwrap();
+    let history_decision = pack
+        .budget_report
+        .decisions
+        .iter()
+        .find(|d| d.stage == "history.reduce")
+        .unwrap();
     assert_eq!(history_decision.action, "truncate");
     assert!(matches!(&pack.messages[0], Msg::User(s) if s == "bb"));
     assert!(matches!(&pack.messages[1], Msg::User(s) if s == "c"));
@@ -150,7 +155,12 @@ fn test_system_instruction_prepended() {
     let builder = make_passthrough_builder();
     let history = vec![LlmMessage::user("msg")];
     let pack = builder
-        .build(&history, None, Some("system prompt"), QueryPlacement::AlreadyInHistory)
+        .build(
+            &history,
+            None,
+            Some("system prompt"),
+            QueryPlacement::AlreadyInHistory,
+        )
         .expect("build should succeed");
 
     assert!(matches!(&pack.messages[0], Msg::System(s) if s == "system prompt"));

@@ -539,7 +539,8 @@ mod tests {
 
     #[test]
     fn test_filtering_stdout_sink_exit_nonzero_fails_at_on_end() {
-        let mut sink = FilteringStdoutSink::new(false, "exit 1").unwrap();
+        // on_event では stdin へ書ける（Broken pipe を避ける）よう、stdin を読み切ってから非0終了するコマンドを使う
+        let mut sink = FilteringStdoutSink::new(false, "cat >/dev/null; exit 1").unwrap();
         sink.on_event(&AgentEvent::Llm(LlmEvent::TextDelta("x".to_string())))
             .unwrap();
         let r = sink.on_end();

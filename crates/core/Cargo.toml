@@ -1,0 +1,8 @@
+[package]
+name = "core"
+version = "0.1.0"
+edition = "2021"
+description = "Domain + usecase + ports (pure; no direct I/O). Phase8 slot."
+
+[lib]
+path = "src/lib.rs"

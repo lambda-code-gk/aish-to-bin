@@ -22,6 +22,30 @@ trap "rm -rf $TEST_DIR" EXIT
 BUILD_MODE="${BUILD_MODE:-release}"
 TARGET_DIR="$BUILD_MODE"
 
+# ai バイナリの配置（AISH_BIN 対応 + 新CLI前提, P8-7）
+# AISH_BIN 未設定時は dist/bin を使い、なければ xtask dist で用意する
+resolve_ai_bin() {
+    local bin_dir
+    if [ -n "${AISH_BIN:-}" ]; then
+        if [ -d "$AISH_BIN" ]; then
+            bin_dir="$AISH_BIN"
+        else
+            bin_dir="$(dirname "$AISH_BIN")"
+        fi
+    else
+        bin_dir="$PROJECT_ROOT/dist/bin"
+        if [ ! -f "$bin_dir/ai" ]; then
+            log_info "Dist binary not found; running xtask dist..."
+            (cd "$PROJECT_ROOT" && cargo run -p xtask -- dist $([ "$BUILD_MODE" = "debug" ] && echo "--debug")) >&2 || return 1
+        fi
+    fi
+    if [ ! -f "$bin_dir/ai" ]; then
+        log_error "ai binary not found in $bin_dir (set AISH_BIN to use another path)"
+        return 1
+    fi
+    echo "$bin_dir/ai"
+}
+
 # テスト結果のカウント
 TESTS_PASSED=0
 TESTS_FAILED=0
@@ -173,11 +197,11 @@ main() {
     echo "Test directory: $TEST_DIR"
     echo ""
     
-    # aiバイナリをビルド
-    log_info "Building ai binary..."
+    # ai バイナリを解決（AISH_BIN または dist/bin）
+    log_info "Resolving ai binary..."
     local binary_path
-    if ! binary_path=$(build_binary "ai" "$PROJECT_ROOT/core/ai" "ai"); then
-        log_error "Failed to build ai binary"
+    if ! binary_path=$(resolve_ai_bin); then
+        log_error "Failed to resolve ai binary"
         exit 1
     fi
     

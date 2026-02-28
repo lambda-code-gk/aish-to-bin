@@ -1,35 +1,11 @@
 //! leakscan を用いた機微情報フィルタ（ContextAddon 用）
 
-use crate::domain::SensitiveFilterOutcome;
+use crate::domain::{SensitiveAction, SensitiveFilterOutcome};
 use crate::ports::outbound::SensitiveTextFilter;
 use common::error::Error;
 use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-/// wiring で指定するアクション設定
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SensitiveAction {
-    Deny,
-    Mask,
-    Allow,
-}
-
-impl SensitiveAction {
-    pub fn from_str_or_default(s: &str, non_interactive: bool) -> Self {
-        match s.to_lowercase().as_str() {
-            "deny" => Self::Deny,
-            "mask" => Self::Mask,
-            "allow" => Self::Allow,
-            _ if non_interactive => Self::Deny,
-            _ => Self::Mask,
-        }
-    }
-
-    pub fn default_for(non_interactive: bool) -> Self {
-        if non_interactive { Self::Deny } else { Self::Mask }
-    }
-}
 
 pub struct LeakscanTextFilter {
     leakscan_binary: PathBuf,
@@ -107,7 +83,7 @@ impl SensitiveTextFilter for LeakscanTextFilter {
             return Ok(SensitiveFilterOutcome::Clean);
         }
         match self.action {
-            SensitiveAction::Allow => Ok(SensitiveFilterOutcome::Clean),
+            SensitiveAction::Allow => Ok(SensitiveFilterOutcome::Hit { verbose }),
             SensitiveAction::Deny => Ok(SensitiveFilterOutcome::Deny { verbose }),
             SensitiveAction::Mask => {
                 let masked = self.mask(content)?;

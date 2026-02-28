@@ -31,6 +31,7 @@ pub mod tool_profile;
 pub use approval::{Approval, ToolApproval};
 pub use budget_report::*;
 pub use command::AiCommand;
+pub use common::domain::EventEnvelope;
 pub use context_addon::*;
 pub use context_pack::*;
 pub use config_source::*;

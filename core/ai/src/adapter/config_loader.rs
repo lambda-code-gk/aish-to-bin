@@ -19,27 +19,44 @@ pub struct CliPolicyOverrides {
 pub struct StdConfigProvider {
     env: Arc<dyn EnvResolver>,
     fs: Arc<dyn FileSystem>,
+    project_root: PathBuf,
     cli: CliPolicyOverrides,
 }
 
 impl StdConfigProvider {
-    pub fn new(env: Arc<dyn EnvResolver>, fs: Arc<dyn FileSystem>, cli: CliPolicyOverrides) -> Self {
-        Self { env, fs, cli }
+    pub fn new(
+        env: Arc<dyn EnvResolver>,
+        fs: Arc<dyn FileSystem>,
+        project_root: PathBuf,
+        cli: CliPolicyOverrides,
+    ) -> Self {
+        Self {
+            env,
+            fs,
+            project_root,
+            cli,
+        }
     }
 
-    fn load_toml(&self, path: &PathBuf) -> Option<ParsedPolicyToml> {
+    /// ファイルを読み、schema_version が 1 以外なら Err（fail-closed）。OK なら Parsed を返す。
+    fn load_toml(&self, path: &PathBuf) -> Result<Option<ParsedPolicyToml>, Error> {
         if !self.fs.exists(path) {
-            return None;
+            return Ok(None);
         }
         let s = match self.fs.read_to_string(path.as_path()) {
             Ok(s) => s,
-            Err(_) => return None,
+            Err(_) => return Ok(None),
         };
-        parse_policy_toml(&s).ok()
-    }
-
-    fn schema_version_from(parsed: &ParsedPolicyToml) -> Option<u32> {
-        parsed.schema_version
+        let parsed = parse_policy_toml(&s)?;
+        if let Some(v) = parsed.schema_version {
+            if v != 1 {
+                return Err(Error::InvalidArgument(format!(
+                    "Unsupported policy config schema_version (only 1 is allowed, got {})",
+                    v
+                )));
+            }
+        }
+        Ok(Some(parsed))
     }
 
     fn apply_parsed(
@@ -52,20 +69,26 @@ impl StdConfigProvider {
             kind: kind.clone(),
             ref_id: format!("{}:{}", ref_id, suffix),
         };
+        if let Some(v) = parsed.schema_version {
+            cfg.schema_version = Resolved::new(v, src("schema_version"));
+        }
         if let Some(policy) = &parsed.policy {
             if let Some(v) = &policy.egress_sensitive_action {
-                cfg.egress_sensitive_action = Resolved::new(v.to_lowercase(), src("policy.egress_sensitive_action"));
+                cfg.egress_sensitive_action =
+                    Resolved::new(v.to_lowercase(), src("policy.egress_sensitive_action"));
             }
             if let Some(v) = policy.egress_hard_cap_chars {
                 cfg.egress_hard_cap_chars = Resolved::new(v, src("policy.egress_hard_cap_chars"));
             }
             if let Some(v) = &policy.addons_sensitive_action {
-                cfg.addons_sensitive_action = Resolved::new(v.to_lowercase(), src("policy.addons_sensitive_action"));
+                cfg.addons_sensitive_action =
+                    Resolved::new(v.to_lowercase(), src("policy.addons_sensitive_action"));
             }
             if let Some(tools) = &policy.tools {
                 if let Some(run) = &tools.run_shell {
                     if let Some(m) = &run.mode {
-                        cfg.run_shell_mode = Resolved::new(m.to_lowercase(), src("policy.tools.run_shell.mode"));
+                        cfg.run_shell_mode =
+                            Resolved::new(m.to_lowercase(), src("policy.tools.run_shell.mode"));
                     }
                     if let Some(list) = &run.allowlist {
                         cfg.run_shell_allowlist =
@@ -95,9 +118,9 @@ impl StdConfigProvider {
         if let Ok(v) = std::env::var("AISH_EGRESS_HARD_CAP_CHARS") {
             let v = v.trim();
             if !v.is_empty() {
-                let parsed = v
-                    .parse::<usize>()
-                    .map_err(|e| Error::InvalidArgument(format!("AISH_EGRESS_HARD_CAP_CHARS: {}", e)))?;
+                let parsed = v.parse::<usize>().map_err(|e| {
+                    Error::InvalidArgument(format!("AISH_EGRESS_HARD_CAP_CHARS: {}", e))
+                })?;
                 cfg.egress_hard_cap_chars = Resolved::new(
                     parsed,
                     ConfigSource {
@@ -178,8 +201,7 @@ impl StdConfigProvider {
                 Resolved::new(v.to_lowercase(), src("--policy.egress-sensitive-action"));
         }
         if let Some(v) = self.cli.egress_hard_cap_chars {
-            cfg.egress_hard_cap_chars =
-                Resolved::new(v, src("--policy.egress-hard-cap-chars"));
+            cfg.egress_hard_cap_chars = Resolved::new(v, src("--policy.egress-hard-cap-chars"));
         }
         if let Some(v) = &self.cli.addons_sensitive_action {
             cfg.addons_sensitive_action =
@@ -195,9 +217,32 @@ impl StdConfigProvider {
                     list.push(item.clone());
                 }
             }
-            cfg.run_shell_allowlist =
-                Resolved::new(list, src("--policy.run-shell-allowlist-add"));
+            cfg.run_shell_allowlist = Resolved::new(list, src("--policy.run-shell-allowlist-add"));
         }
+    }
+
+    fn validate_policy_values(cfg: &PolicyConfig) -> Result<(), Error> {
+        let valid_sensitive = ["deny", "mask", "allow"];
+        if !valid_sensitive.contains(&cfg.egress_sensitive_action.value.as_str()) {
+            return Err(Error::InvalidArgument(format!(
+                "policy.egress_sensitive_action must be one of deny|mask|allow, got '{}'",
+                cfg.egress_sensitive_action.value
+            )));
+        }
+        if !valid_sensitive.contains(&cfg.addons_sensitive_action.value.as_str()) {
+            return Err(Error::InvalidArgument(format!(
+                "policy.addons_sensitive_action must be one of deny|mask|allow, got '{}'",
+                cfg.addons_sensitive_action.value
+            )));
+        }
+        let valid_run_shell_mode = ["allow", "require_approval", "deny"];
+        if !valid_run_shell_mode.contains(&cfg.run_shell_mode.value.as_str()) {
+            return Err(Error::InvalidArgument(format!(
+                "policy.tools.run_shell.mode must be one of allow|require_approval|deny, got '{}'",
+                cfg.run_shell_mode.value
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -205,20 +250,12 @@ impl ConfigProvider for StdConfigProvider {
     fn policy_config(&self) -> Result<PolicyConfig, Error> {
         let mut cfg = PolicyConfig::defaults();
 
-        // user & project TOML
+        // user & project TOML (schema_version は load_toml 内で fail-closed 検証済み)
         let dirs = self.env.resolve_dirs()?;
         let user_path = dirs.config_dir.join("config.toml");
-        let project_path = self
-            .env
-            .current_dir()?
-            .join(".aish")
-            .join("config.toml");
+        let project_path = self.project_root.join(".aish").join("config.toml");
 
-        let mut versions = Vec::new();
-        if let Some(p) = self.load_toml(&user_path) {
-            if let Some(v) = Self::schema_version_from(&p) {
-                versions.push(v);
-            }
+        if let Some(p) = self.load_toml(&user_path)? {
             Self::apply_parsed(
                 &mut cfg,
                 &p,
@@ -226,10 +263,7 @@ impl ConfigProvider for StdConfigProvider {
                 user_path.to_string_lossy().into_owned(),
             );
         }
-        if let Some(p) = self.load_toml(&project_path) {
-            if let Some(v) = Self::schema_version_from(&p) {
-                versions.push(v);
-            }
+        if let Some(p) = self.load_toml(&project_path)? {
             Self::apply_parsed(
                 &mut cfg,
                 &p,
@@ -238,19 +272,12 @@ impl ConfigProvider for StdConfigProvider {
             );
         }
 
-        // schema_version: 1 以外が混ざっていないかチェック
-        if versions.iter().any(|v| *v != 1) {
-            return Err(Error::InvalidArgument(
-                "Unsupported policy config schema_version (only 1 is allowed)".to_string(),
-            ));
-        }
-
         // env
         self.apply_env(&mut cfg)?;
         // cli
         self.apply_cli(&mut cfg);
 
+        Self::validate_policy_values(&cfg)?;
         Ok(cfg)
     }
 }
-

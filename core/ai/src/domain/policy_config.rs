@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// policy 関連設定（v0.6 時点では policy 用のみを対象にした最小構成）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PolicyConfig {
-    pub schema_version: u32,
+    pub schema_version: Resolved<u32>,
     pub egress_sensitive_action: Resolved<String>,
     pub egress_hard_cap_chars: Resolved<usize>,
     pub addons_sensitive_action: Resolved<String>,
@@ -26,7 +26,7 @@ impl PolicyConfig {
         };
 
         PolicyConfig {
-            schema_version: 1,
+            schema_version: Resolved::new(1, default_source("defaults.schema_version")),
             egress_sensitive_action: Resolved::new(
                 "mask".to_string(),
                 default_source("defaults.policy.egress_sensitive_action"),
@@ -50,10 +50,7 @@ impl PolicyConfig {
                     "cat".to_string(),
                     "rg".to_string(),
                     "fd".to_string(),
-                    "sed".to_string(),
-                    "awk".to_string(),
                     "cargo".to_string(),
-                    "rustc".to_string(),
                 ],
                 default_source("defaults.policy.run_shell_allowlist"),
             ),
@@ -64,4 +61,3 @@ impl PolicyConfig {
         }
     }
 }
-

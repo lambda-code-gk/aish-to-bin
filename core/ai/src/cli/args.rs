@@ -16,6 +16,8 @@ pub struct Config {
     pub policy_explain: bool,
     /// --config-explain: 解決済み設定と source を表示
     pub config_explain: bool,
+    /// --sessions-rebuild-derived: events.ndjson から index/summary を再生成（-s または AISH_SESSION 必須）
+    pub sessions_rebuild_derived: bool,
     /// -c / --continue: 保存された会話状態から再開する
     pub continue_flag: bool,
     /// --no-interactive: 確認プロンプトを出さず CI 等でブロックしない（承認は常に拒否・続行はしない・leakscan ヒットは拒否）
@@ -43,6 +45,7 @@ impl Default for Config {
             list_tools: false,
             policy_explain: false,
             config_explain: false,
+            sessions_rebuild_derived: false,
             continue_flag: false,
             non_interactive: false,
             verbose: false,
@@ -103,6 +106,12 @@ fn build_clap_command() -> clap::Command {
             clap::Arg::new("config-explain")
                 .long("config-explain")
                 .help("Show resolved config and sources (for aish config explain)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("sessions-rebuild-derived")
+                .long("sessions-rebuild-derived")
+                .help("Rebuild index.sqlite and snapshots/summary.json from events.ndjson (requires -s or AISH_SESSION)")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -198,6 +207,7 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
     let list_tools = matches.get_flag("list-tools");
     let policy_explain = matches.get_flag("policy-explain");
     let config_explain = matches.get_flag("config-explain");
+    let sessions_rebuild_derived = matches.get_flag("sessions-rebuild-derived");
     let continue_flag = matches.get_flag("continue");
     let non_interactive = matches.get_flag("no-interactive");
     let verbose = matches.get_flag("verbose");
@@ -228,6 +238,7 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
         list_tools,
         policy_explain,
         config_explain,
+        sessions_rebuild_derived,
         continue_flag,
         non_interactive,
         verbose,
@@ -272,6 +283,34 @@ pub fn parse_args_from(args: &[String]) -> Result<Config, Error> {
         .try_get_matches_from(args)
         .map_err(|e| Error::invalid_argument(e.to_string()))?;
     Ok(matches_to_config(&matches))
+}
+
+/// 外部から引数イテレータで解析する（crates/aish の aish ai サブコマンド用）
+pub fn parse_args_from_os(
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> Result<ParseOutcome, Error> {
+    let args: Vec<std::ffi::OsString> = args
+        .into_iter()
+        .map(|a| a.as_ref().to_owned())
+        .collect();
+    let cmd = build_clap_command();
+    let matches = cmd
+        .try_get_matches_from(args)
+        .map_err(|e| Error::invalid_argument(e.to_string()))?;
+
+    if let Some(&shell) = matches.get_one::<Shell>("generate") {
+        return Ok(ParseOutcome::GenerateCompletion(shell));
+    }
+
+    if matches.get_flag("list-tasks") {
+        return Ok(ParseOutcome::ListTasks);
+    }
+
+    if matches.get_flag("list-modes") {
+        return Ok(ParseOutcome::ListModes);
+    }
+
+    Ok(ParseOutcome::Config(matches_to_config(&matches)))
 }
 
 /// 補完スクリプトを標準出力に出力する。
@@ -365,6 +404,10 @@ pub fn config_to_command(config: Config) -> AiCommand {
 
     if config.config_explain {
         return AiCommand::ConfigExplain;
+    }
+
+    if config.sessions_rebuild_derived {
+        return AiCommand::SessionsRebuildDerived;
     }
 
     if config.continue_flag {

@@ -50,4 +50,6 @@ pub enum AiCommand {
     },
     /// policy explain: 解決済みポリシー・ルール順・代表例を表示
     PolicyExplain,
+    /// セッションの派生物（index.sqlite / snapshots/summary.json）を events.ndjson から再生成
+    SessionsRebuildDerived,
 }

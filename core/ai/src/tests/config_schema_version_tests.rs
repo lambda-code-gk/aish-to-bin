@@ -38,10 +38,13 @@ egress_sensitive_action = "mask"
     let provider = StdConfigProvider::new(
         std::sync::Arc::new(env_resolver),
         std::sync::Arc::new(fs),
+        project_dir.to_path_buf(),
         CliPolicyOverrides::default(),
     );
 
-    let err = provider.policy_config().expect_err("schema_version=2 must fail");
+    let err = provider
+        .policy_config()
+        .expect_err("schema_version=2 must fail");
     let msg = err.to_string();
     assert!(
         msg.contains("schema_version"),
@@ -59,4 +62,3 @@ egress_sensitive_action = "mask"
     }
     let _ = std::env::set_current_dir(old_cwd);
 }
-

@@ -4,11 +4,13 @@
 
 pub mod dirs;
 pub mod event;
+pub mod event_envelope;
 
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub use dirs::Dirs;
+pub use event_envelope::{EventEnvelope, EventEnvelopeWithoutSeq};
 
 /// セッションディレクトリのパス
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,0 +1,8 @@
+[package]
+name = "orchestrator"
+version = "0.1.0"
+edition = "2021"
+description = "ContextPackBuilder / LLM orchestrator / Tool runtime. Phase8 slot."
+
+[lib]
+path = "src/lib.rs"

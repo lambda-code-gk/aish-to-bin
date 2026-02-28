@@ -3,6 +3,7 @@
 //! OS 副作用を伴う具象ツールをここに配置する。
 
 pub(crate) mod external_tool_proxy;
+pub(crate) mod mcp_tool_proxy;
 pub(crate) mod get_memory_content;
 pub(crate) mod grep;
 pub(crate) mod history_get;
@@ -16,6 +17,7 @@ pub(crate) mod search_memory;
 pub(crate) mod write_file;
 
 pub(crate) use external_tool_proxy::ExternalToolProxy;
+pub(crate) use mcp_tool_proxy::McpToolProxy;
 pub(crate) use get_memory_content::GetMemoryContentTool;
 pub(crate) use grep::GrepTool;
 pub(crate) use history_get::HistoryGetTool;

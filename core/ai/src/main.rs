@@ -12,7 +12,7 @@ use std::process;
 use common::domain::{ModelName, ProviderName, SessionDir};
 use common::error::Error;
 use common::ports::outbound::{now_iso8601, Log, LogLevel, LogRecord};
-use cli::{config_to_command, parse_args, print_completion, Config, ParseOutcome};
+use cli::{config_to_command, parse_args, parse_args_from_os, print_completion, Config, ParseOutcome};
 use domain::{AiCommand, TaskName};
 use ports::inbound::UseCaseRunner;
 use common::event_hub::{build_event_hub, EventHubHandle};
@@ -156,6 +156,19 @@ impl Runner {
         let json =
             serde_json::to_string_pretty(&info).map_err(|e| Error::json(e.to_string()))?;
         println!("{}", json);
+        Ok(0)
+    }
+
+    fn run_sessions_rebuild_derived(
+        &self,
+        session_dir: Option<SessionDir>,
+    ) -> Result<i32, Error> {
+        let dir = session_dir.ok_or_else(|| {
+            Error::invalid_argument(
+                "sessions-rebuild-derived requires a session. Set AISH_SESSION or use -s/--session-dir (e.g. from aish: aish -s <dir> sessions rebuild-derived).".to_string(),
+            )
+        })?;
+        self.app.session_use_case.rebuild_derived(&dir)?;
         Ok(0)
     }
 
@@ -308,6 +321,7 @@ impl UseCaseRunner for Runner {
             AiCommand::ListTools { profile } => self.run_list_tools(profile),
             AiCommand::PolicyExplain => self.run_policy_explain(),
             AiCommand::ConfigExplain => self.run_config_explain(),
+            AiCommand::SessionsRebuildDerived => self.run_sessions_rebuild_derived(session_dir),
             AiCommand::Task {
                 name,
                 args,
@@ -443,6 +457,7 @@ fn cmd_name_for_log(cmd: &AiCommand) -> &'static str {
         AiCommand::ListTools { .. } => "list-tools",
         AiCommand::PolicyExplain => "policy-explain",
         AiCommand::ConfigExplain => "config-explain",
+        AiCommand::SessionsRebuildDerived => "sessions-rebuild-derived",
         AiCommand::Task { .. } => "task",
         AiCommand::Resume { .. } => "resume",
         AiCommand::Query { .. } => "query",
@@ -463,13 +478,24 @@ fn main() {
     process::exit(exit_code);
 }
 
-pub fn run() -> Result<i32, Error> {
-    let outcome = parse_args()?;
-    let config = match &outcome {
-        ParseOutcome::Config(c) => c.clone(),
+/// 引数イテレータで実行する（crates/aish の aish ai サブコマンド用）
+pub fn run_with_args(
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> Result<i32, Error> {
+    let outcome = parse_args_from_os(args)?;
+    run_with_outcome(&outcome)
+}
+
+fn run_with_outcome(outcome: &ParseOutcome) -> Result<i32, Error> {
+    match outcome {
+        ParseOutcome::Config(c) => {
+            let app = wire_ai(c.non_interactive, c.verbose);
+            let runner = Runner { app };
+            runner.run(c.clone())
+        }
         ParseOutcome::GenerateCompletion(shell) => {
             print_completion(*shell);
-            return Ok(0);
+            Ok(0)
         }
         ParseOutcome::ListTasks => {
             let app = wire_ai(false, false);
@@ -477,7 +503,7 @@ pub fn run() -> Result<i32, Error> {
             for n in &names {
                 println!("{}", n);
             }
-            return Ok(0);
+            Ok(0)
         }
         ParseOutcome::ListModes => {
             let app = wire_ai(false, false);
@@ -485,12 +511,14 @@ pub fn run() -> Result<i32, Error> {
             for n in &names {
                 println!("{}", n);
             }
-            return Ok(0);
+            Ok(0)
         }
-    };
-    let app = wire_ai(config.non_interactive, config.verbose);
-    let runner = Runner { app };
-    runner.run(config)
+    }
+}
+
+pub fn run() -> Result<i32, Error> {
+    let outcome = parse_args()?;
+    run_with_outcome(&outcome)
 }
 
 fn print_usage() {

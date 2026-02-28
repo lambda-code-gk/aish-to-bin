@@ -1,12 +1,14 @@
-use crate::domain::{DryRunInfo, LifecycleEvent, PolicyVerdict, QueryOutcome};
+use crate::domain::{DryRunInfo, EventEnvelope, LifecycleEvent, PolicyVerdict, QueryOutcome};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextArtifactStore,
     ContextPackBuilder, ContinueAfterLimitPrompt, DryRunReportSink, EventSinkFactory,
     InterruptChecker, LifecycleHooks, LlmEventStreamFactory, PolicyEngine,
     PrepareSessionForSensitiveCheck, ProfileLister, QueryPlacement, ResolveMemoryDir,
-    ResolveProfileAndModel, RunQuery, SessionHistoryLoader, SessionResponseSaver, ToolApproval,
+    ResolveProfileAndModel, RunQuery, SessionDerivedBuilder, SessionEventStore,
+    SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopOutcome};
+use common::ports::outbound::Clock;
 use common::ports::outbound::EnvResolver;
 use common::ports::outbound::{now_iso8601, FileSystem, Log, LogLevel, LogRecord, Process};
 use common::error::Error;
@@ -14,7 +16,8 @@ use crate::domain::Query;
 use common::msg::Msg;
 use common::domain::event::{Event, RunId, SessionId};
 use common::event_hub::EventHubHandle;
-use common::domain::SessionDir;
+use common::domain::{SessionDir, EventEnvelopeWithoutSeq};
+use common::ports::outbound::EventAppender;
 use common::tool::{Tool, ToolContext, ToolRegistry};
 use std::sync::Arc;
 
@@ -46,6 +49,14 @@ pub struct SessionDeps {
     pub prepare_session_for_sensitive_check: Option<Arc<dyn PrepareSessionForSensitiveCheck>>,
     /// leakscan が有効で manifest/reviewed 履歴を使っている場合 true（dry run 表示用）
     pub leakscan_enabled: bool,
+    /// セッションイベント永続（events.ndjson 読み書きのうち読み取りと低レベル append）
+    pub session_event_store: Arc<dyn SessionEventStore>,
+    /// 派生物再生成（index.sqlite / snapshots/summary.json）
+    pub session_derived_builder: Arc<dyn SessionDerivedBuilder>,
+    /// イベントの ts_ms 採番用
+    pub clock: Arc<dyn Clock>,
+    /// セッションイベント append（単一入口。seq 採番 + append を担当）
+    pub event_appender: Arc<dyn EventAppender>,
 }
 
 pub struct PolicyDeps {
@@ -125,7 +136,7 @@ impl AiUseCase {
             .deps.model.resolve_profile_and_model
             .resolve(provider.as_ref(), model.as_ref())?;
 
-        let (messages, budget_report) = match query {
+        let (messages, budget_report, attachments_count) = match query {
             None => {
                 let dir = session_dir.as_ref().ok_or_else(|| {
                     Error::invalid_argument("No continuation state. Use -c with a session or provide a message.")
@@ -140,7 +151,7 @@ impl AiUseCase {
                     .ok_or_else(|| {
                         Error::invalid_argument("No continuation state. Use -c with a session or provide a message.")
                     })?;
-                (msgs, None)
+                (msgs, None, None)
             }
             Some(q) => {
                 let (history_messages, query_placement) = if self.session_is_valid(&session_dir) {
@@ -159,7 +170,7 @@ impl AiUseCase {
                     system_instruction,
                     query_placement,
                 )?;
-                (pack.messages, Some(pack.budget_report))
+                (pack.messages, Some(pack.budget_report), Some(pack.attachments.len()))
             }
         };
 
@@ -188,6 +199,7 @@ impl AiUseCase {
             tools_enabled,
             messages,
             budget_report,
+            attachments_count,
         })
     }
 
@@ -213,6 +225,77 @@ impl AiUseCase {
         )?;
         self.deps.dry_run_report_sink.report(&info)?;
         Ok(())
+    }
+
+    /// payload が巨大な場合は artifacts/events に書き出し、payload は preview + artifact_rel_path に差し替える（P8-4）
+    fn normalize_event_payload(
+        &self,
+        session_dir: &SessionDir,
+        run_id: &RunId,
+        kind: &str,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value, Error> {
+        const EVENTS_ARTIFACTS_DIR: &str = "artifacts/events";
+        let serialized =
+            serde_json::to_string(&payload).map_err(|e| Error::json(e.to_string()))?;
+        if serialized.len() <= EventEnvelope::RECOMMENDED_MAX_PAYLOAD_BYTES {
+            return Ok(payload);
+        }
+        let ts_ms = self.deps.session.clock.now_ms() as i64;
+        let run_id_str: &str = run_id.0.as_str();
+        let safe_kind: String = kind
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        let filename = format!("{}_{}_{}.json", run_id_str, safe_kind, ts_ms);
+        let rel_path = format!("{}/{}", EVENTS_ARTIFACTS_DIR, filename);
+        let full_path = session_dir.as_ref().join(&rel_path);
+        if let Some(parent) = full_path.parent() {
+            self.deps.session.fs.create_dir_all(parent)?;
+        }
+        self.deps.session.fs.write(&full_path, &serialized)?;
+        let preview_len = 300usize;
+        let preview = if serialized.len() <= preview_len {
+            serialized.clone()
+        } else {
+            format!("{}...", &serialized[..preview_len.saturating_sub(3)])
+        };
+        Ok(serde_json::json!({
+            "preview": preview,
+            "artifact_rel_path": rel_path,
+        }))
+    }
+
+    /// 重要イベントを events.ndjson に追記（session_dir があるときのみ。fail-closed）。巨大 payload は正規化する（P8-4）。
+    fn append_event_to_store(
+        &self,
+        session_dir: &SessionDir,
+        session_id: &SessionId,
+        run_id: &RunId,
+        kind: &str,
+        payload: serde_json::Value,
+    ) -> Result<(), Error> {
+        let payload = self.normalize_event_payload(session_dir, run_id, kind, payload)?;
+        let ts_ms = self.deps.session.clock.now_ms() as i64;
+        let envelope = EventEnvelopeWithoutSeq {
+            v: EventEnvelope::SCHEMA_VERSION,
+            ts_ms,
+            session_id: session_id.0.clone(),
+            run_id: Some(run_id.0.clone()),
+            kind: kind.to_string(),
+            payload,
+        };
+        self.deps
+            .session
+            .event_appender
+            .append(session_dir, envelope)
+            .map(|_| ())
+    }
+
+    /// run 終了時に派生物（index.sqlite / summary.json）を再生成する（session_dir があるとき）
+    fn rebuild_derived(&self, session_dir: &SessionDir) -> Result<(), Error> {
+        let mut iter = self.deps.session.session_event_store.read_all(session_dir)?;
+        self.deps.session.session_derived_builder.rebuild(session_dir, &mut iter)
     }
 
     fn truncate_console_log(&self, session_dir: &SessionDir) -> Result<(), Error> {
@@ -290,8 +373,11 @@ impl AiUseCase {
                 session_id: session_id.clone(),
                 run_id: run_id.clone(),
                 kind: "run.started".to_string(),
-                payload,
+                payload: payload.clone(),
             });
+            if let Some(ref dir) = session_dir {
+                self.append_event_to_store(dir, &session_id, &run_id, "run.started", payload)?;
+            }
         }
 
         let (profile_name, model_name) = self
@@ -378,6 +464,9 @@ impl AiUseCase {
                             });
                         }
                         self.try_save_agent_state_on_error(&session_dir, &[]);
+                        if let Some(ref dir) = session_dir {
+                            let _ = self.rebuild_derived(dir);
+                        }
                         return Err(e);
                     }
                 };
@@ -387,25 +476,79 @@ impl AiUseCase {
                     Ok(PolicyVerdict::Allow { value, decision }) => {
                         pack = value;
                         if let Some(ref hub) = event_hub {
+                            let pl = decision.to_event_payload();
                             hub.emit(Event {
                                 v: 1,
                                 session_id: session_id.clone(),
                                 run_id: run_id.clone(),
                                 kind: "policy.evaluated".to_string(),
-                                payload: decision.to_event_payload(),
+                                payload: pl.clone(),
                             });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "policy.evaluated", pl)?;
+                            }
                         }
                     }
-                    Ok(PolicyVerdict::RequireApproval { decision, .. }) | Ok(PolicyVerdict::Deny { decision }) => {
+                    Ok(PolicyVerdict::RequireApproval { decision, .. }) => {
+                        let mut block_decision = decision;
+                        block_decision.status = "blocked".to_string();
+                        block_decision.reason = "egress_require_approval_not_supported".to_string();
                         let elapsed_ms = run_start.elapsed().as_millis() as u64;
                         if let Some(ref hub) = event_hub {
+                            let block_pl = block_decision.to_event_payload();
                             hub.emit(Event {
                                 v: 1,
                                 session_id: session_id.clone(),
                                 run_id: run_id.clone(),
                                 kind: "policy.evaluated".to_string(),
-                                payload: decision.to_event_payload(),
+                                payload: block_pl.clone(),
                             });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "policy.evaluated", block_pl)?;
+                            }
+                            let mut payload = serde_json::json!({
+                                "reason": "egress_policy_blocked",
+                                "message": format!("Egress blocked: {} ({})", block_decision.reason, block_decision.status),
+                                "exit_code": 1,
+                                "elapsed_ms": elapsed_ms,
+                            });
+                            if sessionless {
+                                payload["sessionless"] = serde_json::json!(true);
+                            }
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "run.failed".to_string(),
+                                payload: payload.clone(),
+                            });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                            }
+                        }
+                        self.try_save_agent_state_on_error(&session_dir, &[]);
+                        if let Some(ref dir) = session_dir {
+                            let _ = self.rebuild_derived(dir);
+                        }
+                        return Err(Error::system(format!(
+                            "Context pack blocked by egress policy: {} ({})",
+                            block_decision.reason, block_decision.status
+                        )));
+                    }
+                    Ok(PolicyVerdict::Deny { decision }) => {
+                        let elapsed_ms = run_start.elapsed().as_millis() as u64;
+                        if let Some(ref hub) = event_hub {
+                            let pl = decision.to_event_payload();
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "policy.evaluated".to_string(),
+                                payload: pl.clone(),
+                            });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "policy.evaluated", pl)?;
+                            }
                             let mut payload = serde_json::json!({
                                 "reason": "egress_policy_blocked",
                                 "message": format!("Egress blocked: {} ({})", decision.reason, decision.status),
@@ -420,10 +563,16 @@ impl AiUseCase {
                                 session_id: session_id.clone(),
                                 run_id: run_id.clone(),
                                 kind: "run.failed".to_string(),
-                                payload,
+                                payload: payload.clone(),
                             });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                            }
                         }
                         self.try_save_agent_state_on_error(&session_dir, &[]);
+                        if let Some(ref dir) = session_dir {
+                            let _ = self.rebuild_derived(dir);
+                        }
                         return Err(Error::system(format!(
                             "Context pack blocked by egress policy: {} ({})",
                             decision.reason, decision.status
@@ -446,19 +595,41 @@ impl AiUseCase {
                         match self.deps.session.artifact_store.store(dir, &run_id, &pack.attachments) {
                             Ok(stored) => pack.attachments = stored,
                             Err(e) => {
-                                let _ = self.deps.obs.log.log(&LogRecord {
-                                    ts: now_iso8601(),
-                                    level: LogLevel::Warn,
-                                    message: format!("Failed to store context artifacts: {}", e),
-                                    layer: Some("usecase".to_string()),
-                                    kind: Some("artifact".to_string()),
-                                    fields: None,
-                                });
+                                let elapsed_ms = run_start.elapsed().as_millis() as u64;
+                                if let Some(ref hub) = event_hub {
+                                    let mut payload = serde_json::json!({
+                                        "reason": "context_artifact_store",
+                                        "message": e.to_string(),
+                                        "exit_code": e.exit_code(),
+                                        "elapsed_ms": elapsed_ms,
+                                    });
+                                    if sessionless {
+                                        payload["sessionless"] = serde_json::json!(true);
+                                    }
+                            hub.emit(Event {
+                                v: 1,
+                                session_id: session_id.clone(),
+                                run_id: run_id.clone(),
+                                kind: "run.failed".to_string(),
+                                payload: payload.clone(),
+                            });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                            }
+                        }
+                        self.try_save_agent_state_on_error(&session_dir, &[]);
+                        if let Some(ref dir) = session_dir {
+                            let _ = self.rebuild_derived(dir);
+                        }
+                        return Err(e);
                             }
                         }
                     }
                 }
 
+                let addons_count = pack.budget_report.decisions.iter()
+                    .filter(|d| d.stage == "addon.select" && d.action == "keep")
+                    .count();
                 if let Some(ref hub) = event_hub {
                     let report = &pack.budget_report;
                     let artifact_refs: Vec<&str> = pack
@@ -466,29 +637,34 @@ impl AiUseCase {
                         .iter()
                         .filter_map(|a| a.artifact_rel_path.as_deref())
                         .collect();
+                    let pack_payload = serde_json::json!({
+                        "budget": {
+                            "max_messages": report.budget.max_messages,
+                            "max_chars": report.budget.max_chars,
+                        },
+                        "input": {
+                            "message_count": report.input.message_count,
+                            "char_count": report.input.char_count,
+                        },
+                        "output": {
+                            "message_count": report.output.message_count,
+                            "char_count": report.output.char_count,
+                        },
+                        "decisions": report.decisions,
+                        "addons_count": addons_count,
+                        "attachments_count": pack.attachments.len(),
+                        "artifact_refs": artifact_refs,
+                    });
                     hub.emit(Event {
                         v: 1,
                         session_id: session_id.clone(),
                         run_id: run_id.clone(),
                         kind: "context.pack_built".to_string(),
-                        payload: serde_json::json!({
-                            "budget": {
-                                "max_messages": report.budget.max_messages,
-                                "max_chars": report.budget.max_chars,
-                            },
-                            "input": {
-                                "message_count": report.input.message_count,
-                                "char_count": report.input.char_count,
-                            },
-                            "output": {
-                                "message_count": report.output.message_count,
-                                "char_count": report.output.char_count,
-                            },
-                            "decisions": report.decisions,
-                            "attachments_count": pack.attachments.len(),
-                            "artifact_refs": artifact_refs,
-                        }),
+                        payload: pack_payload.clone(),
                     });
+                    if let Some(ref dir) = session_dir {
+                        self.append_event_to_store(dir, &session_id, &run_id, "context.pack_built", pack_payload)?;
+                    }
                 }
 
                 pack.messages
@@ -520,10 +696,16 @@ impl AiUseCase {
                         session_id: session_id.clone(),
                         run_id: run_id.clone(),
                         kind: "run.failed".to_string(),
-                        payload,
+                        payload: payload.clone(),
                     });
+                    if let Some(ref dir) = session_dir {
+                        self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                    }
                 }
                 self.try_save_agent_state_on_error(&session_dir, &messages);
+                if let Some(ref dir) = session_dir {
+                    let _ = self.rebuild_derived(dir);
+                }
                 return Err(e);
             }
         };
@@ -553,10 +735,16 @@ impl AiUseCase {
                         session_id: session_id.clone(),
                         run_id: run_id.clone(),
                         kind: "run.failed".to_string(),
-                        payload,
+                        payload: payload.clone(),
                     });
+                    if let Some(ref dir) = session_dir {
+                        self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                    }
                 }
                 self.try_save_agent_state_on_error(&session_dir, &messages);
+                if let Some(ref dir) = session_dir {
+                    let _ = self.rebuild_derived(dir);
+                }
                 return Err(e);
             }
         };
@@ -593,6 +781,11 @@ impl AiUseCase {
                 Some(run_id.clone()),
             );
             let sinks = self.deps.tooling.sink_factory.create_sinks();
+            let artifact_store = if session_dir.is_some() {
+                Some(Arc::clone(&self.deps.session.artifact_store))
+            } else {
+                None
+            };
             let mut agent_loop = AgentLoop::new(
                 Arc::clone(&stream),
                 registry,
@@ -605,6 +798,10 @@ impl AiUseCase {
                 event_hub.clone(),
                 session_id.clone(),
                 run_id.clone(),
+                session_dir.clone(),
+                Some(Arc::clone(&self.deps.session.event_appender)),
+                Some(Arc::clone(&self.deps.session.clock)),
+                artifact_store,
             );
 
             let outcome = match agent_loop
@@ -630,10 +827,16 @@ impl AiUseCase {
                             session_id: session_id.clone(),
                             run_id: run_id.clone(),
                             kind: "run.failed".to_string(),
-                            payload,
+                            payload: payload.clone(),
                         });
+                        if let Some(ref dir) = session_dir {
+                            self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                        }
                     }
                     self.try_save_agent_state_on_error(&session_dir, &messages);
+                    if let Some(ref dir) = session_dir {
+                        let _ = self.rebuild_derived(dir);
+                    }
                     return Err(e);
                 }
             };
@@ -684,8 +887,14 @@ impl AiUseCase {
                             session_id: session_id.clone(),
                             run_id: run_id.clone(),
                             kind: "run.completed".to_string(),
-                            payload,
+                            payload: payload.clone(),
                         });
+                        if let Some(ref dir) = session_dir {
+                            self.append_event_to_store(dir, &session_id, &run_id, "run.completed", payload)?;
+                        }
+                    }
+                    if let Some(ref dir) = session_dir {
+                        self.rebuild_derived(dir)?;
                     }
                     let _ = self.deps.obs.log.log(&LogRecord {
                         ts: now_iso8601(),
@@ -718,10 +927,16 @@ impl AiUseCase {
                                     session_id: session_id.clone(),
                                     run_id: run_id.clone(),
                                     kind: "run.failed".to_string(),
-                                    payload,
+                                    payload: payload.clone(),
                                 });
+                                if let Some(ref dir) = session_dir {
+                                    self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                                }
                             }
                             self.try_save_agent_state_on_error(&session_dir, &msgs);
+                            if let Some(ref dir) = session_dir {
+                                let _ = self.rebuild_derived(dir);
+                            }
                             return Err(e);
                         }
                     };
@@ -768,8 +983,14 @@ impl AiUseCase {
                                 session_id: session_id.clone(),
                                 run_id: run_id.clone(),
                                 kind: "run.completed".to_string(),
-                                payload,
+                                payload: payload.clone(),
                             });
+                            if let Some(ref dir) = session_dir {
+                                self.append_event_to_store(dir, &session_id, &run_id, "run.completed", payload)?;
+                            }
+                        }
+                        if let Some(ref dir) = session_dir {
+                            self.rebuild_derived(dir)?;
                         }
                         let _ = self.deps.obs.log.log(&LogRecord {
                             ts: now_iso8601(),

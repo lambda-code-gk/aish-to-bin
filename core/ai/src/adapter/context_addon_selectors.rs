@@ -8,44 +8,47 @@ use common::ports::outbound::FileSystem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-fn git_changed_files(project_root: &Path, max_files: usize) -> Vec<PathBuf> {
+/// git diff --name-only を実行。失敗時は Err を返し builder が addon.selector error decision を積む。
+fn git_changed_files(project_root: &Path, max_files: usize) -> Result<Vec<PathBuf>, Error> {
     let output = std::process::Command::new("git")
         .args(["diff", "--name-only"])
         .current_dir(project_root)
-        .output();
-    let output = match output {
-        Ok(o) if o.status.success() => o,
-        _ => return vec![],
-    };
+        .output()
+        .map_err(|e| Error::system(format!("git diff failed: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(Error::system(format!("git diff failed: {}", stderr)));
+    }
     let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
+    Ok(stdout
         .lines()
         .filter(|l| !l.trim().is_empty())
         .take(max_files)
         .map(PathBuf::from)
-        .collect()
+        .collect())
 }
 
 /// 変更ファイルのスニペットを ContextAddon として返すセレクタ
 pub struct ChangedFilesSnippetSelector {
     fs: Arc<dyn FileSystem>,
     max_files: usize,
-    max_bytes: usize,
     max_lines: usize,
+    max_bytes: usize,
 }
 
 impl ChangedFilesSnippetSelector {
+    /// 引数順: max_files, max_lines, max_bytes（仕様 v0.2）
     pub fn new(
         fs: Arc<dyn FileSystem>,
         max_files: usize,
-        max_bytes: usize,
         max_lines: usize,
+        max_bytes: usize,
     ) -> Self {
         Self {
             fs,
             max_files,
-            max_bytes,
             max_lines,
+            max_bytes,
         }
     }
 }
@@ -74,7 +77,7 @@ impl ContextAddonSelector for ChangedFilesSnippetSelector {
     fn select(&self, input: &ContextAddonInput) -> Result<Vec<ContextAddon>, Error> {
         let _ = input.history;
         let _ = input.query;
-        let files = git_changed_files(input.project_root, self.max_files);
+        let files = git_changed_files(input.project_root, self.max_files)?;
         let mut addons = Vec::new();
         for rel_path in files {
             let abs_path = input.project_root.join(&rel_path);
@@ -90,7 +93,7 @@ impl ContextAddonSelector for ChangedFilesSnippetSelector {
             let hash = hash64(&snippet);
             let bytes = snippet.len() as u64;
             let msg_text = format!(
-                "Context: file snippet: {}\n```\n{}\n```",
+                "Context: file snippet: {}\n```text\n{}\n```",
                 path_str, snippet
             );
             addons.push(ContextAddon {

@@ -47,11 +47,14 @@ impl ResolveSystemPromptFromHooks for StdResolveSystemPromptFromHooks {
         }
 
         // 3. プロジェクト: {PROJECT_ROOT}/.aish/hooks/system_prompt
-        let current = self.env.current_dir()?;
-        if let Some(project_root) = find_project_root(current.as_path())? {
-            let project_dir = project_root.join(AISH_DIR).join(HOOKS_SUBDIR).join(SYSTEM_PROMPT_HOOK);
-            if let Some(s) = run_hook_dir(self.fs.as_ref(), &project_dir)? {
-                parts.push(s);
+        // current_dir が取得できない環境（削除済み cwd 等）でも fail-closed せず、
+        // 「プロジェクトフック無し」として解決を継続する。
+        if let Ok(current) = self.env.current_dir() {
+            if let Some(project_root) = find_project_root(current.as_path())? {
+                let project_dir = project_root.join(AISH_DIR).join(HOOKS_SUBDIR).join(SYSTEM_PROMPT_HOOK);
+                if let Some(s) = run_hook_dir(self.fs.as_ref(), &project_dir)? {
+                    parts.push(s);
+                }
             }
         }
 

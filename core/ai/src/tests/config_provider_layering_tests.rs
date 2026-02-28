@@ -76,10 +76,13 @@ egress_sensitive_action = "deny"
     let provider = StdConfigProvider::new(
         std::sync::Arc::new(env_resolver),
         std::sync::Arc::new(fs),
+        project_dir.to_path_buf(),
         cli,
     );
 
-    let cfg: PolicyConfig = provider.policy_config().expect("policy_config must succeed");
+    let cfg: PolicyConfig = provider
+        .policy_config()
+        .expect("policy_config must succeed");
     assert_eq!(cfg.egress_sensitive_action.value, "mask");
     assert_eq!(
         cfg.egress_sensitive_action.source.kind,
@@ -97,4 +100,3 @@ egress_sensitive_action = "deny"
     }
     let _ = std::env::set_current_dir(old_cwd);
 }
-

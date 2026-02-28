@@ -27,7 +27,11 @@ impl ResolveMemoryDir for StdResolveMemoryDir {
         let dirs = self.env.resolve_dirs()?;
         let global = dirs.data_dir.join(MEMORY_SUBDIR);
 
-        let project = find_project_memory_dir(self.env.current_dir()?.as_path())?;
+        // current_dir が取得できない環境（削除済み cwd 等）では project は None 扱いにする。
+        let project = match self.env.current_dir() {
+            Ok(cwd) => find_project_memory_dir(cwd.as_path())?,
+            Err(_) => None,
+        };
         Ok((project, global))
     }
 }

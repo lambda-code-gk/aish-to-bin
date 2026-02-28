@@ -6,7 +6,8 @@ use common::adapter::{
     FileJsonLog, NoopLog, StdClock, StdEnvResolver, StdFileSystem, StdPathResolver,
 };
 use common::part_id::{IdGenerator, StdIdGenerator};
-use common::ports::outbound::{EnvResolver, FileSystem, Log, PathResolver, Signal};
+use common::ports::outbound::{EnvResolver, FileSystem, Log, McpHost, PathResolver, Signal};
+use plugins::StdioJsonRpcMcpBridgeHost;
 
 use crate::adapter::{
     LoggingMemoryRepository, StdMemoryRepository, StdReviewedHistoryReader, StdShellRunner,
@@ -40,6 +41,8 @@ pub struct App {
     pub sessions_use_case: SessionsUseCase,
     pub history_use_case: HistoryUseCase,
     pub init_use_case: InitUseCase,
+    /// 外部拡張（MCP互換ホスト）
+    pub mcp_host: Arc<dyn McpHost>,
     /// 構造化ログ（ファイルへ JSONL）。エラー時のコンソール表示とは別。main で lifecycle/error に利用予定。
     #[allow(dead_code)]
     pub logger: Arc<dyn Log>,
@@ -108,6 +111,7 @@ pub fn wire_aish() -> App {
         reviewed_history_reader,
     );
     let init_use_case = InitUseCase::new(Arc::clone(&env_resolver), Arc::clone(&fs));
+    let mcp_host: Arc<dyn McpHost> = Arc::new(StdioJsonRpcMcpBridgeHost::new());
     let get_terminal_width: Box<dyn Fn() -> usize + Send + Sync> = Box::new(|| {
         const STDOUT_FD: std::os::unix::io::RawFd = 1;
         crate::adapter::platform::get_winsize(STDOUT_FD)
@@ -132,6 +136,7 @@ pub fn wire_aish() -> App {
         sessions_use_case,
         history_use_case,
         init_use_case,
+        mcp_host,
         logger,
         get_terminal_width,
     }

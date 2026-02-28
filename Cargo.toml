@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = [
+    "core/common",
+    "core/ai",
+    "core/aish",
+    "crates/daemon_api",
+    "crates/aish",
+    "crates/core",
+    "crates/storage",
+    "crates/capture",
+    "crates/orchestrator",
+    "crates/plugins",
+    "crates/providers",
+    "xtask",
+]

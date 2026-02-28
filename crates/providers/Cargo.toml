@@ -1,0 +1,8 @@
+[package]
+name = "providers"
+version = "0.1.0"
+edition = "2021"
+description = "OpenAI/Gemini-compatible provider adapters (feature-gated). Phase8 slot."
+
+[lib]
+path = "src/lib.rs"

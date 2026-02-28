@@ -1,14 +1,14 @@
-//! PolicyEngine の標準実装（RuleChain + ToolProfile ベース）
+//! PolicyEngine の標準実装（Phase 5: ordered rule chain + ToolProfile）
 
-use crate::domain::{ContextPack, PolicyChain, PolicyDecision, PolicyVerdict, RuleVerdict};
+use crate::domain::{ContextPack, PolicyChain, PolicyDecision, PolicyVerdict};
 use crate::ports::outbound::{PolicyEngine, ToolProfileProvider};
 use common::error::Error;
 use common::tool::ToolContext;
 use std::sync::Arc;
 
 pub struct StdPolicyEngine {
-    chain: PolicyChain,
-    tool_profiles: Arc<dyn ToolProfileProvider>,
+    pub chain: PolicyChain,
+    pub tool_profiles: Arc<dyn ToolProfileProvider>,
 }
 
 impl StdPolicyEngine {
@@ -27,12 +27,11 @@ impl PolicyEngine for StdPolicyEngine {
         non_interactive: bool,
     ) -> Result<PolicyVerdict<ContextPack>, Error> {
         for rule in &self.chain.egress_rules {
-            let verdict = rule.evaluate(pack, non_interactive)?;
-            if let RuleVerdict::Verdict(v) = verdict {
-                return Ok(v);
+            match rule.evaluate(pack, non_interactive)? {
+                crate::domain::RuleVerdict::NoMatch => continue,
+                crate::domain::RuleVerdict::Verdict(v) => return Ok(v),
             }
         }
-
         Ok(PolicyVerdict::Allow {
             value: pack.clone(),
             decision: PolicyDecision {
@@ -55,12 +54,11 @@ impl PolicyEngine for StdPolicyEngine {
     ) -> Result<PolicyVerdict<ToolContext>, Error> {
         let profile = self.tool_profiles.get(tool_name);
         for rule in &self.chain.tool_rules {
-            let verdict = rule.evaluate(tool_name, tool_args, &profile, tool_ctx, non_interactive)?;
-            if let RuleVerdict::Verdict(v) = verdict {
-                return Ok(v);
+            match rule.evaluate(tool_name, tool_args, &profile, tool_ctx, non_interactive)? {
+                crate::domain::RuleVerdict::NoMatch => continue,
+                crate::domain::RuleVerdict::Verdict(v) => return Ok(v),
             }
         }
-
         Ok(PolicyVerdict::Allow {
             value: tool_ctx.clone(),
             decision: PolicyDecision {
@@ -74,4 +72,3 @@ impl PolicyEngine for StdPolicyEngine {
         })
     }
 }
-

@@ -16,6 +16,11 @@ impl StdConfigExplainProvider {
         let mut out = Vec::new();
 
         out.push(ConfigKeySource {
+            key: "schema_version".to_string(),
+            value_preview: cfg.schema_version.value.to_string(),
+            source: cfg.schema_version.source.clone(),
+        });
+        out.push(ConfigKeySource {
             key: "policy.egress_sensitive_action".to_string(),
             value_preview: cfg.egress_sensitive_action.value.clone(),
             source: cfg.egress_sensitive_action.source.clone(),
@@ -48,13 +53,12 @@ impl StdConfigExplainProvider {
 impl ConfigExplainProvider for StdConfigExplainProvider {
     fn explain(&self) -> Result<ConfigExplainInfo, Error> {
         let cfg = self.provider.policy_config()?;
-        let resolved =
-            serde_json::to_value(&cfg).map_err(|e| Error::Json(e.to_string()))?;
+        let resolved = serde_json::to_value(&cfg).map_err(|e| Error::Json(e.to_string()))?;
         let sources = self.build_sources(&cfg);
         let notes = vec![
             "Precedence: CLI flags > env > project (.aish/config.toml) > user (config.toml) > defaults"
                 .to_string(),
-            format!("schema_version: {}", cfg.schema_version),
+            format!("schema_version: {}", cfg.schema_version.value),
         ];
 
         Ok(ConfigExplainInfo {
@@ -65,4 +69,3 @@ impl ConfigExplainProvider for StdConfigExplainProvider {
         })
     }
 }
-
