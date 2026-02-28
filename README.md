@@ -48,20 +48,21 @@ Rust 製の `ai` / `aish` バイナリとして提供され、ターミナルの
 
     ```bash
     git clone https://github.com/lambda-code-gk/aish.git
-    cd aish
+    cd aish   # クローン先のディレクトリ名は環境により異なります
     ```
 
 2. **コアツールとバイナリをビルド**:
 
-    プロジェクトルートで:
+    プロジェクトは Cargo workspace です。プロジェクトルートで:
 
     ```bash
-    ./build.sh          # リリースビルド
+    ./build.sh          # リリースビルド（core/ai, core/aish, leakscan, md-fmt を dist/bin/ に配置）
     # または
     ./build.sh --debug  # デバッグビルド
     ```
 
-    ビルド成果物は **`dist/bin/`** に配置されます（リポジトリは汚れません）。
+    ビルド成果物は **`dist/bin/`** に配置されます（リポジトリは汚れません）。  
+    結合テスト（`./tests/integration.sh`）は、`dist/bin/` に `aish` と `ai` が無い場合に `cargo run -p xtask -- dist` で生成します。
 
 3. **開発時の実行環境（推奨）**:
 
@@ -120,7 +121,7 @@ $ aish
 
 `ai <task> [message...]` 形式で、タスクスクリプトを実行できます。タスクは次のパス（先に存在する方）から検索されます。
 
-- `$AISH_HOME/config/task.d/`
+- `$AISH_HOME/config/task.d/` または `$AISH_HOME/task.d/`（AISH_HOME が config ルートのとき）
 - `$XDG_CONFIG_HOME/aish/task.d/`（例: `~/.config/aish/task.d/`）
 
 | 例 | 説明 |
@@ -132,9 +133,10 @@ $ aish
 
 ## 🧰 Support Tools
 
-補助ツールは `tools/` 以下にあります。`build.sh` 実行時に **leakscan** がビルドされ、`dist/bin/` に配置されます。
+補助ツールは `tools/` 以下にあります。`build.sh` 実行時に **leakscan** と **md-fmt** がビルドされ、`dist/bin/` に配置されます。
 
 * **`leakscan`**: 秘密情報の誤送信を防ぐための検査エンジン。キーワード・正規表現・Shannon エントロピー等でログやファイルをスキャンします。
+* **`md-fmt`**: Markdown 整形などに利用する補助ツール。
 
 その他、`tools/aish-capture` / `aish-render` / `aish-script` 等のサブプロジェクトは存在しますが、現状の `build.sh` では旧実装で使用していたもので今はビルド対象外です（必要に応じて個別にビルド可能）。
 
@@ -144,19 +146,23 @@ $ aish
 
 ```text
 aish/
-├── core/                 # Rust クレート郡
-│   ├── common/           # ai / aish 共通ドメイン・ポート・LLM ドライバ等
-│   ├── ai/               # 'ai' コマンド本体
-│   └── aish/             # 'aish' コマンド本体
-├── assets/defaults/      # 初期設定テンプレ（aish init で XDG/AISH_HOME に展開）
-├── dist/                 # ビルド成果物（dist/bin/。.gitignore 済み）
-├── .sandbox/             # 開発用サンドボックス（scripts/dev/env.sh で使用。.gitignore 済み）
-├── tools/                # サブツール（build.sh では leakscan をビルド）
+├── Cargo.toml             # ワークスペース定義（default-members: core/ai, core/aish 等）
+├── core/                  # Rust クレート（メインの ai / aish バイナリ）
+│   ├── common/            # ai / aish 共通ドメイン・ポート・LLM ドライバ等
+│   ├── ai/                # 'ai' コマンド本体
+│   └── aish/              # 'aish' コマンド本体
+├── crates/                # 共通ライブラリ等（storage, plugins, providers 等）
+├── xtask/                 # ビルド・配布用タスク（cargo run -p xtask -- dist 等）
+├── assets/defaults/       # 初期設定テンプレ（aish init で XDG/AISH_HOME に展開）
+├── dist/                  # ビルド成果物（dist/bin/。.gitignore 済み）
+├── .sandbox/              # 開発用サンドボックス（scripts/dev/env.sh で使用。.gitignore 済み）
+├── tools/                 # サブツール（build.sh では leakscan, md-fmt をビルド）
 │   ├── leakscan/
-│   └── aish-capture/ 等  # サブプロジェクト（必要に応じて個別ビルド）
-├── scripts/dev/          # 開発用スクリプト（env.sh, reset.sh）
-├── old_impl/             # 旧シェル実装（Bash + Python ベース）
-└── tests/                # アーキテクチャ・ユニット・統合テスト（architecture.sh, units.sh, integration.sh）
+│   ├── md-fmt/
+│   └── aish-capture/ 等   # サブプロジェクト（必要に応じて個別ビルド）
+├── scripts/dev/           # 開発用スクリプト（env.sh, reset.sh）
+├── old_impl/              # 旧シェル実装（Bash + Python ベース）
+└── tests/                 # アーキテクチャ・ユニット・統合テスト（architecture.sh, units.sh, integration.sh）
 ```
 
 ### 開発・テスト

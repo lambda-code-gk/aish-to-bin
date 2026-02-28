@@ -30,6 +30,21 @@ aish [options] [<command> [args...]]
 | `clear` | セッションディレクトリ内の Part ファイルを削除し、会話履歴をクリアします。 |
 | `truncate_console_log` | コンソールログ/バッファを切り詰めます。主に `ai` との連携用です。 |
 | `init [--force] [--dry-run] [--defaults-dir DIR]` | テンプレ（`AISH_DEFAULTS_DIR` または `--defaults-dir`）を XDG/AISH_HOME の config にコピーします。 |
+| `memory list` | メモリ一覧（id, category, subject）を表示します。 |
+| `memory get <id> [id...]` | 指定 ID のメモリ内容を取得します。 |
+| `memory remove <id> [id...]` | 指定 ID のメモリを削除します。 |
+| `history ls [-a][-u][--all]` | reviewed 履歴一覧。`-a`=assistant, `-u`=user, `--all`=すべて。 |
+| `history get <id> [...]` | 指定 ID の reviewed 内容を取得します。 |
+| `sessions` | セッション一覧・操作（例: `sessions rebuild-derived`）。 |
+| `resume [<id>]` | セッションを再開します。 |
+| `rollout` | バッファをフラッシュしログをロールオーバー（SIGUSR1 相当）。 |
+| `mute` | ロールアウト後に console 記録を停止します。 |
+| `unmute` | console 記録を再開します。 |
+| `policy explain` | `ai --policy-explain` を実行します。 |
+| `config explain` | `ai --config-explain` を実行します。 |
+| `plugins list` | 外部プラグイン一覧を表示します。 |
+| `tools list` | 外部ツール一覧を表示します。 |
+| `daemon start \| ping \| status` | デーモン制御（起動・疎通・状態）。 |
 
 > 詳細: `aish` の起動・セッションの挙動については `aish-usage.md` を参照してください。
 
@@ -88,8 +103,8 @@ ai [options] [task] [message...]
 
 `task` に指定した名前に対応するスクリプトが見つかった場合、LLM への問い合わせの代わりにタスクスクリプトが実行されます。
 
-- 検索パス
-  - `$AISH_HOME/config/task.d/`
+- 検索パス（先に存在する方を使用）
+  - AISH_HOME 設定時: `$AISH_HOME/config/task.d/` または `$AISH_HOME/task.d/`（AISH_HOME が config ルートのときは `task.d` 直下）
   - `$XDG_CONFIG_HOME/aish/task.d/`
   - `~/.config/aish/task.d/`
 
