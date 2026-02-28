@@ -5,7 +5,10 @@ mod ports;
 mod usecase;
 mod wiring;
 
-use cli::{config_to_command, parse_args, print_completion, Config, ParseOutcome};
+#[cfg(unix)]
+mod daemon;
+
+use cli::{config_to_command, parse_args, parse_args_from_os, print_completion, Config, ParseOutcome};
 use common::error::Error;
 use common::ports::outbound::PathResolverInput;
 use domain::command::Command;
@@ -52,6 +55,9 @@ impl UseCaseRunner for Runner {
                     println!("{}", id);
                 }
                 Ok(0)
+            }
+            Command::SessionsRebuildDerived { session_id } => {
+                run_ai_sessions_rebuild_derived(&path_input, session_id.as_deref(), &self.app.path_resolver)
             }
             Command::Init {
                 force,
@@ -140,6 +146,65 @@ impl UseCaseRunner for Runner {
             }
             Command::PolicyExplain => run_ai_policy_explain(),
             Command::ConfigExplain => run_ai_config_explain(),
+            Command::PluginsList => {
+                let mut list = self.app.mcp_host.discover()?;
+                list.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+                for p in list {
+                    let flag = if p.enabled { "enabled" } else { "disabled" };
+                    let src = p.source.unwrap_or_default();
+                    println!("{}\t{}\t{}\t{}", flag, p.id.0, p.namespace, src);
+                }
+                Ok(0)
+            }
+            #[cfg(unix)]
+            Command::DaemonStart => {
+                let path = daemon::default_socket_path();
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| Error::invalid_argument(e.to_string()))?
+                    .block_on(daemon::run_server(path))
+                    .map_err(|e| Error::invalid_argument(e.to_string()))?;
+                Ok(0)
+            }
+            #[cfg(unix)]
+            Command::DaemonPing => {
+                let path = daemon::default_socket_path();
+                let ok = tokio::runtime::Runtime::new()
+                    .map_err(|e| Error::invalid_argument(e.to_string()))?
+                    .block_on(daemon::run_ping(&path))
+                    .map_err(|e| Error::invalid_argument(e.to_string()))?;
+                Ok(if ok { 0 } else { 1 })
+            }
+            #[cfg(unix)]
+            Command::DaemonStatus => {
+                let path = daemon::default_socket_path();
+                tokio::runtime::Runtime::new()
+                    .map_err(|e| Error::invalid_argument(e.to_string()))?
+                    .block_on(daemon::run_status(&path))
+                    .map_err(|e| Error::invalid_argument(e.to_string()))?;
+                Ok(0)
+            }
+            Command::ToolsList => {
+                let mut tool_ids: Vec<String> = Vec::new();
+                let servers = self.app.mcp_host.discover()?;
+                for s in servers.into_iter().filter(|s| s.enabled) {
+                    match self.app.mcp_host.list_tools(&s.id) {
+                        Ok(tools) => {
+                            for t in tools {
+                                tool_ids.push(t.id.0);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("tools list failed for {}: {}", s.id.0, e);
+                        }
+                    }
+                }
+                tool_ids.sort();
+                tool_ids.dedup();
+                for id in tool_ids {
+                    println!("{}", id);
+                }
+                Ok(0)
+            }
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
                 "Command '{}' is not implemented.",
                 name
@@ -163,6 +228,63 @@ fn run_ai_policy_explain() -> Result<i32, Error> {
 fn run_ai_config_explain() -> Result<i32, Error> {
     let status = process::Command::new("ai")
         .arg("--config-explain")
+        .status()
+        .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
+    Ok(status.code().unwrap_or(1))
+}
+
+/// セッション派生物の再生成。daemon 起動中かつ AISH_DAEMON=auto|on なら RPC、否則は ai を起動。
+#[cfg(unix)]
+fn run_ai_sessions_rebuild_derived(
+    path_input: &PathResolverInput,
+    session_id: Option<&str>,
+    path_resolver: &std::sync::Arc<dyn common::ports::outbound::PathResolver>,
+) -> Result<i32, Error> {
+    use common::ports::outbound::PathResolver;
+    let home_dir = path_resolver.resolve_home_dir(path_input)?;
+    let default_session = path_resolver.resolve_session_dir(path_input, &home_dir)?;
+    let (session_path, session_id_display) = if let Some(id) = session_id {
+        let parent = std::path::Path::new(&default_session)
+            .parent()
+            .ok_or_else(|| Error::system("Failed to resolve sessions root"))?;
+        let path = parent.join(id).to_string_lossy().to_string();
+        (path, id.to_string())
+    } else {
+        let id = std::path::Path::new(&default_session)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        (default_session.clone(), id.to_string())
+    };
+
+    let daemon_mode = std::env::var("AISH_DAEMON").unwrap_or_else(|_| "off".to_string());
+    if daemon_mode == "auto" || daemon_mode == "on" {
+        let socket_path = daemon::default_socket_path();
+        let rt = tokio::runtime::Runtime::new().map_err(|e| Error::io_msg(e.to_string()))?;
+        match rt.block_on(daemon::run_rebuild_derived(
+            &socket_path,
+            &session_path,
+            &session_id_display,
+        )) {
+            Ok(result) => {
+                if std::env::var("AISH_VERBOSE").is_ok() {
+                    eprintln!("rebuild-derived via daemon: {} ms", result.duration_ms);
+                }
+                return Ok(0);
+            }
+            Err(e) if daemon_mode == "on" => {
+                return Err(Error::io_msg(format!(
+                    "AISH_DAEMON=on but daemon rebuild_derived failed: {}",
+                    e
+                )));
+            }
+            _ => {}
+        }
+    }
+
+    let status = process::Command::new("ai")
+        .env("AISH_SESSION", &session_path)
+        .arg("--sessions-rebuild-derived")
         .status()
         .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
     Ok(status.code().unwrap_or(1))
@@ -346,28 +468,46 @@ fn print_history_get(entries: &[crate::domain::HistoryGetEntry]) {
     }
 }
 
-pub fn run() -> Result<i32, Error> {
-    let outcome = parse_args()?;
-    let config = match &outcome {
+/// 引数イテレータで実行する（crates/aish の aish サブコマンド用）
+#[cfg(unix)]
+pub fn run_with_args(
+    args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> Result<i32, Error> {
+    let outcome = parse_args_from_os(args)?;
+    run_with_outcome(&outcome)
+}
+
+#[cfg(unix)]
+fn run_with_outcome(outcome: &ParseOutcome) -> Result<i32, Error> {
+    let config = match outcome {
         ParseOutcome::Config(c) => c.clone(),
         ParseOutcome::GenerateCompletion(shell) => {
             print_completion(*shell);
             return Ok(0);
         }
     };
-    #[cfg(unix)]
-    {
-        // -d/--home-dir 指定時は AISH_HOME を設定し、resolve_dirs() がその配下を使うようにする
-        if let Some(ref h) = config.home_dir {
-            std::env::set_var("AISH_HOME", h);
-        }
-        let app = wire_aish();
-        let runner = Runner { app };
-        runner.run(config)
+    if let Some(ref h) = config.home_dir {
+        std::env::set_var("AISH_HOME", h);
     }
+    let app = wire_aish();
+    let runner = Runner { app };
+    runner.run(config)
+}
+
+#[cfg(not(unix))]
+pub fn run_with_args(
+    _args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
+) -> Result<i32, Error> {
+    Err(Error::system("aish is only supported on Unix"))
+}
+
+pub fn run() -> Result<i32, Error> {
+    let outcome = parse_args()?;
+    #[cfg(unix)]
+    return run_with_outcome(&outcome);
     #[cfg(not(unix))]
     {
-        let _ = config;
+        let _ = outcome;
         Err(Error::system("aish is only supported on Unix"))
     }
 }
@@ -426,6 +566,9 @@ mod tests {
                 // run_app では標準出力の内容は検証しないため、結果の有無にかかわらず成功とみなす
                 let _ = ids;
                 Ok(0)
+            }
+            Command::SessionsRebuildDerived { session_id } => {
+                run_ai_sessions_rebuild_derived(&path_input, session_id.as_deref(), &app.path_resolver)
             }
             Command::Init {
                 force,
@@ -493,6 +636,29 @@ mod tests {
             }
             Command::PolicyExplain => Ok(0),
             Command::ConfigExplain => Ok(0),
+            Command::PluginsList => Ok(0),
+            #[cfg(unix)]
+            Command::DaemonStart => {
+                let path = daemon::default_socket_path();
+                let rt = tokio::runtime::Runtime::new().map_err(|e| Error::io_msg(e.to_string()))?;
+                let _ = rt.block_on(daemon::run_server(path)).map_err(|e| Error::io_msg(e.to_string()))?;
+                Ok(0)
+            }
+            #[cfg(unix)]
+            Command::DaemonPing => {
+                let path = daemon::default_socket_path();
+                let rt = tokio::runtime::Runtime::new().map_err(|e| Error::io_msg(e.to_string()))?;
+                let ok = rt.block_on(daemon::run_ping(&path)).unwrap_or(false);
+                Ok(if ok { 0 } else { 1 })
+            }
+            #[cfg(unix)]
+            Command::DaemonStatus => {
+                let path = daemon::default_socket_path();
+                let rt = tokio::runtime::Runtime::new().map_err(|e| Error::io_msg(e.to_string()))?;
+                let _ = rt.block_on(daemon::run_status(&path)).map_err(|e| Error::io_msg(e.to_string()))?;
+                Ok(0)
+            }
+            Command::ToolsList => Ok(0),
             Command::Unknown(name) => Err(Error::invalid_argument(format!(
                 "Command '{}' is not implemented.",
                 name

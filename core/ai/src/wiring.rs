@@ -6,43 +6,47 @@ use std::sync::Arc;
 use common::adapter::{
     FileJsonLog, NoopLog, StdClock, StdEnvResolver, StdFileSystem, StdProcess,
 };
+use common::ports::outbound::Clock;
 use common::event_hub::EventHubHandle;
 use common::part_id::StdIdGenerator;
-use common::ports::outbound::{EnvResolver, FileSystem, Log, Process};
+use common::ports::outbound::{EnvResolver, FileSystem, Log, McpHost, Process};
 use common::tool::EchoTool;
+use plugins::StdioJsonRpcMcpBridgeHost;
 
 use crate::adapter::{
-    external_plugin_loader,
     ChangedFilesSnippetSelector, CliContinuePrompt, CliToolApproval, CompositeLifecycleHooks,
-    DeterministicCompactionStrategy, EgressBudgetHardCapRule, EgressSensitiveRule,
-    FileAgentStateStorage, GetMemoryContentTool, GrepHitsSelector, GrepTool, LeakscanPrepareSession,
-    LeakscanTextFilter, ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy,
-    MemorySelector, NoContinuePrompt, NoopInterruptChecker, NonInteractiveToolApproval,
-    PartSessionStorage, PassThroughReducer, ReadFileTool, ReplaceFileTool, ReviewedTailViewStrategy,
-    SelfImproveHandler, ShellAllowlistRule, SigintChecker, StdCommandAllowRulesLoader,
-    StdContextArtifactStore, StdContextPackBuilder, StdEventSinkFactory, StdLlmCompletion,
-    StdLlmEventStreamFactory, StdPolicyEngine, StdProfileLister, StdResolveMemoryDir,
-    StdResolveModeConfig, StdResolveProfileAndModel, StdResolveSystemPromptFromHooks,
-    StaticToolProfileProvider, StdoutDryRunReportSink, StdTaskRunner, ShellTool, TailWindowReducer,
-    ToolModeRule, WriteFileTool, HistoryGetTool, HistorySearchTool,
-    QueueShellSuggestionTool, SaveMemoryTool, SearchMemoryTool,
-    StdConfigProvider, CliPolicyOverrides, StdConfigExplainProvider,
+    DeterministicCompactionStrategy, EgressBudgetHardCapRule, EgressSensitiveRule, FileAgentStateStorage,
+    GetMemoryContentTool, GrepHitsSelector, GrepTool, LeakscanPrepareSession, LeakscanTextFilter,
+    ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy, MemorySelector, NoContinuePrompt,
+    NoopInterruptChecker, NonInteractiveToolApproval, PartSessionStorage, PassThroughReducer,
+    ReadFileTool, ReplaceFileTool, ReviewedTailViewStrategy, SelfImproveHandler, ShellAllowlistRule,
+    SigintChecker, StdCommandAllowRulesLoader, StdContextArtifactStore, StdContextPackBuilder,
+    StdContextPackBuilderWithAddons, StdEventSinkFactory, StdLlmCompletion, StdLlmEventStreamFactory,
+    StdPolicyEngine, StdProfileLister, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel,
+    StdResolveSystemPromptFromHooks, StdoutDryRunReportSink, StdSessionDerivedBuilder,
+    StdTaskRunner, ShellTool, StaticToolProfileProvider, TailWindowReducer, ToolModeRule,
+    WriteFileTool, HistoryGetTool, HistorySearchTool, QueueShellSuggestionTool, SaveMemoryTool,
+    SearchMemoryTool, StdConfigProvider, CliPolicyOverrides, StdConfigExplainProvider,
 };
-use crate::adapter::leakscan_text_filter::SensitiveAction;
+use storage::{DerivedRebuilder, LocalEventAppender, NdjsonSessionEventStore};
+use crate::adapter::{DaemonEventAppender, FallbackEventAppender};
+use daemon_api;
+use crate::domain::{PolicyChain, SensitiveAction, ToolCapability, ToolMode, ToolProfile};
 use crate::adapter::lifecycle::LifecycleHandler;
-use crate::domain::{ContextBudget, PolicyChain, PolicyConfig, Query, ToolCapability, ToolMode, ToolProfile};
+use crate::domain::{ContextBudget, PolicyConfig, Query};
 use crate::adapter::policy_explain_provider::StdPolicyExplainProvider;
 use crate::domain::{PolicyDecision, PolicyExplainExample};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, ConfigExplainProvider, ConfigProvider, ContextAddonSelector,
     ContextArtifactStore, ContextPackBuilder, DryRunReportSink, LifecycleHooks, LlmCompletion,
     PolicyEngine, PolicyExplainProvider, PrepareSessionForSensitiveCheck, ResolveModeConfig,
-    ResolveSystemPromptFromHooks, RunQuery, SessionHistoryLoader, SessionResponseSaver,
-    TaskRunner, ToolProfileProvider,
+    ResolveSystemPromptFromHooks, RunQuery, SessionDerivedBuilder, SessionEventStore,
+    SessionHistoryLoader, SessionResponseSaver, TaskRunner, ToolProfileProvider, EventAppender,
 };
 use crate::usecase::app::{AiDeps, AiUseCase, ModelDeps, ObsDeps, PolicyDeps, SessionDeps, SystemDeps, ToolingDeps};
-use crate::usecase::policy_usecase::PolicyUseCase;
 use crate::usecase::config_usecase::ConfigUseCase;
+use crate::usecase::policy_usecase::PolicyUseCase;
+use crate::usecase::session_usecase::SessionUseCase;
 use crate::usecase::task::TaskUseCase;
 
 /// Arc<AiUseCase> を RunQuery として渡すための薄いラッパ
@@ -90,6 +94,8 @@ pub struct App {
     pub policy_use_case: PolicyUseCase,
     /// config explain（解決済み設定と source 一覧）
     pub config_use_case: ConfigUseCase,
+    /// セッション派生物の再生成（events.ndjson → index / summary）
+    pub session_use_case: SessionUseCase,
 }
 
 
@@ -169,6 +175,7 @@ fn build_session_deps(
     interrupt_checker: &Arc<dyn crate::ports::outbound::InterruptChecker>,
     non_interactive: bool,
     config_provider: &Arc<dyn ConfigProvider>,
+    project_root: PathBuf,
 ) -> (SessionDeps, Arc<dyn PolicyExplainProvider>, Arc<dyn ConfigExplainProvider>) {
     let id_gen = Arc::new(StdIdGenerator::new(Arc::new(StdClock)));
     let part_storage = Arc::new(PartSessionStorage::new(Arc::clone(fs), id_gen));
@@ -216,13 +223,14 @@ fn build_session_deps(
 
     let resolve_memory_dir = Arc::new(StdResolveMemoryDir::new(Arc::clone(env_resolver)));
 
+    // v0.3: addons = 変更ファイル + memory + grep（env で enable/disable）
     let mut selectors: Vec<Arc<dyn ContextAddonSelector>> = vec![
-        Arc::new(ChangedFilesSnippetSelector::new(Arc::clone(fs), 8, 16_000, 200)),
+        Arc::new(ChangedFilesSnippetSelector::new(Arc::clone(fs), 8, 200, 16_000)),
     ];
-    let memory_disabled = std::env::var("AISH_CONTEXT_ADDONS_MEMORY_ENABLED")
-        .map(|v| v == "0")
-        .unwrap_or(false);
-    if !memory_disabled {
+    let memory_enabled = std::env::var("AISH_CONTEXT_ADDONS_MEMORY_ENABLED")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    if memory_enabled {
         let memory_limit = std::env::var("AISH_CONTEXT_ADDONS_MEMORY_LIMIT")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -233,10 +241,10 @@ fn build_session_deps(
             1200,
         )));
     }
-    let grep_disabled = std::env::var("AISH_CONTEXT_ADDONS_GREP_ENABLED")
-        .map(|v| v == "0")
-        .unwrap_or(false);
-    if !grep_disabled {
+    let grep_enabled = std::env::var("AISH_CONTEXT_ADDONS_GREP_ENABLED")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    if grep_enabled {
         let grep_max_files = std::env::var("AISH_CONTEXT_ADDONS_GREP_MAX_FILES")
             .ok()
             .and_then(|s| s.parse().ok())
@@ -244,18 +252,22 @@ fn build_session_deps(
         let grep_max_hits = std::env::var("AISH_CONTEXT_ADDONS_GREP_MAX_HITS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(30);
+            .unwrap_or(40);
         let grep_max_bytes = std::env::var("AISH_CONTEXT_ADDONS_GREP_MAX_BYTES_PER_FILE")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(100_000u64);
+            .unwrap_or(200_000u64);
         let grep_token_min_len = std::env::var("AISH_CONTEXT_ADDONS_GREP_TOKEN_MIN_LEN")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(4);
+            .unwrap_or(3);
         let grep_ignore_dirs = vec![
-            ".git".to_string(), "target".to_string(), "node_modules".to_string(),
-            ".aish".to_string(), "dist".to_string(), "build".to_string(),
+            ".git".to_string(),
+            "target".to_string(),
+            "node_modules".to_string(),
+            ".aish".to_string(),
+            "dist".to_string(),
+            "build".to_string(),
         ];
         selectors.push(Arc::new(GrepHitsSelector::new(
             Arc::clone(fs),
@@ -279,7 +291,6 @@ fn build_session_deps(
         max_messages: addons_max_messages,
         max_chars: addons_max_chars,
     };
-    let project_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     let policy_cfg = match config_provider.policy_config() {
         Ok(c) => c,
@@ -289,43 +300,67 @@ fn build_session_deps(
 
     let sensitive_filter: Option<Arc<dyn crate::ports::outbound::SensitiveTextFilter>> =
         if let Some((leakscan_binary, rules_path)) = resolve_leakscan_paths(fs, env_resolver) {
-            let action_str = policy_cfg.addons_sensitive_action.value.clone();
-            let action = SensitiveAction::from_str_or_default(&action_str, non_interactive);
+            let action =
+                SensitiveAction::from_str_or_default(&policy_cfg.addons_sensitive_action.value, non_interactive);
             Some(Arc::new(LeakscanTextFilter::new(leakscan_binary, rules_path, action)))
         } else {
             None
         };
 
     let context_pack_builder: Arc<dyn ContextPackBuilder> =
-        Arc::new(StdContextPackBuilder::new(reducer, budget, selectors, addons_budget, project_root, sensitive_filter.clone()));
+        Arc::new(StdContextPackBuilderWithAddons::new(
+            reducer,
+            budget,
+            selectors,
+            addons_budget,
+            project_root,
+            sensitive_filter,
+        ));
 
     let artifact_store: Arc<dyn ContextArtifactStore> =
         Arc::new(StdContextArtifactStore::new(Arc::clone(fs)));
 
-    // egress 用 sensitive filter と action
-    let (egress_sensitive_filter, egress_sensitive_action) =
+    // egress / run_shell: ConfigProvider の policy_cfg のみから組み立て（env 直読みなし）
+    let egress_action =
+        SensitiveAction::from_str_or_default(&policy_cfg.egress_sensitive_action.value, non_interactive);
+    let egress_sensitive_filter: Option<Arc<dyn crate::ports::outbound::SensitiveTextFilter>> =
         if let Some((leakscan_binary, rules_path)) = resolve_leakscan_paths(fs, env_resolver) {
-            let action_str = policy_cfg.egress_sensitive_action.value.clone();
-            let action = SensitiveAction::from_str_or_default(&action_str, non_interactive);
-            (
-                Some(Arc::new(LeakscanTextFilter::new(
-                    leakscan_binary,
-                    rules_path,
-                    action,
-                )) as Arc<dyn crate::ports::outbound::SensitiveTextFilter>),
-                action,
-            )
+            Some(Arc::new(LeakscanTextFilter::new(
+                leakscan_binary,
+                rules_path,
+                egress_action,
+            )))
         } else {
-            (None, SensitiveAction::Allow)
+            None
         };
 
+    let hard_cap_chars = policy_cfg.egress_hard_cap_chars.value;
+    let shell_allowlist = policy_cfg.run_shell_allowlist.value.clone();
+    let run_shell_mode = match policy_cfg.run_shell_mode.value.to_lowercase().as_str() {
+        "allow" => ToolMode::Allow,
+        "deny" => ToolMode::Deny,
+        _ => ToolMode::RequireApproval,
+    };
+
+    let run_shell_profile = ToolProfile {
+        tool_name: "run_shell".to_string(),
+        mode: run_shell_mode,
+        capabilities: vec![ToolCapability::Exec {
+            allowlist: shell_allowlist.clone(),
+        }],
+        notes: None,
+    };
+    let mut profiles = std::collections::HashMap::new();
+    profiles.insert("run_shell".to_string(), run_shell_profile);
+    let tool_profiles: Arc<dyn ToolProfileProvider> =
+        Arc::new(StaticToolProfileProvider::new(profiles));
+
+    // PolicyChain: egress 1) hard_cap 2) sensitive, tool 1) shell_allowlist 2) tool_mode
     let egress_rules: Vec<Arc<dyn crate::domain::EgressPolicyRule>> = vec![
-        Arc::new(EgressBudgetHardCapRule {
-            max_chars: policy_cfg.egress_hard_cap_chars.value,
-        }),
+        Arc::new(EgressBudgetHardCapRule { hard_cap_chars }),
         Arc::new(EgressSensitiveRule {
             filter: egress_sensitive_filter,
-            action: egress_sensitive_action,
+            action: egress_action,
         }),
     ];
     let tool_rules: Vec<Arc<dyn crate::domain::ToolPolicyRule>> = vec![
@@ -334,53 +369,21 @@ fn build_session_deps(
         }),
         Arc::new(ToolModeRule),
     ];
-    let chain = PolicyChain::new(egress_rules, tool_rules);
-
-    let mut profiles = std::collections::HashMap::new();
-    let run_shell_mode_str = policy_cfg.run_shell_mode.value.as_str();
-    let run_shell_mode = match run_shell_mode_str {
-        "allow" => ToolMode::Allow,
-        "deny" => ToolMode::Deny,
-        _ => ToolMode::RequireApproval,
+    let chain = PolicyChain {
+        egress_rules,
+        tool_rules,
     };
-    profiles.insert(
-        "run_shell".to_string(),
-        ToolProfile {
-            tool_name: "run_shell".to_string(),
-            mode: run_shell_mode,
-            capabilities: vec![ToolCapability::Exec {
-                allowlist: policy_cfg.run_shell_allowlist.value.clone(),
-            }],
-            notes: Some("shell policy from config".to_string()),
-        },
-    );
-    let tool_profiles: Arc<dyn ToolProfileProvider> =
-        Arc::new(StaticToolProfileProvider::new(profiles));
 
     let policy_engine: Arc<dyn PolicyEngine> =
-        Arc::new(StdPolicyEngine::new(chain, tool_profiles));
+        Arc::new(StdPolicyEngine::new(chain.clone(), Arc::clone(&tool_profiles)));
 
-    let resolved = serde_json::json!({
-        "egress": {
-            "sensitive_action": policy_cfg.egress_sensitive_action.value,
-            "hard_cap_chars": policy_cfg.egress_hard_cap_chars.value,
-        },
-        "tools": {
-            "run_shell": {
-                "mode": policy_cfg.run_shell_mode.value,
-                "allowlist": policy_cfg.run_shell_allowlist.value,
-            },
-        },
-    });
-    let egress_rule_names = vec![
-        "egress_budget_hard_cap".to_string(),
-        "egress_sensitive".to_string(),
-    ];
-    let tool_rule_names = vec!["shell_allowlist".to_string(), "tool_mode".to_string()];
+    let resolved = serde_json::to_value(&policy_cfg).unwrap_or_else(|_| serde_json::json!({}));
+    let egress_rule_names: Vec<String> = chain.egress_rules.iter().map(|r| r.name().to_string()).collect();
+    let tool_rule_names: Vec<String> = chain.tool_rules.iter().map(|r| r.name().to_string()).collect();
     let examples = vec![
         PolicyExplainExample {
-            title: "run_shell ls (allowlist match)".to_string(),
-            input: serde_json::json!({"tool": "run_shell", "args": ["ls"]}),
+            title: "run_shell allowlisted cmd".to_string(),
+            input: serde_json::json!({"tool": "run_shell", "args": {"command": "ls -la"}}),
             outcome: serde_json::json!({"status": "allowed", "reason": "shell_allowlist"}),
             decisions: vec![PolicyDecision {
                 v: 1,
@@ -392,28 +395,28 @@ fn build_session_deps(
             }],
         },
         PolicyExplainExample {
-            title: "run_shell rm -rf / (dangerous, require_approval or deny)".to_string(),
-            input: serde_json::json!({"tool": "run_shell", "args": ["rm", "-rf", "/"]}),
-            outcome: serde_json::json!({"status": "require_approval_or_deny", "reason": "tool_mode or shell_allowlist"}),
+            title: "run_shell not allowlisted (interactive: RequireApproval, non_interactive: Deny)".to_string(),
+            input: serde_json::json!({"tool": "run_shell", "args": {"command": "rm -rf /"}}),
+            outcome: serde_json::json!({"status": "require_approval_or_deny", "reason": "shell_approval_required_or_shell_not_allowlisted_non_interactive"}),
             decisions: vec![PolicyDecision {
                 v: 1,
                 scope: "tool".to_string(),
                 subject: "run_shell".to_string(),
                 status: "warn".to_string(),
-                reason: "tool_mode_require_approval".to_string(),
-                details: serde_json::json!({"mode": "require_approval"}),
+                reason: "shell_approval_required".to_string(),
+                details: serde_json::json!({}),
             }],
         },
         PolicyExplainExample {
-            title: "egress with sensitive text (mask or deny)".to_string(),
+            title: "egress sensitive (SECRET) mask or deny".to_string(),
             input: serde_json::json!({"scope": "egress", "text_contains": "SECRET"}),
-            outcome: serde_json::json!({"status": "mask_or_deny", "reason": "egress_sensitive"}),
+            outcome: serde_json::json!({"status": "mask_or_deny", "reason": "sensitive_masked_or_sensitive_deny"}),
             decisions: vec![PolicyDecision {
                 v: 1,
                 scope: "egress".to_string(),
                 subject: "context_pack".to_string(),
-                status: "masked".to_string(),
-                reason: "egress_sensitive".to_string(),
+                status: "warn".to_string(),
+                reason: "sensitive_masked".to_string(),
                 details: serde_json::json!({}),
             }],
         },
@@ -429,6 +432,27 @@ fn build_session_deps(
     let config_explain_provider: Arc<dyn ConfigExplainProvider> =
         Arc::new(StdConfigExplainProvider::new(Arc::clone(config_provider)));
 
+    let clock: Arc<dyn Clock> = Arc::new(StdClock);
+    let session_event_store: Arc<dyn SessionEventStore> =
+        Arc::new(NdjsonSessionEventStore::new(Arc::clone(&fs)));
+    let derived_rebuilder: Arc<DerivedRebuilder> = Arc::new(storage::DerivedRebuilder::new(
+        Arc::clone(&session_event_store),
+        Arc::clone(&fs),
+    ));
+    let session_derived_builder: Arc<dyn SessionDerivedBuilder> =
+        Arc::new(StdSessionDerivedBuilder::new(derived_rebuilder));
+    let local_appender: Arc<dyn EventAppender> =
+        Arc::new(LocalEventAppender::new(Arc::clone(&session_event_store)));
+    let event_appender: Arc<dyn EventAppender> = {
+        let mode = std::env::var("AISH_DAEMON").unwrap_or_else(|_| "off".to_string());
+        let socket_path = daemon_api::default_socket_path();
+        match mode.as_str() {
+            "on" => Arc::new(DaemonEventAppender::new(socket_path)),
+            "auto" => Arc::new(FallbackEventAppender::new(socket_path, Arc::clone(&local_appender))),
+            _ => local_appender,
+        }
+    };
+
     (
         SessionDeps {
             fs: Arc::clone(fs),
@@ -441,6 +465,10 @@ fn build_session_deps(
             agent_state_loader,
             prepare_session_for_sensitive_check,
             leakscan_enabled,
+            session_event_store,
+            session_derived_builder,
+            clock,
+            event_appender,
         },
         policy_explain_provider,
         config_explain_provider,
@@ -496,11 +524,30 @@ fn build_tooling_deps(
         Arc::new(SearchMemoryTool::new()),
         Arc::new(GetMemoryContentTool::new()),
     ];
-    tools.extend(external_plugin_loader::load_external_plugins(
-        Arc::clone(fs),
-        Arc::clone(env_resolver),
-        event_hub,
-    ));
+    // 現状は host 側で std::env/std::fs を使う（段階移行）。未使用引数の警告回避。
+    let _ = (fs, env_resolver, event_hub);
+
+    // Phase9: 外部拡張の唯一の入口を McpHost に集約（stdio JSON-RPC ブリッジ）
+    let host: Arc<dyn McpHost> = Arc::new(StdioJsonRpcMcpBridgeHost::new());
+    if let Ok(servers) = host.discover() {
+        for s in servers.into_iter().filter(|s| s.enabled) {
+            if let Ok(tool_descs) = host.list_tools(&s.id) {
+                for td in tool_descs {
+                    let name_static: &'static str = Box::leak(td.id.0.clone().into_boxed_str());
+                    let desc_static: &'static str =
+                        Box::leak(format!("[external] {}", td.display_name).into_boxed_str());
+                    let proxy = crate::adapter::McpToolProxy::new(
+                        name_static,
+                        desc_static,
+                        td.schema.clone(),
+                        td.id.clone(),
+                        Arc::clone(&host),
+                    );
+                    tools.push(Arc::new(proxy));
+                }
+            }
+        }
+    }
 
     ToolingDeps {
         sink_factory,
@@ -590,13 +637,27 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
             .map(|a| a as Arc<dyn crate::ports::outbound::InterruptChecker>)
             .unwrap_or_else(|_| Arc::new(NoopInterruptChecker::new()));
     let process: Arc<dyn Process> = Arc::new(StdProcess);
+    let project_root = env_resolver
+        .current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."));
     let cli_overrides = CliPolicyOverrides::default();
-    let raw_config_provider =
-        StdConfigProvider::new(Arc::clone(&env_resolver), Arc::clone(&fs), cli_overrides);
-    let config_provider: Arc<dyn ConfigProvider> =
-        Arc::new(raw_config_provider);
-    let (session, policy_explain_provider, config_explain_provider) =
-        build_session_deps(&fs, &env_resolver, &interrupt_checker, non_interactive, &config_provider);
+    let raw_config_provider = StdConfigProvider::new(
+        Arc::clone(&env_resolver),
+        Arc::clone(&fs),
+        project_root.clone(),
+        cli_overrides,
+    );
+    let config_provider: Arc<dyn ConfigProvider> = Arc::new(raw_config_provider);
+    let (session, policy_explain_provider, config_explain_provider) = build_session_deps(
+        &fs,
+        &env_resolver,
+        &interrupt_checker,
+        non_interactive,
+        &config_provider,
+        project_root,
+    );
+    let session_event_store = session.session_event_store.clone();
+    let session_derived_builder = session.session_derived_builder.clone();
     let policy = build_policy_deps(&env_resolver, &interrupt_checker, non_interactive);
     let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None);
     let model = build_model_deps(&fs, &env_resolver);
@@ -624,6 +685,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
     let task_use_case = TaskUseCase::new(task_runner, Arc::clone(&run_query));
     let policy_use_case = PolicyUseCase::new(policy_explain_provider);
     let config_use_case = ConfigUseCase::new(config_explain_provider);
+    let session_use_case = SessionUseCase::new(session_event_store, session_derived_builder);
     App {
         env_resolver,
         fs,
@@ -635,6 +697,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         ai_use_case,
         policy_use_case,
         config_use_case,
+        session_use_case,
     }
 }
 
