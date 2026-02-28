@@ -49,6 +49,11 @@ rg "crate::cli" core/**/src/usecase && (echo "illigal dependency" ; exit 1)
 #cd "$PROJECT_ROOT/tools/aish-script"
 #$BUILD_CMD
 
+# ai / aish を dist/bin に配置（xtask dist がビルド＆コピー）
+echo "Building ai and aish (xtask dist)..."
+cd "$PROJECT_ROOT"
+cargo run -p xtask -- dist $([ "$BUILD_MODE" = "debug" ] && echo "--debug")
+
 # leakscanをビルド
 echo "Building leakscan..."
 cd "$PROJECT_ROOT/tools/leakscan"
@@ -59,19 +64,9 @@ echo "Building md-fmt..."
 cd "$PROJECT_ROOT/tools/md-fmt"
 $BUILD_CMD
 
-# aiをビルド
-echo "Building ai..."
-cd "$PROJECT_ROOT/core/ai"
-$BUILD_CMD
-
-# aishをビルド
-echo "Building aish..."
-cd "$PROJECT_ROOT/core/aish"
-$BUILD_CMD
-
-# ビルド成果物を dist/bin にコピー（存在するもののみ、無ければ warn）
-echo "Deploying binaries to $BIN_DIR/..."
-rm -f "$BIN_DIR/aish-capture" "$BIN_DIR/aish-render" "$BIN_DIR/aish-script" "$BIN_DIR/leakscan" "$BIN_DIR/md-fmt" "$BIN_DIR/ai" "$BIN_DIR/aish"
+# 補助ツールを dist/bin にコピー（ワークスペースでは成果物はルート target/ に出る）
+echo "Deploying extra binaries to $BIN_DIR/..."
+rm -f "$BIN_DIR/aish-capture" "$BIN_DIR/aish-render" "$BIN_DIR/aish-script" "$BIN_DIR/leakscan" "$BIN_DIR/md-fmt"
 
 copy_if_exists() {
     local src="$1"
@@ -83,10 +78,8 @@ copy_if_exists() {
     fi
 }
 
-copy_if_exists "$PROJECT_ROOT/tools/leakscan/target/$TARGET_DIR/leakscan" "leakscan"
-copy_if_exists "$PROJECT_ROOT/tools/md-fmt/target/$TARGET_DIR/md-fmt" "md-fmt"
-copy_if_exists "$PROJECT_ROOT/core/ai/target/$TARGET_DIR/ai" "ai"
-copy_if_exists "$PROJECT_ROOT/core/aish/target/$TARGET_DIR/aish" "aish"
+copy_if_exists "$PROJECT_ROOT/target/$TARGET_DIR/leakscan" "leakscan"
+copy_if_exists "$PROJECT_ROOT/target/$TARGET_DIR/md-fmt" "md-fmt"
 # 以下はビルドコメントアウト中のためスキップ
 # copy_if_exists "$PROJECT_ROOT/tools/aish-capture/target/$TARGET_DIR/aish-capture" "aish-capture"
 # copy_if_exists "$PROJECT_ROOT/tools/aish-render/target/$TARGET_DIR/aish-render" "aish-render"

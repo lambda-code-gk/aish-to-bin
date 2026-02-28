@@ -503,6 +503,20 @@ fn build_policy_deps(
     }
 }
 
+/// OpenAI API の tools[].function.name は ^[a-zA-Z0-9_-]+$ のみ許可。
+/// canonical id（例: namespace.tool_name）のドット等をアンダースコアに置換する。
+fn sanitize_openai_tool_name(id: &str) -> String {
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn build_tooling_deps(
     verbose: bool,
     fs: &Arc<dyn FileSystem>,
@@ -528,12 +542,14 @@ fn build_tooling_deps(
     let _ = (fs, env_resolver, event_hub);
 
     // Phase9: 外部拡張の唯一の入口を McpHost に集約（stdio JSON-RPC ブリッジ）
+    // OpenAI の tools[].function.name は ^[a-zA-Z0-9_-]+$ のみ許可。canonical id (例: namespace.tool) をサニタイズする。
     let host: Arc<dyn McpHost> = Arc::new(StdioJsonRpcMcpBridgeHost::new());
     if let Ok(servers) = host.discover() {
         for s in servers.into_iter().filter(|s| s.enabled) {
             if let Ok(tool_descs) = host.list_tools(&s.id) {
                 for td in tool_descs {
-                    let name_static: &'static str = Box::leak(td.id.0.clone().into_boxed_str());
+                    let sanitized = sanitize_openai_tool_name(&td.id.0);
+                    let name_static: &'static str = Box::leak(sanitized.into_boxed_str());
                     let desc_static: &'static str =
                         Box::leak(format!("[external] {}", td.display_name).into_boxed_str());
                     let proxy = crate::adapter::McpToolProxy::new(
@@ -703,7 +719,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
 
 #[cfg(test)]
 mod tests {
-    use super::context_strategy_from_env;
+    use super::{context_strategy_from_env, sanitize_openai_tool_name};
     use common::llm::provider::Message as LlmMessage;
     use std::env;
     use std::sync::{Mutex, OnceLock};
@@ -711,6 +727,14 @@ mod tests {
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn test_sanitize_openai_tool_name() {
+        assert_eq!(sanitize_openai_tool_name("acme.read_file"), "acme_read_file");
+        assert_eq!(sanitize_openai_tool_name("run_shell"), "run_shell");
+        assert_eq!(sanitize_openai_tool_name("a-b_c"), "a-b_c");
+        assert_eq!(sanitize_openai_tool_name("ns.tool.with.dots"), "ns_tool_with_dots");
     }
 
     #[test]
