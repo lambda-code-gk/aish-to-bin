@@ -51,6 +51,8 @@ mod external_plugin_loader_tests;
 #[cfg(test)]
 mod external_plugin_stdio_client_tests;
 #[cfg(test)]
+mod policy_rules_tool_tests;
+#[cfg(test)]
 pub(crate) mod stub_llm;
 pub(crate) use agent_state_storage::FileAgentStateStorage;
 pub(crate) use approval::{CliToolApproval, NonInteractiveToolApproval};

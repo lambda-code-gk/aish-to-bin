@@ -18,14 +18,23 @@ fn base_decision(scope: &str, subject: &str, status: &str, reason: &str) -> Poli
     }
 }
 
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_chars).collect();
+        format!("{}...(truncated)", truncated)
+    }
+}
+
 fn tool_summary_preview(tool_name: &str, tool_args: &serde_json::Value) -> String {
     let args_str = serde_json::to_string(tool_args).unwrap_or_else(|_| "{}".to_string());
     let summary = format!("{} {}", tool_name, args_str);
-    if summary.len() <= TOOL_SUMMARY_MAX_CHARS {
-        summary
-    } else {
-        format!("{}...(truncated)", &summary[..TOOL_SUMMARY_MAX_CHARS])
-    }
+
+    // NOTE:
+    // summary.len() はバイト数。日本語など UTF-8 のマルチバイト文字を含む場合、
+    // バイト境界でスライスすると panic するため、文字数ベースで切り詰める。
+    truncate_chars(&summary, TOOL_SUMMARY_MAX_CHARS)
 }
 
 /// ToolProfile.mode に基づき Allow / RequireApproval / Deny を決めるルール
@@ -131,7 +140,7 @@ impl ToolPolicyRule for ShellAllowlistRule {
         if allowed {
             let mut decision = base_decision("tool", tool_name, "allowed", "shell_allowlist");
             decision.details = serde_json::json!({
-                "command": if command.len() <= TOOL_SUMMARY_MAX_CHARS { command.to_string() } else { format!("{}...(truncated)", &command[..TOOL_SUMMARY_MAX_CHARS]) },
+                "command": truncate_chars(command, TOOL_SUMMARY_MAX_CHARS),
             });
             return Ok(RuleVerdict::Verdict(PolicyVerdict::Allow {
                 value: tool_ctx.clone(),
@@ -147,14 +156,14 @@ impl ToolPolicyRule for ShellAllowlistRule {
                 "shell_not_allowlisted_non_interactive",
             );
             decision.details = serde_json::json!({
-                "command": if command.len() <= TOOL_SUMMARY_MAX_CHARS { command.to_string() } else { format!("{}...(truncated)", &command[..TOOL_SUMMARY_MAX_CHARS]) },
+                "command": truncate_chars(command, TOOL_SUMMARY_MAX_CHARS),
             });
             return Ok(RuleVerdict::Verdict(PolicyVerdict::Deny { decision }));
         }
 
         let mut decision = base_decision("tool", tool_name, "warn", "shell_approval_required");
         decision.details = serde_json::json!({
-            "command": if command.len() <= TOOL_SUMMARY_MAX_CHARS { command.to_string() } else { format!("{}...(truncated)", &command[..TOOL_SUMMARY_MAX_CHARS]) },
+            "command": truncate_chars(command, TOOL_SUMMARY_MAX_CHARS),
         });
         Ok(RuleVerdict::Verdict(PolicyVerdict::RequireApproval {
             value: tool_ctx.clone().with_allow_unsafe(true),
