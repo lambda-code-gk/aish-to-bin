@@ -13,16 +13,18 @@ fn run_app(config: Config) -> Result<i32, Error> {
 }
 
 /// テスト実行時の外部環境（特に AISH_* 系）の影響を避けるためのヘルパ。
-/// AISH_HOME を一時的なディレクトリに固定し、AISH_SESSION を無効化する。
+/// AISH_HOME を一時的なディレクトリに固定し、AISH_SESSION / AISH_FILTER を無効化する。
 fn with_isolated_aish_env<F: FnOnce()>(f: F) {
     use std::env;
 
     let prev_aish_home = env::var("AISH_HOME").ok();
     let prev_aish_session = env::var("AISH_SESSION").ok();
+    let prev_aish_filter = env::var("AISH_FILTER").ok();
 
     let tmp_home = tempfile::tempdir().expect("failed to create temp dir for AISH_HOME");
     env::set_var("AISH_HOME", tmp_home.path());
     env::remove_var("AISH_SESSION");
+    env::remove_var("AISH_FILTER");
 
     f();
 
@@ -34,6 +36,10 @@ fn with_isolated_aish_env<F: FnOnce()>(f: F) {
     match prev_aish_session {
         Some(v) => env::set_var("AISH_SESSION", v),
         None => env::remove_var("AISH_SESSION"),
+    }
+    match prev_aish_filter {
+        Some(v) => env::set_var("AISH_FILTER", v),
+        None => env::remove_var("AISH_FILTER"),
     }
 }
 
@@ -132,15 +138,16 @@ fn test_run_app_help_takes_precedence() {
 
 #[test]
 fn test_run_app_with_profile() {
-    // 環境変数が設定されていない場合はエラーになるが、基本的な構造はテストできる
-    let config = Config {
-        profile: Some(ProviderName::new("echo")),
-        message_args: vec!["Hello".to_string()],
-        ..Default::default()
-    };
-    // EchoプロファイルはAPIキーが不要なので成功する
-    let result = run_app(config);
-    assert!(result.is_ok());
+    // EchoプロファイルはAPIキーが不要なので成功する。AISH_FILTER 等の環境の影響を避けるため隔離実行。
+    with_isolated_aish_env(|| {
+        let config = Config {
+            profile: Some(ProviderName::new("echo")),
+            message_args: vec!["Hello".to_string()],
+            ..Default::default()
+        };
+        let result = run_app(config);
+        assert!(result.is_ok());
+    });
 }
 
 #[test]

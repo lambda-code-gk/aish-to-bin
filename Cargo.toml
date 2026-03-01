@@ -1,10 +1,11 @@
 [workspace]
 resolver = "2"
-# crates/aish は core/ai と core/aish と同じ出力名(ai, aish)を使うため、通常ビルドでは除外して出力衝突を避ける
+# core/ai と core/aish は lib のみ。バイナリ ai / aish は crates/aish (aish-cli) から生成。
 default-members = [
     "core/common",
     "core/ai",
     "core/aish",
+    "crates/aish",
     "crates/daemon_api",
     "crates/core",
     "crates/storage",

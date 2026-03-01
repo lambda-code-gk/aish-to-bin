@@ -50,7 +50,11 @@ fn run_dist(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), St
         let src = target_dir.join(bin);
         let dst = dist_bin.join(name);
         if src.exists() {
-            fs::copy(&src, &dst).map_err(|e: io::Error| format!("copy {} -> {}: {}", src.display(), dst.display(), e))?;
+            // 一時ファイルに書き込んでから rename で置換する。実行中のバイナリは
+            // 開いた inode を保持するため、直接上書き(ETXTBSY)を避けられる。
+            let tmp = dist_bin.join(format!("{}.new", name));
+            fs::copy(&src, &tmp).map_err(|e: io::Error| format!("copy {} -> {}: {}", src.display(), tmp.display(), e))?;
+            fs::rename(&tmp, &dst).map_err(|e: io::Error| format!("rename {} -> {}: {}", tmp.display(), dst.display(), e))?;
             println!("  {} -> {}", src.display(), dst.display());
             copied += 1;
         } else {
