@@ -84,16 +84,37 @@ impl StdConfigProvider {
                 cfg.addons_sensitive_action =
                     Resolved::new(v.to_lowercase(), src("policy.addons_sensitive_action"));
             }
+            if let Some(v) = &policy.tool_default_mode {
+                cfg.tool_default_mode =
+                    Resolved::new(v.to_lowercase(), src("policy.tool_default_mode"));
+            }
+            if let Some(map) = &policy.tool_mode_by_capability {
+                let normalized: std::collections::HashMap<String, String> = map
+                    .iter()
+                    .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                    .collect();
+                cfg.tool_mode_by_capability =
+                    Resolved::new(normalized, src("policy.tool_mode_by_capability"));
+            }
             if let Some(tools) = &policy.tools {
-                if let Some(run) = &tools.run_shell {
-                    if let Some(m) = &run.mode {
-                        cfg.run_shell_mode =
-                            Resolved::new(m.to_lowercase(), src("policy.tools.run_shell.mode"));
+                let mut tool_modes = std::collections::HashMap::new();
+                for (name, entry) in tools {
+                    if let Some(m) = &entry.mode {
+                        tool_modes.insert(name.clone(), m.to_lowercase());
                     }
-                    if let Some(list) = &run.allowlist {
-                        cfg.run_shell_allowlist =
-                            Resolved::new(list.clone(), src("policy.tools.run_shell.allowlist"));
+                    if name == "run_shell" {
+                        if let Some(m) = &entry.mode {
+                            cfg.run_shell_mode =
+                                Resolved::new(m.to_lowercase(), src("policy.tools.run_shell.mode"));
+                        }
+                        if let Some(list) = &entry.allowlist {
+                            cfg.run_shell_allowlist =
+                                Resolved::new(list.clone(), src("policy.tools.run_shell.allowlist"));
+                        }
                     }
+                }
+                if !tool_modes.is_empty() {
+                    cfg.tool_modes = Resolved::new(tool_modes, src("policy.tools"));
                 }
             }
         }
@@ -187,6 +208,20 @@ impl StdConfigProvider {
             }
         }
 
+        // env: AISH_TOOL_DEFAULT_MODE
+        if let Ok(v) = std::env::var("AISH_TOOL_DEFAULT_MODE") {
+            let v = v.trim().to_lowercase();
+            if !v.is_empty() {
+                cfg.tool_default_mode = Resolved::new(
+                    v,
+                    ConfigSource {
+                        kind: ConfigSourceKind::Env,
+                        ref_id: "AISH_TOOL_DEFAULT_MODE".to_string(),
+                    },
+                );
+            }
+        }
+
         Ok(())
     }
 
@@ -235,12 +270,34 @@ impl StdConfigProvider {
                 cfg.addons_sensitive_action.value
             )));
         }
-        let valid_run_shell_mode = ["allow", "require_approval", "deny"];
-        if !valid_run_shell_mode.contains(&cfg.run_shell_mode.value.as_str()) {
+        let valid_tool_mode = ["allow", "require_approval", "deny"];
+        if !valid_tool_mode.contains(&cfg.run_shell_mode.value.as_str()) {
             return Err(Error::InvalidArgument(format!(
                 "policy.tools.run_shell.mode must be one of allow|require_approval|deny, got '{}'",
                 cfg.run_shell_mode.value
             )));
+        }
+        if !valid_tool_mode.contains(&cfg.tool_default_mode.value.as_str()) {
+            return Err(Error::InvalidArgument(format!(
+                "policy.tool_default_mode must be one of allow|require_approval|deny, got '{}'",
+                cfg.tool_default_mode.value
+            )));
+        }
+        for (cap, mode) in &cfg.tool_mode_by_capability.value {
+            if !valid_tool_mode.contains(&mode.as_str()) {
+                return Err(Error::InvalidArgument(format!(
+                    "policy.tool_mode_by_capability.{} must be one of allow|require_approval|deny, got '{}'",
+                    cap, mode
+                )));
+            }
+        }
+        for (name, mode) in &cfg.tool_modes.value {
+            if !valid_tool_mode.contains(&mode.as_str()) {
+                return Err(Error::InvalidArgument(format!(
+                    "policy.tools.{}.mode must be one of allow|require_approval|deny, got '{}'",
+                    name, mode
+                )));
+            }
         }
         Ok(())
     }

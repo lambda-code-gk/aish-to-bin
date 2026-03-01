@@ -43,6 +43,7 @@ pub(crate) mod session_manifest;
 pub(crate) mod sigint_checker;
 pub(crate) mod sinks;
 pub(crate) mod task;
+pub(crate) mod configurable_tool_profile_provider;
 pub(crate) mod tool_profile_provider;
 pub(crate) mod tools;
 
@@ -95,6 +96,8 @@ pub(crate) use session_derived_builder::StdSessionDerivedBuilder;
 pub(crate) use sigint_checker::{NoopInterruptChecker, SigintChecker};
 pub(crate) use sinks::StdEventSinkFactory;
 pub(crate) use task::StdTaskRunner;
+pub(crate) use configurable_tool_profile_provider::ConfigurableToolProfileProvider;
+#[allow(unused_imports)] // used by tests (policy_engine_tool_tests, tool_profile_provider_tests, etc.)
 pub(crate) use tool_profile_provider::StaticToolProfileProvider;
 pub(crate) use tools::{
     GetMemoryContentTool, GrepTool, HistoryGetTool, HistorySearchTool, QueueShellSuggestionTool,

@@ -45,6 +45,37 @@ impl StdConfigExplainProvider {
             value_preview: cfg.run_shell_allowlist.value.join(","),
             source: cfg.run_shell_allowlist.source.clone(),
         });
+        out.push(ConfigKeySource {
+            key: "policy.tool_default_mode".to_string(),
+            value_preview: cfg.tool_default_mode.value.clone(),
+            source: cfg.tool_default_mode.source.clone(),
+        });
+        if !cfg.tool_mode_by_capability.value.is_empty() {
+            let preview: Vec<String> = cfg
+                .tool_mode_by_capability
+                .value
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect();
+            out.push(ConfigKeySource {
+                key: "policy.tool_mode_by_capability".to_string(),
+                value_preview: preview.join(", "),
+                source: cfg.tool_mode_by_capability.source.clone(),
+            });
+        }
+        if !cfg.tool_modes.value.is_empty() {
+            let preview: Vec<String> = cfg
+                .tool_modes
+                .value
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect();
+            out.push(ConfigKeySource {
+                key: "policy.tools".to_string(),
+                value_preview: format!("tool_modes: {}", preview.join(", ")),
+                source: cfg.tool_modes.source.clone(),
+            });
+        }
 
         out
     }

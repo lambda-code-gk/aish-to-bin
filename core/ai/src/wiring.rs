@@ -24,14 +24,14 @@ use crate::adapter::{
     StdContextPackBuilderWithAddons, StdEventSinkFactory, StdLlmCompletion, StdLlmEventStreamFactory,
     StdPolicyEngine, StdProfileLister, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel,
     StdResolveSystemPromptFromHooks, StdoutDryRunReportSink, StdSessionDerivedBuilder,
-    StdTaskRunner, ShellTool, StaticToolProfileProvider, TailWindowReducer, ToolModeRule,
+    StdTaskRunner, ShellTool, ConfigurableToolProfileProvider, TailWindowReducer, ToolModeRule,
     WriteFileTool, HistoryGetTool, HistorySearchTool, QueueShellSuggestionTool, SaveMemoryTool,
     SearchMemoryTool, StdConfigProvider, CliPolicyOverrides, StdConfigExplainProvider,
 };
 use storage::{DerivedRebuilder, LocalEventAppender, NdjsonSessionEventStore};
 use crate::adapter::{DaemonEventAppender, FallbackEventAppender};
 use daemon_api;
-use crate::domain::{PolicyChain, SensitiveAction, ToolCapability, ToolMode, ToolProfile};
+use crate::domain::{PolicyChain, SensitiveAction};
 use crate::adapter::lifecycle::LifecycleHandler;
 use crate::domain::{ContextBudget, PolicyConfig, Query};
 use crate::adapter::policy_explain_provider::StdPolicyExplainProvider;
@@ -335,25 +335,10 @@ fn build_session_deps(
         };
 
     let hard_cap_chars = policy_cfg.egress_hard_cap_chars.value;
+    let policy_cfg = Arc::new(policy_cfg);
     let shell_allowlist = policy_cfg.run_shell_allowlist.value.clone();
-    let run_shell_mode = match policy_cfg.run_shell_mode.value.to_lowercase().as_str() {
-        "allow" => ToolMode::Allow,
-        "deny" => ToolMode::Deny,
-        _ => ToolMode::RequireApproval,
-    };
-
-    let run_shell_profile = ToolProfile {
-        tool_name: "run_shell".to_string(),
-        mode: run_shell_mode,
-        capabilities: vec![ToolCapability::Exec {
-            allowlist: shell_allowlist.clone(),
-        }],
-        notes: None,
-    };
-    let mut profiles = std::collections::HashMap::new();
-    profiles.insert("run_shell".to_string(), run_shell_profile);
     let tool_profiles: Arc<dyn ToolProfileProvider> =
-        Arc::new(StaticToolProfileProvider::new(profiles));
+        Arc::new(ConfigurableToolProfileProvider::new(Arc::clone(&policy_cfg), shell_allowlist));
 
     // PolicyChain: egress 1) hard_cap 2) sensitive, tool 1) shell_allowlist 2) tool_mode
     let egress_rules: Vec<Arc<dyn crate::domain::EgressPolicyRule>> = vec![
@@ -377,7 +362,7 @@ fn build_session_deps(
     let policy_engine: Arc<dyn PolicyEngine> =
         Arc::new(StdPolicyEngine::new(chain.clone(), Arc::clone(&tool_profiles)));
 
-    let resolved = serde_json::to_value(&policy_cfg).unwrap_or_else(|_| serde_json::json!({}));
+    let resolved = serde_json::to_value(&*policy_cfg).unwrap_or_else(|_| serde_json::json!({}));
     let egress_rule_names: Vec<String> = chain.egress_rules.iter().map(|r| r.name().to_string()).collect();
     let tool_rule_names: Vec<String> = chain.tool_rules.iter().map(|r| r.name().to_string()).collect();
     let examples = vec![
