@@ -18,7 +18,7 @@ use common::domain::event::{Event, RunId, SessionId};
 use common::event_hub::EventHubHandle;
 use common::domain::{SessionDir, EventEnvelopeWithoutSeq};
 use common::ports::outbound::EventAppender;
-use common::tool::{Tool, ToolContext, ToolRegistry};
+use common::tool::{CommandAllowRule, Tool, ToolContext, ToolRegistry};
 use std::sync::Arc;
 
 // --- 責務別 Deps（usecase が定義を所有し、wiring は組み立てるだけ）
@@ -64,6 +64,8 @@ pub struct PolicyDeps {
     pub env_resolver: Arc<dyn EnvResolver>,
     pub resolve_memory_dir: Arc<dyn ResolveMemoryDir>,
     pub command_allow_rules_loader: Arc<dyn CommandAllowRulesLoader>,
+    /// run_shell の allowlist（config の policy.tools.run_shell.allowlist）。ツール実行時の command_allow_rules にマージする。
+    pub run_shell_allowlist: Vec<String>,
     pub approver: Arc<dyn ToolApproval>,
     pub interrupt_checker: Arc<dyn InterruptChecker>,
 }
@@ -748,7 +750,11 @@ impl AiUseCase {
                 return Err(e);
             }
         };
-        let allow_rules = self.deps.policy.command_allow_rules_loader.load_rules(&command_rules_path);
+        let mut allow_rules =
+            self.deps.policy.command_allow_rules_loader.load_rules(&command_rules_path);
+        for prefix in &self.deps.policy.run_shell_allowlist {
+            allow_rules.push(CommandAllowRule::Prefix(prefix.clone()));
+        }
 
         let mut messages = messages;
         let ctx = ctx.0;

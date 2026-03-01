@@ -176,7 +176,7 @@ fn build_session_deps(
     non_interactive: bool,
     config_provider: &Arc<dyn ConfigProvider>,
     project_root: PathBuf,
-) -> (SessionDeps, Arc<dyn PolicyExplainProvider>, Arc<dyn ConfigExplainProvider>) {
+) -> (SessionDeps, Arc<dyn PolicyExplainProvider>, Arc<dyn ConfigExplainProvider>, Vec<String>) {
     let id_gen = Arc::new(StdIdGenerator::new(Arc::new(StdClock)));
     let part_storage = Arc::new(PartSessionStorage::new(Arc::clone(fs), id_gen));
     let (reducer, budget) = context_strategy_from_env();
@@ -457,6 +457,7 @@ fn build_session_deps(
         },
         policy_explain_provider,
         config_explain_provider,
+        policy_cfg.run_shell_allowlist.value.clone(),
     )
 }
 
@@ -464,6 +465,7 @@ fn build_policy_deps(
     env_resolver: &Arc<dyn EnvResolver>,
     interrupt_checker: &Arc<dyn crate::ports::outbound::InterruptChecker>,
     non_interactive: bool,
+    run_shell_allowlist: Vec<String>,
 ) -> PolicyDeps {
     let command_allow_rules_loader = Arc::new(StdCommandAllowRulesLoader);
     let approver: Arc<dyn crate::ports::outbound::ToolApproval> = if non_interactive {
@@ -483,6 +485,7 @@ fn build_policy_deps(
         env_resolver: Arc::clone(env_resolver),
         resolve_memory_dir: Arc::new(StdResolveMemoryDir::new(Arc::clone(env_resolver))),
         command_allow_rules_loader,
+        run_shell_allowlist,
         approver,
         interrupt_checker: Arc::clone(interrupt_checker),
     }
@@ -649,17 +652,19 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         cli_overrides,
     );
     let config_provider: Arc<dyn ConfigProvider> = Arc::new(raw_config_provider);
-    let (session, policy_explain_provider, config_explain_provider) = build_session_deps(
-        &fs,
-        &env_resolver,
-        &interrupt_checker,
-        non_interactive,
-        &config_provider,
-        project_root,
-    );
+    let (session, policy_explain_provider, config_explain_provider, run_shell_allowlist) =
+        build_session_deps(
+            &fs,
+            &env_resolver,
+            &interrupt_checker,
+            non_interactive,
+            &config_provider,
+            project_root,
+        );
     let session_event_store = session.session_event_store.clone();
     let session_derived_builder = session.session_derived_builder.clone();
-    let policy = build_policy_deps(&env_resolver, &interrupt_checker, non_interactive);
+    let policy =
+        build_policy_deps(&env_resolver, &interrupt_checker, non_interactive, run_shell_allowlist);
     let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None);
     let model = build_model_deps(&fs, &env_resolver);
     let system = build_system_deps(&process);
