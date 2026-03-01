@@ -21,13 +21,18 @@ const LAST_APPLIED_SEQ_KEY: &str = "last_applied_seq";
 
 const PREVIEW_MAX: usize = 200;
 
+/// 最大 max バイトで切り詰め、末尾を "..." にする。UTF-8 の文字境界で切る。
 fn truncate_str(s: &str, max: usize) -> String {
     let s = s.trim();
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..s.len().min(max).saturating_sub(3)])
+    let limit = max.saturating_sub(3);
+    if s.len() <= limit {
+        return s.to_string();
     }
+    let mut end = limit.min(s.len());
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &s[..end])
 }
 
 fn session_id_from_dir(session_dir: &SessionDir) -> String {

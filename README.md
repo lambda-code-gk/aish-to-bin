@@ -1,27 +1,27 @@
 # AISH
 
 AISH は、LLM によって Linux の CUI 体験を強化するための **CUI 自動化フレームワーク**です。  
-Rust 製の `ai` / `aish` バイナリとして提供され、ターミナルの入出力をコンテキストとして LLM に渡し、
+Rust 製の統合バイナリ `aish` (およびそのエイリアス `ai`) として提供され、ターミナルの入出力をコンテキストとして LLM に渡し、
 
-- シェルに対する操作や質問を **自然言語で記述**したり
+- シェルに対する操作や質問を **自然言で記述**したり
 - エージェントに **コマンド実行・ファイル編集・検索などを自律的に任せたり**
 - **レビューやコミットメッセージ生成などの開発タスクを自動化**したり
 
 といったことができます。
 
-⚠️ **Important**: `ai` / `aish` はターミナルの入出力やファイル内容を外部の LLM API（例: OpenAI, Google など）に送信します。  
+⚠️ **Important**: AISH はターミナルの入出力やファイル内容を外部の LLM API（例: OpenAI, Gemini など）に送信します。  
 機密情報・大きなバイナリ・個人情報などを含むデータは送らないでください。自己責任で利用してください。
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lambda-code-gk/aish)
 
 ## ✨ Features
 
-* **Context-aware interactions**: `aish` がターミナルの入出力を記録し、`ai` コマンドがそのコンテキストを踏まえて応答できます。
-* **AI Agent**: ツール使用により簡易的なエージェントとして振る舞えます。
-* **Memory / Session System**: セッションログ・Part 履歴を Rust の usecase / adapter で管理し、LLM コンテキストやツールから参照します。
-* **Security Scanning**: `tools/leakscan` による高速な秘密情報検出エンジン（キーワード・正規表現・エントロピー）を統合可能です。
-* **Task-oriented workflows**: `ai <task>` でタスクスクリプトを実行。タスクは `task.d` に配置し、`ai --list-tasks` で一覧できます。
-* **TAB 補完**: `ai --generate bash` / `zsh` / `fish` で補完スクリプトを生成し、シェルに読み込むと、タスク名・`-p` プロファイル・`-M` モードなどを TAB キーで補完できます。
+* **Integrated Command System**: `aish` バイナリが記録（shell）、応答（ai）、セッション管理（sessions）などの機能をサブコマンドとして集約。
+* **Context-aware interactions**: ターミナルの直近の入出力をコンテキストとして自動収集。
+* **Policy & Security Control**: `config.toml` による強力なポリシー制御。ツールの実行承認、LLM 送信データの検知・マスキング（leakscan 連携）が可能。
+* **Memory / Session System**: 過去の履歴を永続化し、必要に応じて LLM コンテキストへ注入。
+* **External Tooling (MCP)**: Model Context Protocol (MCP) を通じた外部ツールの拡張に対応。
+* **Task-oriented workflows**: タスクスクリプトによる複雑なワークフローの自動化。
 
 ## 📚 Documentation
 
@@ -31,158 +31,98 @@ Rust 製の `ai` / `aish` バイナリとして提供され、ターミナルの
 - `aish` の使い方とセッション管理: [docs/aish-usage.md](docs/aish-usage.md)
 - `ai` の使い方（最も詳しいガイド）: [docs/ai-usage.md](docs/ai-usage.md)
 - セキュリティ・プライバシーと leakscan: [docs/security.md](docs/security.md)
-- よくある質問とトラブルシューティング: [docs/faq.md](docs/faq.md)
 
 ## 🚀 Quick Start
-
-### Requirements
-
-- **OS**: Linux
-- **Shell**: bash（その他のシェルでも利用可能ですが、`aishrc` の挙動は bash 前提です）
-- **Rust & Cargo**: コアツールおよび `ai` / `aish` をビルドするために必須
-- **補助コマンド**: `rg`（ripgrep）など、一部のテスト・ビルドスクリプトで利用
 
 ### Installation
 
 1. **リポジトリをクローン**:
-
     ```bash
     git clone https://github.com/lambda-code-gk/aish.git
-    cd aish   # クローン先のディレクトリ名は環境により異なります
+    cd aish
     ```
 
-2. **コアツールとバイナリをビルド**:
-
-    プロジェクトは Cargo workspace です。プロジェクトルートで:
-
+2. **バイナリをビルド**:
     ```bash
-    ./build.sh          # リリースビルド（core/ai, core/aish, leakscan, md-fmt を dist/bin/ に配置）
-    # または
-    ./build.sh --debug  # デバッグビルド
+    ./build.sh
     ```
+    ビルド成果物（`aish`, `ai`, `leakscan`, `md-fmt`）は **`dist/bin/`** に配置されます。
 
-    ビルド成果物は **`dist/bin/`** に配置されます（リポジトリは汚れません）。  
-    結合テスト（`./tests/integration.sh`）は、`dist/bin/` に `aish` と `ai` が無い場合に `cargo run -p xtask -- dist` で生成します。
-
-3. **開発時の実行環境（推奨）**:
-
-    実行時データ（設定・セッション・ログ）をリポジトリ直下に作らず、`.sandbox/xdg/` に隔離して使う場合:
-
-    ```bash
-    source scripts/dev/env.sh   # XDG_* と PATH を設定
-    ./build.sh --debug
-    aish init                   # 必要なら初期設定を展開（AISH_DEFAULTS_DIR は env.sh で設定済み）
-    aish                        # セッション開始
-    ```
-
-    通常利用（インストール後）では、設定・セッションは **XDG ベース**（`~/.config/aish`, `~/.local/state/aish` 等）に保存されます。  
-    **AISH_HOME** を指定した場合のみ、その1ディレクトリ配下に完結します（ポータブル/開発用）。
-
-4. **LLM API キーの設定**:
-
-    利用する LLM プロバイダの API キーを環境変数として設定します（例）:
-
+3. **環境設定**:
+    利用する LLM プロバイダの API キーを設定します。
     ```bash
     export OPENAI_API_KEY=sk-...
+    # または
     export GOOGLE_API_KEY=...
     ```
 
-    実際にどの変数を参照するかは、利用するドライバや環境により異なります。
+4. **セッション開始**:
+    ```bash
+    export PATH=$PWD/dist/bin:$PATH
+    aish
+    ```
 
-### Launching AISH
+## ⚙️ Configuration
 
-新しい AISH セッションを開始するには:
+AISH の挙動は `config.toml` および環境変数で細かく制御できます。
 
-```bash
-$ aish
-(aish:0)$
-```
+### config.toml
 
-プロンプトは `(aish:N)$` の形式になり、`N` はセッションコンテキストのサイズ（例: `(aish:1.2K)$`）などを表します。
+プロジェクトルートの `.aish/config.toml` または `$XDG_CONFIG_HOME/aish/config.toml` を参照します。
+サンプルは `assets/defaults/config/config.toml.sample` にあります。
 
-### Session Management
+- **Policy**: ツール実行の承認モード（`allow` | `require_approval` | `deny`）を機能（capability）やツールごとに設定。
+- **Sensitive Data**: LLM 送信時の秘密情報の扱い（`deny` | `mask` | `allow`）。
+- **Limits**: 送信文字数のハード上限（`egress_hard_cap_chars`）など。
 
-`ai` / `aish` では、シェル上で実行されたコマンドを記録し、会話履歴としてLLMのAPIに送信します。
-セッションの毎にディレクトリが用意され、その中で作業ファイルが展開されます。
+### Environment Variables
 
-現在、セッションディレクトリ内では以下の作業が行われています。
-
-- コンソールの標準入出力のキャプチャ
-- leakscanによる機密情報の検知
-- 履歴のインデックス情報の作成
-- ツールからの参照
-
-セッションの実体は、**AISH_HOME 指定時**は `$AISH_HOME/state/session/<id>/`、**未指定時**は `$XDG_STATE_HOME/aish/session/<id>/`（例: `~/.local/state/aish/session/<id>/`）に置かれます。
-`<id>` は日時を元に生成されるユニークな名前が自動的に振られます。
-
-`aish -s "<session_dir>"` のようにパスを指定すると、セッションを再開できます。
-
-## 🛠 Available Tasks
-
-`ai <task> [message...]` 形式で、タスクスクリプトを実行できます。タスクは次のパス（先に存在する方）から検索されます。
-
-- `$AISH_HOME/config/task.d/` または `$AISH_HOME/task.d/`（AISH_HOME が config ルートのとき）
-- `$XDG_CONFIG_HOME/aish/task.d/`（例: `~/.config/aish/task.d/`）
-
-| 例 | 説明 |
+| 変数名 | 説明 |
 | :--- | :--- |
-| `ai commit_staged` | ステージ済み変更からコミットメッセージを生成しコミットを行う |
-| `ai <task> ...` | 任意のタスク名とメッセージ。タスクが存在しない場合は LLM への通常問い合わせとして扱われます。 |
+| `AISH_CONTEXT_STRATEGY` | コンテキスト削減戦略 (`tail` (default), `legacy`) |
+| `AISH_CONTEXT_MAX_CHARS` | LLM に送るコンテキストの最大文字数 |
+| `AISH_DAEMON` | バックグラウンド記録プロセスの使用 (`on`, `off`, `auto`) |
 
-利用可能なタスク一覧は `ai --list-tasks`、オプションは `ai --help` で確認してください。
+## 🕹 Usage
 
-## 🧰 Support Tools
+AISH は統合バイナリ `aish` を通じて利用します。また、`ai` は `aish ai` へのエイリアスとして機能します。
 
-補助ツールは `tools/` 以下にあります。`build.sh` 実行時に **leakscan** と **md-fmt** がビルドされ、`dist/bin/` に配置されます。
+### Subcommands
 
-* **`leakscan`**: 秘密情報の誤送信を防ぐための検査エンジン。キーワード・正規表現・Shannon エントロピー等でログやファイルをスキャンします。
-* **`md-fmt`**: Markdown 整形などに利用する補助ツール。
+| コマンド | 説明 |
+| :--- | :--- |
+| `aish` | インタラクティブ・シェルを開始（ターミナル記録の開始） |
+| `ai <msg>` | 自然言語による LLM への問い合わせ |
+| `ai <task>` | タスクスクリプトの実行 |
+| `aish sessions` | セッション一覧の表示 |
+| `aish policy` | 解決済みポリシーとルール順の表示 |
+| `aish config` | 現在の有効な設定とソースの表示 |
+| `aish memory` | 保存されたメモリ（ナレッジ）の管理 |
 
-その他、`tools/aish-capture` / `aish-render` / `aish-script` 等のサブプロジェクトは存在しますが、現状の `build.sh` では旧実装で使用していたもので今はビルド対象外です（必要に応じて個別にビルド可能）。
+### Task Examples
+
+| タスク名 | 説明 |
+| :--- | :--- |
+| `ai commit_msg` | ステージ済み変更からコミットメッセージ候補を生成 |
+| `ai fixit` | 直前のコマンドエラーを解析して修正案を提示 |
+
+利用可能なタスク一覧は `ai --list-tasks` で確認できます。
 
 ## 📂 Project Structure
 
-現在の Rust ベース実装の構成は、おおよそ次のようになっています。
-
 ```text
 aish/
-├── Cargo.toml             # ワークスペース定義（default-members: core/ai, core/aish 等）
-├── core/                  # Rust クレート（メインの ai / aish バイナリ）
-│   ├── common/            # ai / aish 共通ドメイン・ポート・LLM ドライバ等
-│   ├── ai/                # 'ai' コマンド本体
-│   └── aish/              # 'aish' コマンド本体
-├── crates/                # 共通ライブラリ等（storage, plugins, providers 等）
-├── xtask/                 # ビルド・配布用タスク（cargo run -p xtask -- dist 等）
-├── assets/defaults/       # 初期設定テンプレ（aish init で XDG/AISH_HOME に展開）
-├── dist/                  # ビルド成果物（dist/bin/。.gitignore 済み）
-├── .sandbox/              # 開発用サンドボックス（scripts/dev/env.sh で使用。.gitignore 済み）
-├── tools/                 # サブツール（build.sh では leakscan, md-fmt をビルド）
-│   ├── leakscan/
-│   ├── md-fmt/
-│   └── aish-capture/ 等   # サブプロジェクト（必要に応じて個別ビルド）
-├── scripts/dev/           # 開発用スクリプト（env.sh, reset.sh）
-├── old_impl/              # 旧シェル実装（Bash + Python ベース）
-└── tests/                 # アーキテクチャ・ユニット・統合テスト（architecture.sh, units.sh, integration.sh）
+├── crates/aish            # 統合バイナリ（ai / aish）のエントリポイント
+├── core/                  # コアロジック (Library)
+│   ├── ai                 # LLM 連携・エージェント・ポリシー制御
+│   ├── aish               # ターミナル記録・セッション管理
+│   └── common             # 共通ドメイン・抽象ポート・ドライバ
+├── tools/                 # 補助ツール (leakscan, md-fmt 等)
+├── assets/defaults/       # 設定テンプレート
+├── dist/bin/              # ビルド成果物
+└── tests/                 # テストスクリプト
 ```
-
-### 開発・テスト
-
-コード変更前後には、ルートで次を実行して既存機能が壊れていないことを確認してください。
-
-```bash
-./tests/architecture.sh && ./tests/units.sh && ./tests/integration.sh
-```
-
-詳細なアーキテクチャや開発ルールは [AGENTS.md](AGENTS.md) を参照してください。
-
-## 🧭 Roadmap & Future Plans
-
-- **完全な Rust 化**: 旧シェル実装で提供していたタスクやメモリシステムを、Rust の usecase / adapter アーキテクチャに統合。
-- **Self-Improvement**: エージェント自身がツールやプロンプト、メモリ構造を改善していく自己改善ループ。
-- **Context Optimization**: 長いターミナルログや履歴に対して、自動要約・重要部分抽出などを行うコンテキスト最適化。
-- **Visual Understanding**: 将来的な拡張として、ターミナル状態やスクリーンショットを取り込んだ理解。
 
 ## 📄 License
 
 This project is licensed under the MIT License. See the `LICENSE` file for details.
-
