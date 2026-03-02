@@ -188,6 +188,21 @@ mod tests {
         perms.set_mode(0o755);
         fs::set_permissions(&script, perms).expect("chmod");
 
+        // モック用の一時ディレクトリを作成
+        let mock_home = tmp.path().join("mock_home");
+        let mock_config = tmp.path().join("mock_config");
+        fs::create_dir_all(&mock_home).expect("create mock home");
+        fs::create_dir_all(&mock_config).expect("create mock config");
+
+        // 環境変数をモック
+        let original_home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        let original_xdg_config = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| "".to_string());
+        let original_aish_home = std::env::var("AISH_HOME").unwrap_or_else(|_| "".to_string());
+
+        std::env::set_var("HOME", &mock_home);
+        std::env::set_var("XDG_CONFIG_HOME", &mock_config);
+        std::env::remove_var("AISH_HOME"); // AISH_HOMEが未設定の場合、XDG_CONFIG_HOMEが使われる
+
         let env: Arc<dyn EnvResolver> = Arc::new(StdEnvResolver);
         let fs_adapter: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
         let resolver = StdResolveSystemPromptFromHooks::new(env, fs_adapter);
@@ -196,7 +211,21 @@ mod tests {
         std::env::set_current_dir(project_root).expect("set_current_dir");
 
         let out = resolver.resolve_system_prompt_from_hooks().expect("resolve");
-        let _ = std::env::set_current_dir(&cwd);
+        
+        // 環境変数を元に戻す
+        if original_aish_home.is_empty() {
+            std::env::remove_var("AISH_HOME");
+        } else {
+            std::env::set_var("AISH_HOME", &original_aish_home);
+        }
+        if original_xdg_config.is_empty() {
+            std::env::remove_var("XDG_CONFIG_HOME");
+        } else {
+            std::env::set_var("XDG_CONFIG_HOME", &original_xdg_config);
+        }
+        std::env::set_var("HOME", &original_home);
+        
+        let _ = std::env::set_current_dir(&cwd); // 元のディレクトリに戻す
         assert!(out.is_some());
         assert_eq!(out.unwrap().trim(), "You are a helpful assistant.");
     }
