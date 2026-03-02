@@ -81,7 +81,7 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 - **AISH**: CUI 自動化フレームワーク（LLM 連携）。シェルスクリプトから Rust への刷新中。
 - **core/common**: `ai` / `aish` 共通。エラー型、session、LLM ドライバ・プロバイダ、Part ID、Port trait（FileSystem, Process, Clock 等）と標準実装、Tool trait / ToolRegistry。**ai 専用・aish 専用のユースケースは置かない。**  
   - Outbound の trait のうち **Tool** と **LlmProvider** は、ドメイン型（ToolContext, Message 等）との循環参照を避けるため、それぞれ `common::tool` と `common::llm::provider` に定義し、`common::ports::outbound` から re-export している。その他の outbound trait は `ports/outbound` に定義。
-- **core/ai**: `ai` コマンド。main → cli → wiring → UseCaseRunner。usecase: `app.rs`（AiUseCase）, `task.rs`（TaskUseCase）, `agent_loop.rs`。adapter: sinks, task, part_session_storage, approval, tools, resolve_system_prompt_from_hooks 等。CLI 層では、`-S/--system` 未指定時に hooks ベースでシステムプロンプトを解決して `Config` を補完する（解決順: `$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）。
+- **core/ai**: `ai` コマンド。main → cli → wiring → UseCaseRunner。usecase: `app.rs`（AiUseCase）, `task.rs`（TaskUseCase）, `query_loop.rs`（QueryLoop）, `agent_loop.rs`（AgentLoop 外側）。adapter: sinks, task, part_session_storage, approval, tools, resolve_system_prompt_from_hooks 等。CLI 層では、`-S/--system` 未指定時に hooks ベースでシステムプロンプトを解決して `Config` を補完する（解決順: `$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）。
 - **core/aish**: `aish` コマンド。main → cli → wiring → UseCaseRunner。usecase: shell, truncate_console_log, clear 等。adapter: shell, terminal, platform, logfmt 等。
 
 ビルド・テストはプロジェクトルートで `./build.sh`, `./tests/units.sh`, `./tests/integration.sh`。個別は `cd core/ai && cargo test` 等。

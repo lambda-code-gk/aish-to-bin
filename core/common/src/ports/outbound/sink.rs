@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::llm::events::LlmEvent;
 use serde_json::Value;
 
-/// AgentLoop から Sink へ流すイベント
+/// QueryLoop / AgentLoop から Sink へ流すイベント
 #[derive(Debug, Clone, PartialEq)]
 pub enum AgentEvent {
     /// LLM ストリーム由来

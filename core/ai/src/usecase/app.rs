@@ -7,7 +7,7 @@ use crate::ports::outbound::{
     ResolveProfileAndModel, RunQuery, SessionDerivedBuilder, SessionEventStore,
     SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
-use crate::usecase::agent_loop::{AgentLoop, AgentLoopOutcome};
+use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
 use common::ports::outbound::Clock;
 use common::ports::outbound::EnvResolver;
 use common::ports::outbound::{now_iso8601, FileSystem, Log, LogLevel, LogRecord, Process};
@@ -713,9 +713,12 @@ impl AiUseCase {
         };
 
         const DEFAULT_MAX_TURNS: usize = 16;
+        const DEFAULT_MAX_QUERIES: usize = 2;
         let max_turns = max_turns_override.unwrap_or(DEFAULT_MAX_TURNS);
         let max_tool_calls = self.deps.policy.env_resolver.ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
+        let max_queries = self.deps.policy.env_resolver.ai_max_queries()
+            .unwrap_or(DEFAULT_MAX_QUERIES);
 
         let command_rules_path = match self.deps.policy.env_resolver.resolve_command_rules_path() {
             Ok(p) => p,
@@ -760,59 +763,81 @@ impl AiUseCase {
         let ctx = ctx.0;
         let allowlist: Option<std::collections::HashSet<&str>> = tool_allowlist
             .map(|s| s.iter().map(String::as_str).collect());
+
         loop {
-            let mut registry = ToolRegistry::new();
-            for t in &self.deps.tooling.tools {
-                let name = t.name();
-                if let Some(ref list) = allowlist {
-                    if !list.contains(name) {
-                        continue;
-                    }
-                }
-                registry.register(Arc::clone(t));
-            }
-            let (memory_project, memory_global) = match self.deps.policy.resolve_memory_dir.resolve() {
-                Ok((p, g)) => (p, Some(g)),
-                Err(_) => (None, None),
-            };
-            let tool_context = ToolContext::new(
-                session_dir.as_ref().map(|s: &SessionDir| s.as_ref().to_path_buf()),
-            )
-            .with_command_allow_rules(allow_rules.clone())
-            .with_memory_dirs(memory_project, memory_global)
-            .with_log(Some(Arc::clone(&self.deps.obs.log)))
-            .with_event_emitter(
-                event_hub.clone(),
-                Some(session_id.clone()),
-                Some(run_id.clone()),
-            );
-            let sinks = self.deps.tooling.sink_factory.create_sinks();
+            let tools = self.deps.tooling.tools.clone();
+            let sink_factory = Arc::clone(&self.deps.tooling.sink_factory);
+            let approver = Arc::clone(&self.deps.policy.approver);
+            let policy_engine = Arc::clone(&self.deps.session.policy_engine);
+            let interrupt_checker = Arc::clone(&self.deps.policy.interrupt_checker);
+            let event_hub_loop = event_hub.clone();
+            let session_id_loop = session_id.clone();
+            let run_id_loop = run_id.clone();
+            let session_dir_loop = session_dir.clone();
+            let event_appender = Arc::clone(&self.deps.session.event_appender);
+            let clock = Arc::clone(&self.deps.session.clock);
             let artifact_store = if session_dir.is_some() {
                 Some(Arc::clone(&self.deps.session.artifact_store))
             } else {
                 None
             };
-            let mut agent_loop = AgentLoop::new(
-                Arc::clone(&stream),
-                registry,
-                tool_context,
-                sinks,
-                Arc::clone(&self.deps.policy.approver),
-                Arc::clone(&self.deps.session.policy_engine),
-                self.deps.non_interactive,
-                Some(Arc::clone(&self.deps.policy.interrupt_checker)),
-                event_hub.clone(),
-                session_id.clone(),
-                run_id.clone(),
-                session_dir.clone(),
-                Some(Arc::clone(&self.deps.session.event_appender)),
-                Some(Arc::clone(&self.deps.session.clock)),
-                artifact_store,
-            );
 
-            let outcome = match agent_loop
-                .run_until_done(&messages, max_turns, max_tool_calls)
-                .map_err(|e| e.with_context(ctx.clone()))
+            let mut make_query_loop = || {
+                let mut registry = ToolRegistry::new();
+                for t in &tools {
+                    let name = t.name();
+                    if let Some(ref list) = allowlist {
+                        if !list.contains(name) {
+                            continue;
+                        }
+                    }
+                    registry.register(Arc::clone(t));
+                }
+                let (memory_project, memory_global) = match self.deps.policy.resolve_memory_dir.resolve() {
+                    Ok((p, g)) => (p, Some(g)),
+                    Err(_) => (None, None),
+                };
+                let tool_context = ToolContext::new(
+                    session_dir_loop.as_ref().map(|s: &SessionDir| s.as_ref().to_path_buf()),
+                )
+                .with_command_allow_rules(allow_rules.clone())
+                .with_memory_dirs(memory_project, memory_global)
+                .with_log(Some(Arc::clone(&self.deps.obs.log)))
+                .with_event_emitter(
+                    event_hub_loop.clone(),
+                    Some(session_id_loop.clone()),
+                    Some(run_id_loop.clone()),
+                );
+                let sinks = sink_factory.create_sinks();
+                crate::usecase::query_loop::QueryLoop::new(
+                    Arc::clone(&stream),
+                    registry,
+                    tool_context,
+                    sinks,
+                    Arc::clone(&approver),
+                    Arc::clone(&policy_engine),
+                    self.deps.non_interactive,
+                    Some(Arc::clone(&interrupt_checker)),
+                    event_hub_loop.clone(),
+                    session_id_loop.clone(),
+                    run_id_loop.clone(),
+                    session_dir_loop.clone(),
+                    Some(Arc::clone(&event_appender)),
+                    Some(Arc::clone(&clock)),
+                    artifact_store.clone(),
+                )
+            };
+
+            let outcome = match AgentLoop::run(
+                &mut make_query_loop,
+                &messages,
+                AgentLoopConfig {
+                    max_queries,
+                    max_turns,
+                    max_additional_tool_calls: max_tool_calls,
+                },
+            )
+            .map_err(|e| e.with_context(ctx.clone()))
             {
                 Ok(o) => o,
                 Err(e) => {

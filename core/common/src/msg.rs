@@ -1,6 +1,6 @@
 //! 型付きメッセージ履歴（Msg）
 //!
-//! AgentLoop は Vec<Msg> を保持し、LLMアダプタが各APIのリクエスト形式に変換する。
+//! QueryLoop / AgentLoop は Vec<Msg> を保持し、LLMアダプタが各APIのリクエスト形式に変換する。
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

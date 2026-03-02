@@ -23,8 +23,8 @@ impl Default for NoContinuePrompt {
 
 impl ContinueAfterLimitPrompt for NoContinuePrompt {
     fn ask_continue(&self) -> Result<bool, Error> {
-        eprintln!("Agent loop reached the limit. State saved for resume.");
-        eprintln!("Run `ai --continue` to resume, or increase AI_MAX_TURNS / AI_MAX_TOOL_CALLS.");
+        eprintln!("Query loop reached the limit. State saved for resume.");
+        eprintln!("Run `ai --continue` to resume, or increase AI_MAX_TURNS / AI_MAX_TOOL_CALLS / AI_MAX_QUERIES.");
         Ok(false)
     }
 }
@@ -46,7 +46,7 @@ impl Default for CliContinuePrompt {
 
 impl ContinueAfterLimitPrompt for CliContinuePrompt {
     fn ask_continue(&self) -> Result<bool, Error> {
-        eprint!("Agent loop reached the turn limit. Continue? [y/N]: ");
+        eprint!("Query loop reached the turn limit. Continue? [y/N]: ");
         let _ = io::stderr().flush();
 
         let stdin = io::stdin();

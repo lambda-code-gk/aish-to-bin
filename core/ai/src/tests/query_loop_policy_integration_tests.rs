@@ -1,4 +1,20 @@
-//! AgentLoop（外側）の統合テストは別途追加予定です。
+//! QueryLoop × PolicyEngine 統合テスト: Deny verdict が ToolError になること（元 AgentLoop 統合テスト）
+
+use std::sync::Arc;
+
+use common::domain::event::{RunId, SessionId};
+use common::error::Error;
+use common::llm::events::{FinishReason, LlmEvent};
+use common::msg::Msg;
+use common::sink::{AgentEvent, EventSink};
+use common::tool::{Tool, ToolContext, ToolError, ToolRegistry};
+use serde_json::Value;
+
+use crate::adapter::stub_llm::StubLlm;
+use crate::domain::approval::StubApproval;
+use crate::domain::{ContextPack, PolicyDecision, PolicyVerdict};
+use crate::ports::outbound::PolicyEngine;
+use crate::usecase::query_loop::{QueryLoop, RunState};
 
 struct RunShellStubTool;
 impl Tool for RunShellStubTool {
@@ -88,7 +104,7 @@ fn test_deny_policy_emits_tool_error() {
     let approver = Arc::new(StubApproval::approved());
     let policy_engine: Arc<dyn PolicyEngine> = Arc::new(DenyAllToolsPolicyEngine);
     let stub = Arc::new(stub);
-    let mut loop_ = AgentLoop::new(
+    let mut loop_ = QueryLoop::new(
         stub,
         registry,
         ctx,
@@ -190,7 +206,7 @@ fn test_non_interactive_require_approval_is_denied() {
     let approver = Arc::new(StubApproval::approved());
     let policy_engine: Arc<dyn PolicyEngine> = Arc::new(RequireApprovalPolicyEngine);
     let stub = Arc::new(stub);
-    let mut loop_ = AgentLoop::new(
+    let mut loop_ = QueryLoop::new(
         stub,
         registry,
         ctx,
@@ -222,3 +238,5 @@ fn test_non_interactive_require_approval_is_denied() {
         panic!("expected ToolResult at index 3");
     }
 }
+
+

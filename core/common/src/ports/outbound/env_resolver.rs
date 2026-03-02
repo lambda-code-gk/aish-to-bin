@@ -51,6 +51,9 @@ pub trait EnvResolver: Send + Sync {
     /// ツール実行回数の上限（AI_MAX_TOOL_CALLS）を環境変数から取得
     fn ai_max_tool_calls(&self) -> Option<usize>;
 
+    /// QueryLoop 実行回数の上限（AI_MAX_QUERIES）を環境変数から取得
+    fn ai_max_queries(&self) -> Option<usize>;
+
     /// グローバル transcript ファイルのパス（セッション無し実行時の出力先）
     /// AISH_HOME が設定されていれば $AISH_HOME/state/transcript.jsonl。
     /// 未設定なら $XDG_STATE_HOME/aish/transcript.jsonl（XDG_STATE_HOME 未設定時は ~/.local/state/aish/transcript.jsonl）。

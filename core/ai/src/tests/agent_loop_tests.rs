@@ -1,22 +1,92 @@
-//! AgentLoop の単体テスト（StubLlm は adapter のテスト用実装を使用）
+//! AgentLoop（外側）の最小テスト
 
-use std::sync::Arc;
-
-use common::domain::event::{RunId, SessionId};
-use common::error::Error;
-use common::llm::events::{FinishReason, LlmEvent};
 use common::msg::Msg;
-use common::sink::{AgentEvent, EventSink};
-use common::tool::{Tool, ToolContext, ToolError, ToolRegistry};
-use serde_json::Value;
 
-use crate::adapter::stub_llm::{StubLlm, ToolAwareStubLlm};
-use crate::domain::approval::StubApproval;
-use crate::domain::{ContextPack, PolicyDecision, PolicyVerdict};
-use crate::ports::outbound::{LlmEventStream, PolicyEngine};
-use crate::usecase::agent_loop::{
-    count_tool_results, msgs_to_provider, AgentLoop, AgentLoopOutcome, RunState,
-};
+use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
+use crate::usecase::query_loop::{QueryLoop, QueryLoopOutcome};
+
+/// ツール実行なしで Done → AgentLoop が押し込みを行わないケース
+struct NoopQueryLoop;
+
+impl NoopQueryLoop {
+    fn new() -> Self {
+        Self
+    }
+}
+
+impl NoopQueryLoop {
+    fn to_inner(&self) -> QueryLoop {
+        // ダミー実装。実際には QueryLoop は多くの引数を取るが、
+        // ここでは run_until_done だけをスタブ化したいので newtype ではなく直接モック関数を使う方が自然。
+        unreachable!("NoopQueryLoop should not be converted to real QueryLoop in this test");
+    }
+}
+
+/// シンプルなスタブ QueryLoop 実装用の型
+struct StubQueryLoop {
+    outcome: QueryLoopOutcome,
+}
+
+impl StubQueryLoop {
+    fn new(outcome: QueryLoopOutcome) -> Self {
+        Self { outcome }
+    }
+
+    fn run_until_done(
+        &mut self,
+        _messages: &[Msg],
+        _max_turns: usize,
+        _max_additional_tool_calls: usize,
+    ) -> Result<QueryLoopOutcome, common::error::Error> {
+        Ok(self.outcome.clone())
+    }
+}
+
+/// AgentLoop::run の最小動作確認（tool_delta=0 かつ 1 回で Done のとき押し込みしない）
+#[test]
+fn test_agent_loop_run_single_done_no_retry() {
+    let initial_messages = vec![Msg::user("テストして")];
+    let final_messages = initial_messages.clone();
+    let outcome = QueryLoopOutcome::Done(final_messages.clone(), "ok".to_string());
+
+    let mut called = 0usize;
+    let result = AgentLoop::run(
+        || {
+            called += 1;
+            // 実際の QueryLoop ではないが、型合わせのために unreachable な new を経由
+            // 本テストでは run_until_done を直接モックしている前提。
+            // 実装簡略化のため、ここではダミー QueryLoop を返す。
+            QueryLoop::new(
+                std::sync::Arc::new(crate::adapter::stub_llm::StubLlm::text_only("ok")),
+                common::tool::ToolRegistry::new(),
+                common::tool::ToolContext::new(None),
+                vec![],
+                std::sync::Arc::new(crate::domain::approval::StubApproval::approved()),
+                std::sync::Arc::new(crate::domain::policy_engine::NoopPolicyEngine),
+                false,
+                None,
+                None,
+                common::domain::event::SessionId::new(""),
+                common::domain::event::RunId::new(""),
+                None,
+                None,
+                None,
+                None,
+            )
+        },
+        &initial_messages,
+        AgentLoopConfig {
+            max_queries: 1,
+            max_turns: 1,
+            max_additional_tool_calls: 0,
+        },
+    );
+
+    // run 自体が成功することだけを確認（押し込みロジックの詳細テストは別途追加余地あり）
+    assert!(matches!(result, Ok(AgentLoopOutcome::Done(_, _))));
+    assert_eq!(called, 1);
+}
+
 
 /// テスト用: 何も出力しない EventSink
 struct StubEventSink;

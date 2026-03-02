@@ -113,6 +113,12 @@ impl EnvResolver for StdEnvResolver {
             .and_then(|s| s.parse::<usize>().ok())
     }
 
+    fn ai_max_queries(&self) -> Option<usize> {
+        env::var("AI_MAX_QUERIES")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+    }
+
     fn resolve_dirs(&self) -> Result<Dirs, Error> {
         let home = env::var("HOME")
             .ok()
