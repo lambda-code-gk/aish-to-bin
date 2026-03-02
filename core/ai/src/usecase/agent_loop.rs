@@ -6,7 +6,7 @@
 use common::error::Error;
 use common::msg::Msg;
 
-use crate::usecase::query_loop::{QueryLoop, QueryLoopOutcome, count_tool_results};
+use crate::usecase::query_loop::{QueryLoopOutcome, QueryLoopRunner, count_tool_results};
 
 #[derive(Debug, Clone)]
 pub struct AgentLoopConfig {
@@ -27,22 +27,23 @@ pub enum AgentLoopOutcome {
 pub struct AgentLoop;
 
 impl AgentLoop {
-    pub fn run<F>(
-        mut make_query_loop: F,
+    pub fn run<F, Q>(
+        make_query_loop: &mut F,
         initial_messages: &[Msg],
         cfg: AgentLoopConfig,
     ) -> Result<AgentLoopOutcome, Error>
     where
-        F: FnMut() -> QueryLoop,
+        F: FnMut() -> Q,
+        Q: QueryLoopRunner,
     {
         let mut messages = initial_messages.to_vec();
         let mut last_text = String::new();
 
         // “最初のユーザー要求”を拾う（後で Judge に使う）
-        let root_user = messages.iter().rev().find_map(|m| match m {
-            Msg::User(s) => Some(s.clone()),
+        let root_user = match initial_messages.last() {
+            Some(Msg::User(s)) => Some(s.clone()),
             _ => None,
-        });
+        };
 
         for i in 0..cfg.max_queries {
             let before_tool_results = count_tool_results(&messages);
@@ -82,11 +83,73 @@ fn should_retry_v1(root_user: Option<&str>, tool_delta: usize, assistant_text: &
     if tool_delta > 0 {
         return false;
     }
-    let user = root_user.unwrap_or("");
+    let user = root_user.unwrap_or("").trim();
+    if user.is_empty() {
+        return false;
+    }
+
+    // 「コマンドだけ教えて」等は押し込まない
+    if looks_like_instruction_only_request(user) {
+        return false;
+    }
+
+    // 質問/承認待ちは押し込まない（NeedUserInput 相当）
+    if looks_like_question_or_need_user_input(assistant_text) {
+        return false;
+    }
+    if looks_like_approval_request(assistant_text) {
+        return false;
+    }
+
     if !looks_like_action_request(user) {
         return false;
     }
     looks_like_command_suggestion(assistant_text)
+}
+
+fn looks_like_instruction_only_request(s: &str) -> bool {
+    let t = s.trim();
+    if t.contains("コマンドだけ")
+        || t.contains("手順だけ")
+        || t.contains("提案だけ")
+        || t.contains("実行しない")
+        || t.contains("実行は不要")
+    {
+        return true;
+    }
+    let lower = t.to_lowercase();
+    if lower.contains("dry-run") || t.contains("ドライラン") {
+        return true;
+    }
+    // 「教えて」でも、手順/コマンド文脈なら instruction-only とみなす
+    if t.contains("教えて") && (t.contains("コマンド") || t.contains("手順") || t.contains("やり方")) {
+        return true;
+    }
+    false
+}
+
+fn looks_like_question_or_need_user_input(s: &str) -> bool {
+    let t = s.trim();
+    if t.contains('?') || t.contains('？') {
+        return true;
+    }
+    // 強めの手がかりだけに絞る（誤検知を避ける）
+    t.contains("指定してください")
+        || t.contains("教えてください")
+        || t.contains("入力してください")
+        || t.contains("どのサイト")
+        || t.contains("どのURL")
+        || t.contains("URLを")
+}
+
+fn looks_like_approval_request(s: &str) -> bool {
+    let t = s.trim();
+    let lower = t.to_lowercase();
+    t.contains("承認が必要")
+        || t.contains("許可が必要")
+        || t.contains("確認してください")
+        || lower.contains("approve")
+        || lower.contains("confirm")
 }
 
 fn looks_like_action_request(s: &str) -> bool {

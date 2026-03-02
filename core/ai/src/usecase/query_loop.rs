@@ -55,6 +55,16 @@ pub enum QueryLoopOutcome {
     ReachedLimit(Vec<Msg>, String),
 }
 
+/// QueryLoop の実行を抽象化するトレイト（テスト差し込み用）
+pub(crate) trait QueryLoopRunner {
+    fn run_until_done(
+        &mut self,
+        initial_messages: &[Msg],
+        max_turns: usize,
+        max_additional_tool_calls: usize,
+    ) -> Result<QueryLoopOutcome, Error>;
+}
+
 /// Vec<Msg> をドライバ用 (system_instruction, query, history) に変換
 /// ToolCall/ToolResult は Assistant(content, tool_calls) と Tool(call_id, result) に変換
 pub fn msgs_to_provider(msgs: &[Msg]) -> (Option<String>, String, Vec<Message>) {
@@ -766,6 +776,17 @@ impl QueryLoop {
         }
 
         Ok(QueryLoopOutcome::ReachedLimit(messages, last_assistant_text))
+    }
+}
+
+impl QueryLoopRunner for QueryLoop {
+    fn run_until_done(
+        &mut self,
+        initial_messages: &[Msg],
+        max_turns: usize,
+        max_additional_tool_calls: usize,
+    ) -> Result<QueryLoopOutcome, Error> {
+        QueryLoop::run_until_done(self, initial_messages, max_turns, max_additional_tool_calls)
     }
 }
 

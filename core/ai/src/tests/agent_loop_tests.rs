@@ -1,90 +1,185 @@
-//! AgentLoop（外側）の最小テスト
+//! AgentLoop（外側）の v1.1 テスト（Stub QueryLoopRunner で検証）
 
+use std::sync::{Arc, Mutex};
+
+use common::error::Error;
 use common::msg::Msg;
+use serde_json::json;
 
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
-use crate::usecase::query_loop::{QueryLoop, QueryLoopOutcome};
+use crate::usecase::query_loop::{QueryLoopOutcome, QueryLoopRunner};
 
-/// ツール実行なしで Done → AgentLoop が押し込みを行わないケース
-struct NoopQueryLoop;
+#[derive(Clone)]
+enum Step {
+    Done { text: String, add_tool_result: bool },
+}
 
-impl NoopQueryLoop {
-    fn new() -> Self {
-        Self
+#[derive(Clone)]
+struct ScriptedQueryLoop {
+    script: Arc<Mutex<Vec<Step>>>,
+}
+
+impl ScriptedQueryLoop {
+    fn new(script: Arc<Mutex<Vec<Step>>>) -> Self {
+        Self { script }
     }
 }
 
-impl NoopQueryLoop {
-    fn to_inner(&self) -> QueryLoop {
-        // ダミー実装。実際には QueryLoop は多くの引数を取るが、
-        // ここでは run_until_done だけをスタブ化したいので newtype ではなく直接モック関数を使う方が自然。
-        unreachable!("NoopQueryLoop should not be converted to real QueryLoop in this test");
-    }
-}
-
-/// シンプルなスタブ QueryLoop 実装用の型
-struct StubQueryLoop {
-    outcome: QueryLoopOutcome,
-}
-
-impl StubQueryLoop {
-    fn new(outcome: QueryLoopOutcome) -> Self {
-        Self { outcome }
-    }
-
+impl QueryLoopRunner for ScriptedQueryLoop {
     fn run_until_done(
         &mut self,
-        _messages: &[Msg],
+        messages: &[Msg],
         _max_turns: usize,
         _max_additional_tool_calls: usize,
-    ) -> Result<QueryLoopOutcome, common::error::Error> {
-        Ok(self.outcome.clone())
+    ) -> Result<QueryLoopOutcome, Error> {
+        let step = {
+            let mut g = self.script.lock().unwrap();
+            if g.is_empty() {
+                return Ok(QueryLoopOutcome::Done(
+                    messages.to_vec(),
+                    "no more steps".to_string(),
+                ));
+            }
+            g.remove(0)
+        };
+
+        match step {
+            Step::Done { text, add_tool_result } => {
+                let mut out = messages.to_vec();
+                if add_tool_result {
+                    out.push(Msg::tool_result(
+                        "call-1",
+                        "run_shell",
+                        json!({"stdout":"ok\n","stderr":"","exit_code":0}),
+                    ));
+                }
+                Ok(QueryLoopOutcome::Done(out, text))
+            }
+        }
     }
 }
 
-/// AgentLoop::run の最小動作確認（tool_delta=0 かつ 1 回で Done のとき押し込みしない）
-#[test]
-fn test_agent_loop_run_single_done_no_retry() {
-    let initial_messages = vec![Msg::user("テストして")];
-    let final_messages = initial_messages.clone();
-    let outcome = QueryLoopOutcome::Done(final_messages.clone(), "ok".to_string());
+fn count_marker(msgs: &[Msg], marker: &str) -> usize {
+    msgs.iter()
+        .filter(|m| matches!(m, Msg::User(s) if s.contains(marker)))
+        .count()
+}
 
-    let mut called = 0usize;
-    let result = AgentLoop::run(
-        || {
-            called += 1;
-            // 実際の QueryLoop ではないが、型合わせのために unreachable な new を経由
-            // 本テストでは run_until_done を直接モックしている前提。
-            // 実装簡略化のため、ここではダミー QueryLoop を返す。
-            QueryLoop::new(
-                std::sync::Arc::new(crate::adapter::stub_llm::StubLlm::text_only("ok")),
-                common::tool::ToolRegistry::new(),
-                common::tool::ToolContext::new(None),
-                vec![],
-                std::sync::Arc::new(crate::domain::approval::StubApproval::approved()),
-                std::sync::Arc::new(crate::domain::policy_engine::NoopPolicyEngine),
-                false,
-                None,
-                None,
-                common::domain::event::SessionId::new(""),
-                common::domain::event::RunId::new(""),
-                None,
-                None,
-                None,
-                None,
-            )
+fn count_tool_results(msgs: &[Msg]) -> usize {
+    msgs.iter().filter(|m| matches!(m, Msg::ToolResult { .. })).count()
+}
+
+#[test]
+fn agent_loop_retries_once_and_executes() {
+    let script = Arc::new(Mutex::new(vec![
+        Step::Done {
+            text: "以下を実行してください: curl ... | voicevox ...".to_string(),
+            add_tool_result: false,
         },
-        &initial_messages,
+        Step::Done {
+            text: "再生しました".to_string(),
+            add_tool_result: true,
+        },
+    ]));
+
+    let mut calls = 0usize;
+    let mut make = || {
+        calls += 1;
+        ScriptedQueryLoop::new(Arc::clone(&script))
+    };
+
+    let initial = vec![Msg::user("ニュース取得して読み上げて")];
+
+    let out = AgentLoop::run(
+        &mut make,
+        &initial,
         AgentLoopConfig {
-            max_queries: 1,
+            max_queries: 2,
             max_turns: 1,
             max_additional_tool_calls: 0,
         },
-    );
+    )
+    .unwrap();
 
-    // run 自体が成功することだけを確認（押し込みロジックの詳細テストは別途追加余地あり）
-    assert!(matches!(result, Ok(AgentLoopOutcome::Done(_, _))));
-    assert_eq!(called, 1);
+    let marker = "[AISH_INTERNAL] retry_for_completion_v1";
+
+    match out {
+        AgentLoopOutcome::Done(msgs, text) => {
+            assert_eq!(calls, 2);
+            assert_eq!(text, "再生しました");
+            assert_eq!(count_marker(&msgs, marker), 1);
+            assert!(count_tool_results(&msgs) >= 1);
+        }
+        _ => panic!("expected Done"),
+    }
+}
+
+#[test]
+fn agent_loop_does_not_retry_when_user_wants_commands_only() {
+    let script = Arc::new(Mutex::new(vec![Step::Done {
+        text: "curl ... を実行してください".to_string(),
+        add_tool_result: false,
+    }]));
+
+    let mut calls = 0usize;
+    let mut make = || {
+        calls += 1;
+        ScriptedQueryLoop::new(Arc::clone(&script))
+    };
+
+    let initial = vec![Msg::user("ニュース取得して読み上げて。コマンドだけ教えて")];
+
+    let out = AgentLoop::run(
+        &mut make,
+        &initial,
+        AgentLoopConfig {
+            max_queries: 2,
+            max_turns: 1,
+            max_additional_tool_calls: 0,
+        },
+    )
+    .unwrap();
+
+    match out {
+        AgentLoopOutcome::Done(_, _) => {
+            assert_eq!(calls, 1);
+        }
+        _ => panic!("expected Done"),
+    }
+}
+
+#[test]
+fn agent_loop_does_not_retry_when_assistant_asks_question() {
+    let script = Arc::new(Mutex::new(vec![Step::Done {
+        text: "どのサイトのURLを指定しますか？".to_string(),
+        add_tool_result: false,
+    }]));
+
+    let mut calls = 0usize;
+    let mut make = || {
+        calls += 1;
+        ScriptedQueryLoop::new(Arc::clone(&script))
+    };
+
+    let initial = vec![Msg::user("ニュース取得して読み上げて")];
+
+    let out = AgentLoop::run(
+        &mut make,
+        &initial,
+        AgentLoopConfig {
+            max_queries: 2,
+            max_turns: 1,
+            max_additional_tool_calls: 0,
+        },
+    )
+    .unwrap();
+
+    match out {
+        AgentLoopOutcome::Done(_, _) => {
+            assert_eq!(calls, 1);
+        }
+        _ => panic!("expected Done"),
+    }
 }
 
 

@@ -1,5 +1,6 @@
 //! 結合テスト（アダプタ経由で I/O を行うテスト）
 
+mod agent_loop_tests;
 mod query_loop_policy_integration_tests;
 mod query_loop_tests;
 mod context_addons_budget_tests;
