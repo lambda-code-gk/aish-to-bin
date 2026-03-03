@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 /// Agent の外側ループ挙動
 ///
-/// - Act: 実行寄り（押し込み有効）
+/// - Act: 実行寄り（押し込み有効・デフォルト）
 /// - Plan: 計画・提案寄り（押し込み無効）
-/// - Auto: 将来の Judge 等向け予約（v1.2 では Act と同等扱い）
+/// - Auto: CompositeJudge による自動モード選択（LLM Judge を含む）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentMode {
@@ -14,7 +14,6 @@ pub enum AgentMode {
 }
 
 impl AgentMode {
-    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             AgentMode::Act => "act",

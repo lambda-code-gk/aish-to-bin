@@ -169,6 +169,21 @@ fn test_msgs_to_provider_simple() {
 }
 
 #[test]
+fn test_msgs_to_provider_concatenates_multiple_system_messages() {
+    let msgs = vec![
+        Msg::system("SYS1"),
+        Msg::user("hi"),
+        Msg::system("[AISH_INTERNAL] retry_for_completion_v1"),
+        Msg::user("go"),
+    ];
+    let (sys, query, _history) = msgs_to_provider(&msgs);
+    let sys = sys.expect("system should exist");
+    assert!(sys.contains("SYS1"));
+    assert!(sys.contains("[AISH_INTERNAL] retry_for_completion_v1"));
+    assert_eq!(query, "go");
+}
+
+#[test]
 fn test_msgs_to_provider_with_history() {
     let msgs = vec![Msg::user("Hi"), Msg::assistant("Hello!"), Msg::user("Bye")];
     let (_sys, query, history) = msgs_to_provider(&msgs);

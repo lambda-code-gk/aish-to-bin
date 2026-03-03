@@ -1,0 +1,6 @@
+{
+  "agent": {
+    "mode": "auto",
+    "max_queries": 2
+  }
+}

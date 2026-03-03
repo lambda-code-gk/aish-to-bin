@@ -398,25 +398,6 @@ impl AiUseCase {
         ));
         let run_start = std::time::Instant::now();
         let query_len = query.as_ref().map(|q| q.len()).unwrap_or(0);
-        if let Some(ref hub) = event_hub {
-            let mut payload = serde_json::json!({
-                "query_len": query_len,
-                "non_interactive": self.deps.non_interactive,
-            });
-            if sessionless {
-                payload["sessionless"] = serde_json::json!(true);
-            }
-            hub.emit(Event {
-                v: 1,
-                session_id: session_id.clone(),
-                run_id: run_id.clone(),
-                kind: "run.started".to_string(),
-                payload: payload.clone(),
-            });
-            if let Some(ref dir) = session_dir {
-                self.append_event_to_store(dir, &session_id, &run_id, "run.started", payload)?;
-            }
-        }
 
         let (profile_name, model_name) = self
             .deps
@@ -827,7 +808,7 @@ impl AiUseCase {
             .env_resolver
             .ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
-        let agent_mode = agent_mode.unwrap_or(AgentMode::Auto);
+        let agent_mode = agent_mode.unwrap_or(AgentMode::Act);
         let default_max_queries = match agent_mode {
             AgentMode::Plan => DEFAULT_MAX_QUERIES_PLAN,
             AgentMode::Act | AgentMode::Auto => DEFAULT_MAX_QUERIES_ACT,
@@ -841,6 +822,28 @@ impl AiUseCase {
                 .ai_max_queries()
                 .unwrap_or(default_max_queries)
         };
+
+        if let Some(ref hub) = event_hub {
+            let mut payload = serde_json::json!({
+                "query_len": query_len,
+                "non_interactive": self.deps.non_interactive,
+                "agent_mode": agent_mode.as_str(),
+                "max_queries": max_queries,
+            });
+            if sessionless {
+                payload["sessionless"] = serde_json::json!(true);
+            }
+            hub.emit(Event {
+                v: 1,
+                session_id: session_id.clone(),
+                run_id: run_id.clone(),
+                kind: "run.started".to_string(),
+                payload: payload.clone(),
+            });
+            if let Some(ref dir) = session_dir {
+                self.append_event_to_store(dir, &session_id, &run_id, "run.started", payload)?;
+            }
+        }
 
         let command_rules_path = match self.deps.policy.env_resolver.resolve_command_rules_path() {
             Ok(p) => p,

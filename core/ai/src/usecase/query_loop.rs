@@ -88,11 +88,15 @@ pub fn msgs_to_provider(msgs: &[Msg]) -> (Option<String>, String, Vec<Message>) 
 
     for m in msgs {
         match m {
-            Msg::System(s) => {
-                if system.is_none() {
-                    system = Some(s.clone());
+            Msg::System(s) => match &mut system {
+                None => system = Some(s.clone()),
+                Some(existing) => {
+                    if !existing.is_empty() {
+                        existing.push_str("\n\n");
+                    }
+                    existing.push_str(s);
                 }
-            }
+            },
             Msg::User(s) => {
                 flush_assistant_with_tool_calls(
                     &mut list,

@@ -92,7 +92,10 @@ fn strip_fenced_code_blocks(s: &str) -> String {
 }
 
 fn last_non_empty_line(s: &str) -> Option<&str> {
-    s.lines().rev().find(|l| !l.trim().is_empty()).map(|l| l.trim())
+    s.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim())
 }
 
 fn looks_like_question_or_need_user_input(assistant_text: &str) -> bool {
@@ -179,9 +182,8 @@ No extra text.
         .to_string();
 
         let raw = self.llm.complete(Some(system), &payload)?;
-        let json_str = extract_json_object(&raw).ok_or_else(|| {
-            Error::provider("llm_judge: invalid json").with_context(raw.clone())
-        })?;
+        let json_str = extract_json_object(&raw)
+            .ok_or_else(|| Error::provider("llm_judge: invalid json").with_context(raw.clone()))?;
         let parsed: JudgeJson = serde_json::from_str(&json_str).map_err(|e| {
             Error::provider(format!("llm_judge: parse failed: {e}")).with_context(raw)
         })?;
@@ -237,4 +239,3 @@ impl AgentJudge for CompositeJudge {
         }
     }
 }
-
