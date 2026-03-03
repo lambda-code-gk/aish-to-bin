@@ -41,6 +41,11 @@ pub fn run() -> Result<i32, common::error::Error> {
                 .long("verbose")
                 .action(ArgAction::SetTrue),
         )
+        .arg(
+            clap::Arg::new("generate")
+                .long("generate")
+                .num_args(1),
+        )
         .subcommand_required(false)
         .subcommand(
             clap::Command::new("ai")
@@ -87,6 +92,15 @@ pub fn run() -> Result<i32, common::error::Error> {
     if matches.get_flag("help") {
         print_help();
         return Ok(0);
+    }
+
+    if let Some(shell) = matches.get_one::<String>("generate") {
+        let argv = vec![
+            OsString::from("aish"),
+            OsString::from("--generate"),
+            OsString::from(shell),
+        ];
+        return aish::run_with_args(argv);
     }
 
     let global_args = build_global_argv(&matches);
@@ -158,6 +172,7 @@ fn print_help() {
     println!("  -s, --session-dir     Session directory (resume)");
     println!("  -d, --home-dir        Home directory (AISH_HOME)");
     println!("  -v, --verbose         Verbose logs");
+    println!("  --generate <shell>    Generate shell completion script (bash, zsh, fish)");
     println!();
     println!("Subcommands:");
     println!("  ai                    Run ai (query, task, --policy-explain, etc.)");
