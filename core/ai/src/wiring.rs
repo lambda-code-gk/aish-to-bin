@@ -597,14 +597,17 @@ fn build_model_deps(fs: &Arc<dyn FileSystem>, env_resolver: &Arc<dyn EnvResolver
             Arc::clone(fs),
             Arc::clone(env_resolver),
         ));
-    let llm_stream_factory: Arc<dyn crate::ports::outbound::LlmEventStreamFactory> = Arc::new(
-        StdLlmEventStreamFactory::new(Arc::clone(fs), Arc::clone(env_resolver)),
-    );
+    let llm_stream_factory: Arc<dyn crate::ports::outbound::LlmEventStreamFactory> =
+        Arc::new(StdLlmEventStreamFactory::new(Arc::clone(fs), Arc::clone(env_resolver)));
+
+    let llm_completion: Arc<dyn crate::ports::outbound::LlmCompletion> =
+        Arc::new(StdLlmCompletion::new(Arc::clone(&llm_stream_factory)));
 
     ModelDeps {
         profile_lister,
         resolve_profile_and_model,
         llm_stream_factory,
+        llm_completion,
     }
 }
 

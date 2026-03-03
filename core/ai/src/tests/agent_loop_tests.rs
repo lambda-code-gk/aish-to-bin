@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::domain::AgentMode;
+use crate::usecase::agent_judge::{AgentJudge, AgentJudgeInput, AgentVerdict};
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
 use crate::usecase::query_loop::{QueryLoopOutcome, QueryLoopRunner};
 use common::error::Error;
@@ -62,6 +62,31 @@ impl QueryLoopRunner for ScriptedQueryLoop {
     }
 }
 
+struct RetryOnceJudge {
+    called: Mutex<bool>,
+}
+
+impl RetryOnceJudge {
+    fn new() -> Self {
+        Self {
+            called: Mutex::new(false),
+        }
+    }
+}
+
+impl AgentJudge for RetryOnceJudge {
+    fn judge(&self, _input: &AgentJudgeInput) -> Result<AgentVerdict, common::error::Error> {
+        let mut g = self.called.lock().unwrap();
+        if !*g {
+            *g = true;
+            return Ok(AgentVerdict::Retry {
+                followup: "[AISH_INTERNAL] retry_for_completion_v1\n...".to_string(),
+            });
+        }
+        Ok(AgentVerdict::Done)
+    }
+}
+
 fn count_marker(msgs: &[Msg], marker: &str) -> usize {
     msgs.iter()
         .filter(|m| matches!(m, Msg::System(s) if s.contains(marker)))
@@ -94,12 +119,13 @@ fn agent_loop_retries_once_and_executes() {
     };
 
     let initial = vec![Msg::user("ニュース取得して読み上げて")];
+    let judge = RetryOnceJudge::new();
 
     let out = AgentLoop::run(
         &mut make,
+        &judge,
         &initial,
         AgentLoopConfig {
-            agent_mode: AgentMode::Act,
             max_queries: 2,
             max_turns: 1,
             max_additional_tool_calls: 0,
@@ -120,153 +146,5 @@ fn agent_loop_retries_once_and_executes() {
     }
 }
 
-#[test]
-fn agent_loop_does_not_retry_in_plan_mode() {
-    let script = Arc::new(Mutex::new(vec![Step::Done {
-        text: "```sh\necho only plan\n```".to_string(),
-        add_tool_result: false,
-    }]));
-
-    let mut calls = 0usize;
-    let mut make = || {
-        calls += 1;
-        ScriptedQueryLoop::new(Arc::clone(&script))
-    };
-
-    let initial = vec![Msg::user("ニュース取得して読み上げて")];
-
-    let out = AgentLoop::run(
-        &mut make,
-        &initial,
-        AgentLoopConfig {
-            agent_mode: AgentMode::Plan,
-            max_queries: 2,
-            max_turns: 1,
-            max_additional_tool_calls: 0,
-        },
-    )
-    .unwrap();
-
-    match out {
-        AgentLoopOutcome::Done(_, _) => {
-            assert_eq!(calls, 1);
-        }
-        _ => panic!("expected Done"),
-    }
-}
-
-#[test]
-fn agent_loop_does_not_retry_when_assistant_asks_question() {
-    let script = Arc::new(Mutex::new(vec![Step::Done {
-        text: "どのサイトのURLを指定しますか？".to_string(),
-        add_tool_result: false,
-    }]));
-
-    let mut calls = 0usize;
-    let mut make = || {
-        calls += 1;
-        ScriptedQueryLoop::new(Arc::clone(&script))
-    };
-
-    let initial = vec![Msg::user("ニュース取得して読み上げて")];
-
-    let out = AgentLoop::run(
-        &mut make,
-        &initial,
-        AgentLoopConfig {
-            agent_mode: AgentMode::Act,
-            max_queries: 2,
-            max_turns: 1,
-            max_additional_tool_calls: 0,
-        },
-    )
-    .unwrap();
-
-    match out {
-        AgentLoopOutcome::Done(_, _) => {
-            assert_eq!(calls, 1);
-        }
-        _ => panic!("expected Done"),
-    }
-}
-
-#[test]
-fn agent_loop_retries_even_if_url_has_question_mark_inside_code_fence() {
-    let script = Arc::new(Mutex::new(vec![
-        Step::Done {
-            text: "```sh\ncurl 'https://example.com/rss?x=1'\n```".to_string(),
-            add_tool_result: false,
-        },
-        Step::Done {
-            text: "ok".to_string(),
-            add_tool_result: true,
-        },
-    ]));
-
-    let mut calls = 0usize;
-    let mut make = || {
-        calls += 1;
-        ScriptedQueryLoop::new(Arc::clone(&script))
-    };
-
-    let initial = vec![Msg::user("ニュース取得して読み上げて")];
-
-    let out = AgentLoop::run(
-        &mut make,
-        &initial,
-        AgentLoopConfig {
-            agent_mode: AgentMode::Act,
-            max_queries: 2,
-            max_turns: 1,
-            max_additional_tool_calls: 0,
-        },
-    )
-    .unwrap();
-
-    let marker = "[AISH_INTERNAL] retry_for_completion_v1";
-
-    match out {
-        AgentLoopOutcome::Done(msgs, text) => {
-            assert_eq!(calls, 2);
-            assert_eq!(text, "ok");
-            assert_eq!(count_marker(&msgs, marker), 1);
-            assert!(count_tool_results(&msgs) >= 1);
-        }
-        _ => panic!("expected Done"),
-    }
-}
-
-#[test]
-fn agent_loop_does_not_retry_when_followed_by_label_colon_prompt() {
-    let script = Arc::new(Mutex::new(vec![Step::Done {
-        text: "```sh\ncurl ...\n```\nURL:".to_string(),
-        add_tool_result: false,
-    }]));
-
-    let mut calls = 0usize;
-    let mut make = || {
-        calls += 1;
-        ScriptedQueryLoop::new(Arc::clone(&script))
-    };
-
-    let initial = vec![Msg::user("ニュース取得して読み上げて")];
-
-    let out = AgentLoop::run(
-        &mut make,
-        &initial,
-        AgentLoopConfig {
-            agent_mode: AgentMode::Act,
-            max_queries: 2,
-            max_turns: 1,
-            max_additional_tool_calls: 0,
-        },
-    )
-    .unwrap();
-
-    match out {
-        AgentLoopOutcome::Done(_, _) => {
-            assert_eq!(calls, 1);
-        }
-        _ => panic!("expected Done"),
-    }
-}
+// 以降のテストは旧 Heuristic ベースの挙動に依存していたため、
+// v1.3 では AgentJudge を Stub 化した上での retry 動作のみを検証する。

@@ -14,6 +14,7 @@ pub enum AgentMode {
 }
 
 impl AgentMode {
+    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             AgentMode::Act => "act",

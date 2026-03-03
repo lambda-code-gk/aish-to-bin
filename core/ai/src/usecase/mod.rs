@@ -1,3 +1,4 @@
+pub(crate) mod agent_judge;
 pub(crate) mod agent_loop;
 pub(crate) mod app;
 pub(crate) mod config_usecase;

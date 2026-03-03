@@ -9,6 +9,9 @@ use crate::ports::outbound::{
     ResolveProfileAndModel, RunQuery, SessionDerivedBuilder, SessionEventStore,
     SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
+use crate::usecase::agent_judge::{
+    AgentJudge, CompositeJudge, HeuristicJudge, LlmJudge, PlanJudge,
+};
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
 use common::domain::event::{Event, RunId, SessionId};
 use common::domain::{EventEnvelopeWithoutSeq, SessionDir};
@@ -80,6 +83,7 @@ pub struct ModelDeps {
     pub profile_lister: Arc<dyn ProfileLister>,
     pub resolve_profile_and_model: Arc<dyn ResolveProfileAndModel>,
     pub llm_stream_factory: Arc<dyn LlmEventStreamFactory>,
+    pub llm_completion: Arc<dyn crate::ports::outbound::LlmCompletion>,
 }
 
 pub struct SystemDeps {
@@ -823,7 +827,7 @@ impl AiUseCase {
             .env_resolver
             .ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
-        let agent_mode = agent_mode.unwrap_or(AgentMode::Act);
+        let agent_mode = agent_mode.unwrap_or(AgentMode::Auto);
         let default_max_queries = match agent_mode {
             AgentMode::Plan => DEFAULT_MAX_QUERIES_PLAN,
             AgentMode::Act | AgentMode::Auto => DEFAULT_MAX_QUERIES_ACT,
@@ -958,11 +962,20 @@ impl AiUseCase {
                 )
             };
 
+            let judge: Box<dyn AgentJudge> = match agent_mode {
+                AgentMode::Plan => Box::new(PlanJudge),
+                AgentMode::Act => Box::new(HeuristicJudge::new()),
+                AgentMode::Auto => Box::new(CompositeJudge {
+                    heuristic: HeuristicJudge::new(),
+                    llm: LlmJudge::new(Arc::clone(&self.deps.model.llm_completion)),
+                }),
+            };
+
             let outcome = match AgentLoop::run(
                 &mut make_query_loop,
+                judge.as_ref(),
                 &messages,
                 AgentLoopConfig {
-                    agent_mode,
                     max_queries,
                     max_turns,
                     max_additional_tool_calls: max_tool_calls,
