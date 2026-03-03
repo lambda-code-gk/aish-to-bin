@@ -1,7 +1,7 @@
 use super::policy_rules_tool::{ShellAllowlistRule, ToolModeRule};
 use crate::domain::policy_rule::ToolPolicyRule;
 use crate::domain::{PolicyVerdict, RuleVerdict, ToolCapability, ToolMode, ToolProfile};
-use common::tool::ToolContext;
+use common::tool::{CommandAllowRule, ToolContext};
 
 fn profile_with_exec_allowlist(tool_name: &str, allowlist: &[&str], mode: ToolMode) -> ToolProfile {
     ToolProfile {
@@ -82,5 +82,31 @@ fn shell_allowlist_rule_details_command_truncates_by_chars() {
             assert!(command.chars().count() <= 200 + "...(truncated)".chars().count());
         }
         _ => panic!("expected Allow"),
+    }
+}
+
+#[test]
+fn shell_allowlist_rule_uses_command_rules_for_allow() {
+    let rule = ShellAllowlistRule {
+        shell_tool_name: "run_shell",
+    };
+
+    // ToolProfile の Exec allowlist は空（policy 側で allowlist 未設定）だが、
+    // command_rules.txt 側の allowlist で許可されたコマンドは approval なしで Allow になることを確認する。
+    let profile = profile_with_exec_allowlist("run_shell", &[], ToolMode::RequireApproval);
+    let tool_ctx = ToolContext::new(None).with_command_allow_rules(vec![
+        CommandAllowRule::Prefix("find".to_string()),
+        CommandAllowRule::Prefix("grep".to_string()),
+    ]);
+
+    let tool_args = serde_json::json!({"command": "find . -maxdepth 1"});
+
+    let verdict = rule
+        .evaluate("run_shell", &tool_args, &profile, &tool_ctx, false)
+        .expect("evaluate should succeed");
+
+    match verdict {
+        RuleVerdict::Verdict(PolicyVerdict::Allow { .. }) => {}
+        _ => panic!("expected Allow when command is permitted by command_rules"),
     }
 }

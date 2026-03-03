@@ -3,7 +3,7 @@ use crate::domain::{
     PolicyDecision, PolicyVerdict, RuleVerdict, ToolCapability, ToolMode, ToolProfile,
 };
 use common::error::Error;
-use common::tool::ToolContext;
+use common::tool::{is_command_allowed, ToolContext};
 
 const TOOL_SUMMARY_MAX_CHARS: usize = 200;
 
@@ -128,14 +128,20 @@ impl ToolPolicyRule for ShellAllowlistRule {
             }
         }
 
-        // prefix or first-token match
-        let allowed = if profile_allowlist.is_empty() {
+        // ToolProfile 側の allowlist（policy.tools.run_shell.allowlist 等）
+        let allowed_by_profile = if profile_allowlist.is_empty() {
             false
         } else {
             profile_allowlist
                 .iter()
                 .any(|prefix| first_token.starts_with(prefix) || first_token == prefix)
         };
+
+        // command_rules.txt（ToolContext.command_allow_rules）側の allowlist。
+        // ここで許可されたコマンドも approval なしで通す。
+        let allowed_by_command_rules = is_command_allowed(command, &tool_ctx.command_allow_rules);
+
+        let allowed = allowed_by_profile || allowed_by_command_rules;
 
         if allowed {
             let mut decision = base_decision("tool", tool_name, "allowed", "shell_allowlist");
