@@ -15,7 +15,11 @@ pub struct FileMetadata {
 
 impl FileMetadata {
     pub fn new(len: u64, is_file: bool, is_dir: bool) -> Self {
-        Self { len, is_file, is_dir }
+        Self {
+            len,
+            is_file,
+            is_dir,
+        }
     }
 
     pub fn len(&self) -> u64 {

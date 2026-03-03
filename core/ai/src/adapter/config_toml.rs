@@ -66,7 +66,10 @@ exec = "require_approval"
         assert_eq!(policy.tool_default_mode.as_deref(), Some("allow"));
         let cap = policy.tool_mode_by_capability.as_ref().unwrap();
         assert_eq!(cap.get("fs_read").map(String::as_str), Some("allow"));
-        assert_eq!(cap.get("fs_write").map(String::as_str), Some("require_approval"));
+        assert_eq!(
+            cap.get("fs_write").map(String::as_str),
+            Some("require_approval")
+        );
     }
 
     #[test]

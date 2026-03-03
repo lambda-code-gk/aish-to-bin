@@ -29,4 +29,3 @@ pub struct ConfigSource {
     /// - \"--policy.egress-sensitive-action\"
     pub ref_id: String,
 }
-

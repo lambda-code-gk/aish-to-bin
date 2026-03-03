@@ -28,7 +28,11 @@ pub fn load_command_allow_rules(path: &Path) -> Vec<CommandAllowRule> {
     match read_rules_from_file(path) {
         Ok(rules) => rules,
         Err(e) => {
-            eprintln!("Warning: Failed to load command_rules: {} ({})", path.display(), e);
+            eprintln!(
+                "Warning: Failed to load command_rules: {} ({})",
+                path.display(),
+                e
+            );
             Vec::new()
         }
     }
@@ -66,7 +70,10 @@ fn read_rules_from_str(content: &str) -> Result<Vec<CommandAllowRule>, Error> {
                     }
                 }
                 Err(e) => {
-                    eprintln!("Warning: Invalid regex in command_rules: '{}' ({})", regex_str, e);
+                    eprintln!(
+                        "Warning: Invalid regex in command_rules: '{}' ({})",
+                        regex_str, e
+                    );
                 }
             }
         } else {
@@ -126,13 +133,13 @@ mod tests {
 
         let rules = read_rules_from_file(&file_path).unwrap();
         assert_eq!(rules.len(), 5);
-        
+
         // ls (Prefix)
         match &rules[0] {
             CommandAllowRule::Prefix(p) => assert_eq!(p, "ls"),
             _ => panic!("Expected Prefix"),
         }
-        
+
         // /^echo .*/ (Regex)
         match &rules[1] {
             CommandAllowRule::Regex(re) => assert!(re.is_match("echo hello")),

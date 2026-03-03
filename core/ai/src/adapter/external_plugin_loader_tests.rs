@@ -152,7 +152,9 @@ transport:
         .map(|r| r.kind.clone())
         .collect();
     assert!(
-        kinds.iter().any(|k| k == "external_plugin.skipped_id_conflict"),
+        kinds
+            .iter()
+            .any(|k| k == "external_plugin.skipped_id_conflict"),
         "expected skipped_id_conflict event, got: {:?}",
         kinds
     );
@@ -167,7 +169,8 @@ fn list_tools_failure_does_not_register_plugin() {
         eprintln!("skip: python3 not found");
         return;
     }
-    let temp = std::env::temp_dir().join(format!("aish_loader_bad_list_test_{}", std::process::id()));
+    let temp =
+        std::env::temp_dir().join(format!("aish_loader_bad_list_test_{}", std::process::id()));
     let _ = std::fs::create_dir_all(temp.join("config").join("plugins.d"));
     let script_path = write_bad_list_tools_plugin(&temp);
     let script_str = script_path.to_string_lossy().into_owned();
@@ -182,7 +185,11 @@ transport:
 "#,
         script_str
     );
-    std::fs::write(temp.join("config").join("plugins.d").join("only.yaml"), &yaml).unwrap();
+    std::fs::write(
+        temp.join("config").join("plugins.d").join("only.yaml"),
+        &yaml,
+    )
+    .unwrap();
 
     let old_aish_home = std::env::var("AISH_HOME").ok();
     let old_home = std::env::var("HOME").ok();
@@ -191,11 +198,7 @@ transport:
     let isolated_home = temp.join("home");
     let _ = std::fs::create_dir_all(&isolated_home);
     std::env::set_var("HOME", isolated_home.as_os_str());
-    let tools = load_external_plugins(
-        Arc::new(StdFileSystem),
-        Arc::new(StdEnvResolver),
-        None,
-    );
+    let tools = load_external_plugins(Arc::new(StdFileSystem), Arc::new(StdEnvResolver), None);
     if let Some(h) = old_aish_home {
         std::env::set_var("AISH_HOME", h);
     } else {
@@ -207,6 +210,10 @@ transport:
         std::env::remove_var("HOME");
     }
 
-    assert_eq!(tools.len(), 0, "list_tools failure must not register any tool");
+    assert_eq!(
+        tools.len(),
+        0,
+        "list_tools failure must not register any tool"
+    );
     let _ = std::fs::remove_dir_all(temp);
 }

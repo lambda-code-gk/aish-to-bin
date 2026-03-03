@@ -61,4 +61,3 @@ impl RolloutUseCase {
         Ok(0)
     }
 }
-

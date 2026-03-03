@@ -1,12 +1,12 @@
 //! reviewed 履歴の一覧・取得アダプタ（manifest.jsonl + reviewed/ を読む）
 
 use crate::domain::{HistoryGetEntry, HistoryListEntry};
+use crate::ports::outbound::ReviewedHistoryReader;
 use common::error::Error;
 use common::ports::outbound::FileSystem;
 use common::safe_session_path::{
     is_safe_reviewed_path, resolve_under_session_dir, HISTORY_SEND_FROM_FILENAME,
 };
-use crate::ports::outbound::ReviewedHistoryReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -95,7 +95,10 @@ impl StdReviewedHistoryReader {
                 continue;
             }
             if let Ok(rec) = serde_json::from_str::<ManifestMessageLine>(trimmed) {
-                if rec.kind == "message" && !rec.id.is_empty() && is_safe_reviewed_path(&rec.reviewed_path) {
+                if rec.kind == "message"
+                    && !rec.id.is_empty()
+                    && is_safe_reviewed_path(&rec.reviewed_path)
+                {
                     out.push(rec);
                 }
             }
@@ -103,10 +106,18 @@ impl StdReviewedHistoryReader {
         Ok(out)
     }
 
-    fn read_reviewed_content(&self, session_dir: &Path, reviewed_path: &str) -> Result<String, Error> {
+    fn read_reviewed_content(
+        &self,
+        session_dir: &Path,
+        reviewed_path: &str,
+    ) -> Result<String, Error> {
         let full = session_dir.join(reviewed_path);
-        let safe = resolve_under_session_dir(session_dir, &full)
-            .ok_or_else(|| Error::invalid_argument(format!("reviewed_path not under session dir: {}", reviewed_path)))?;
+        let safe = resolve_under_session_dir(session_dir, &full).ok_or_else(|| {
+            Error::invalid_argument(format!(
+                "reviewed_path not under session dir: {}",
+                reviewed_path
+            ))
+        })?;
         self.fs.read_to_string(&safe)
     }
 }
@@ -123,7 +134,11 @@ impl ReviewedHistoryReader for StdReviewedHistoryReader {
         assistant_only: bool,
     ) -> Result<Vec<HistoryListEntry>, Error> {
         let lines = self.load_message_lines(session_dir)?;
-        let send_from = if all { 0 } else { load_send_from_index(self.fs.as_ref(), session_dir) };
+        let send_from = if all {
+            0
+        } else {
+            load_send_from_index(self.fs.as_ref(), session_dir)
+        };
         let mut result = Vec::new();
         for (index, rec) in lines.iter().enumerate() {
             if index < send_from {
@@ -149,7 +164,11 @@ impl ReviewedHistoryReader for StdReviewedHistoryReader {
         Ok(result)
     }
 
-    fn get_entries(&self, session_dir: &Path, ids: &[String]) -> Result<Vec<HistoryGetEntry>, Error> {
+    fn get_entries(
+        &self,
+        session_dir: &Path,
+        ids: &[String],
+    ) -> Result<Vec<HistoryGetEntry>, Error> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -235,20 +254,28 @@ mod tests {
         std::fs::write(temp.join("manifest.jsonl"), manifest).unwrap();
         let session_dir = temp.canonicalize().unwrap();
         let reader = StdReviewedHistoryReader::new(Arc::new(StdFileSystem));
-        let entries = reader.list_entries(&session_dir, true, false, false).unwrap();
+        let entries = reader
+            .list_entries(&session_dir, true, false, false)
+            .unwrap();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].id, "001");
         assert_eq!(entries[0].datetime, "2026-02-22 12:00");
         assert_eq!(entries[0].first_line, "First user line");
         assert_eq!(entries[1].id, "002");
         assert_eq!(entries[1].first_line, "Assistant reply");
-        let user_only = reader.list_entries(&session_dir, true, true, false).unwrap();
+        let user_only = reader
+            .list_entries(&session_dir, true, true, false)
+            .unwrap();
         assert_eq!(user_only.len(), 1);
         assert_eq!(user_only[0].id, "001");
-        let assistant_only = reader.list_entries(&session_dir, true, false, true).unwrap();
+        let assistant_only = reader
+            .list_entries(&session_dir, true, false, true)
+            .unwrap();
         assert_eq!(assistant_only.len(), 1);
         assert_eq!(assistant_only[0].id, "002");
-        let get_entries = reader.get_entries(&session_dir, &["002".to_string(), "001".to_string()]).unwrap();
+        let get_entries = reader
+            .get_entries(&session_dir, &["002".to_string(), "001".to_string()])
+            .unwrap();
         assert_eq!(get_entries.len(), 2);
         // 返却順は manifest の並び順（001, 002）
         assert_eq!(get_entries[0].id, "001");

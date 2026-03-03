@@ -6,50 +6,50 @@ use crate::tool::ToolDef;
 use serde_json::Value;
 
 /// LLMプロバイダのトレイト
-/// 
+///
 /// 各プロバイダ（Gemini、GPTなど）はこのトレイトを実装する必要があります。
 pub trait LlmProvider {
     /// プロバイダ名を返す
     fn name(&self) -> &str;
-    
+
     /// HTTPリクエストを実行してレスポンスを取得
-    /// 
+    ///
     /// # Arguments
     /// * `request_json` - リクエストJSON文字列
-    /// 
+    ///
     /// # Returns
     /// * `Ok(String)` - レスポンスJSON文字列
     /// * `Err(Error)` - エラーメッセージと終了コード
     fn make_http_request(&self, request_json: &str) -> Result<String, Error>;
-    
+
     /// レスポンスからテキストを抽出
-    /// 
+    ///
     /// # Arguments
     /// * `response_json` - レスポンスJSON文字列
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Option<String>)` - 抽出したテキスト（存在しない場合はNone）
     /// * `Err(Error)` - エラーメッセージと終了コード
     fn parse_response_text(&self, response_json: &str) -> Result<Option<String>, Error>;
-    
+
     /// tool/function callの有無をチェック
-    /// 
+    ///
     /// # Arguments
     /// * `response_json` - レスポンスJSON文字列
-    /// 
+    ///
     /// # Returns
     /// * `Ok(bool)` - tool callがある場合はtrue
     /// * `Err(Error)` - エラーメッセージと終了コード
     fn check_tool_calls(&self, response_json: &str) -> Result<bool, Error>;
-    
+
     /// リクエストペイロードを生成（通常モード）
-    /// 
+    ///
     /// # Arguments
     /// * `query` - ユーザークエリ
     /// * `system_instruction` - システム指示（オプション）
     /// * `history` - 会話履歴（オプション）
     /// * `tools` - ツール定義一覧（オプション。LLM がツール呼び出しを行う場合に渡す）
-    /// 
+    ///
     /// # Returns
     /// * `Ok(Value)` - リクエストJSON
     /// * `Err(Error)` - エラーメッセージと終了コード
@@ -62,11 +62,11 @@ pub trait LlmProvider {
     ) -> Result<Value, Error>;
 
     /// ストリーミングHTTPリクエストを実行
-    /// 
+    ///
     /// # Arguments
     /// * `request_json` - リクエストJSON文字列
     /// * `callback` - テキストチャンクを受け取るコールバック関数
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - 成功
     /// * `Err(Error)` - エラーメッセージと終了コード
@@ -139,7 +139,12 @@ impl Message {
             tool_calls: Some(
                 tool_calls
                     .into_iter()
-                    .map(|(id, name, args, thought_signature)| ToolCallSpec { id, name, args, thought_signature })
+                    .map(|(id, name, args, thought_signature)| ToolCallSpec {
+                        id,
+                        name,
+                        args,
+                        thought_signature,
+                    })
                     .collect(),
             ),
             tool_call_id: None,
@@ -148,7 +153,11 @@ impl Message {
     }
 
     /// ツール結果（role = "tool"）
-    pub fn tool_result(call_id: impl Into<String>, name: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn tool_result(
+        call_id: impl Into<String>,
+        name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
         Self {
             role: "tool".to_string(),
             content: content.into(),
@@ -225,4 +234,3 @@ mod tests {
         assert_eq!(msg.content.len(), 1000);
     }
 }
-

@@ -11,18 +11,11 @@ pub trait SessionEventStore: Send + Sync {
     fn next_seq(&self, session_dir: &SessionDir) -> Result<u64, Error>;
 
     /// 1件追記する。event.seq は 0 でないこと（next_seq で採番済みであること）
-    fn append(
-        &self,
-        session_dir: &SessionDir,
-        event: &EventEnvelope,
-    ) -> Result<(), Error>;
+    fn append(&self, session_dir: &SessionDir, event: &EventEnvelope) -> Result<(), Error>;
 
     /// 全イベントを先頭から読む。パース失敗した行は Err を yield する
     fn read_all(
         &self,
         session_dir: &SessionDir,
-    ) -> Result<
-        Box<dyn Iterator<Item = Result<EventEnvelope, Error>> + Send>,
-        Error,
-    >;
+    ) -> Result<Box<dyn Iterator<Item = Result<EventEnvelope, Error>> + Send>, Error>;
 }

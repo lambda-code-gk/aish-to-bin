@@ -54,7 +54,9 @@ fn test_unregistered_tool_gets_require_approval_by_default() {
     let pe = engine_with_allowlist(vec!["ls"]);
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"path": "/tmp/file"});
-    let verdict = pe.evaluate_tool_call("read_file", &args, &ctx, false).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("read_file", &args, &ctx, false)
+        .unwrap();
     match verdict {
         PolicyVerdict::RequireApproval { decision, .. } => {
             assert_eq!(decision.scope, "tool");
@@ -71,7 +73,9 @@ fn test_shell_in_allowlist_returns_allow() {
     let pe = engine_with_allowlist(vec!["ls"]);
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "ls -la"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, false).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, false)
+        .unwrap();
     match verdict {
         PolicyVerdict::Allow { decision, .. } => {
             assert_eq!(decision.scope, "tool");
@@ -88,9 +92,13 @@ fn test_shell_not_in_allowlist_returns_require_approval_when_interactive() {
     let pe = engine_with_allowlist(vec!["ls"]);
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "rm -rf /"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, false).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, false)
+        .unwrap();
     match verdict {
-        PolicyVerdict::RequireApproval { prompt, decision, .. } => {
+        PolicyVerdict::RequireApproval {
+            prompt, decision, ..
+        } => {
             assert_eq!(prompt, "rm -rf /");
             assert_eq!(decision.scope, "tool");
             assert_eq!(decision.subject, "run_shell");
@@ -106,7 +114,9 @@ fn test_shell_not_in_allowlist_returns_deny_when_non_interactive() {
     let pe = engine_with_allowlist(vec!["ls"]);
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "rm -rf /"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, true).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, true)
+        .unwrap();
     match verdict {
         PolicyVerdict::Deny { decision } => {
             assert_eq!(decision.scope, "tool");
@@ -122,10 +132,15 @@ fn test_require_approval_provides_unsafe_context() {
     let pe = engine_with_allowlist(vec!["ls"]);
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "echo hello"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, false).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, false)
+        .unwrap();
     match verdict {
         PolicyVerdict::RequireApproval { value, .. } => {
-            assert!(value.allow_unsafe, "RequireApproval should provide allow_unsafe context");
+            assert!(
+                value.allow_unsafe,
+                "RequireApproval should provide allow_unsafe context"
+            );
         }
         _ => panic!("expected RequireApproval"),
     }

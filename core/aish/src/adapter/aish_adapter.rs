@@ -2,8 +2,8 @@
 
 #[cfg(unix)]
 mod unix {
-    use common::ports::outbound::{Pty, PtyProcessStatus, PtySpawn, Signal, Winsize};
     use common::error::Error;
+    use common::ports::outbound::{Pty, PtyProcessStatus, PtySpawn, Signal, Winsize};
     use std::os::unix::io::RawFd;
 
     use crate::adapter::platform::{self, ProcessStatus};

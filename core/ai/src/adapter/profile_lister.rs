@@ -20,10 +20,8 @@ impl StdProfileLister {
 
 impl ProfileLister for StdProfileLister {
     fn list_profiles(&self) -> Result<(Vec<String>, Option<String>), common::error::Error> {
-        let cfg_opt = common::llm::load_profiles_config(
-            self.fs.as_ref(),
-            self.env_resolver.as_ref(),
-        )?;
+        let cfg_opt =
+            common::llm::load_profiles_config(self.fs.as_ref(), self.env_resolver.as_ref())?;
         Ok(common::llm::list_available_profiles(cfg_opt.as_ref()))
     }
 }

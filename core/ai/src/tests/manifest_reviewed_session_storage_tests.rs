@@ -1,7 +1,7 @@
 //! ManifestReviewedSessionStorage のテスト
 
-use crate::adapter::ManifestReviewedSessionStorage;
 use crate::adapter::manifest_reviewed_session_storage::HistoryViewStrategy;
+use crate::adapter::ManifestReviewedSessionStorage;
 use crate::domain::History;
 use crate::ports::outbound::SessionHistoryLoader;
 use common::adapter::StdFileSystem;
@@ -134,14 +134,14 @@ fn test_manifest_loader_respects_send_from_index() {
     )
     .unwrap();
     // ポインタを 1 にすると 2 件目以降から送信（u1 は含めない）
-    fs::write(
-        session_path.join(HISTORY_SEND_FROM_FILENAME),
-        "1\n",
-    )
-    .unwrap();
+    fs::write(session_path.join(HISTORY_SEND_FROM_FILENAME), "1\n").unwrap();
 
     let history = loader(10).load(&session_dir).unwrap();
-    assert_eq!(history.messages().len(), 2, "send_from=1 なので 002, 003 の 2 件");
+    assert_eq!(
+        history.messages().len(),
+        2,
+        "send_from=1 なので 002, 003 の 2 件"
+    );
     assert_eq!(history.messages()[0].role, "assistant");
     assert_eq!(history.messages()[0].content, "a2");
     assert_eq!(history.messages()[1].role, "user");
@@ -168,14 +168,14 @@ fn test_manifest_loader_send_from_past_end_gives_empty_history() {
         "{\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n",
     )
     .unwrap();
-    fs::write(
-        session_path.join(HISTORY_SEND_FROM_FILENAME),
-        "999999\n",
-    )
-    .unwrap();
+    fs::write(session_path.join(HISTORY_SEND_FROM_FILENAME), "999999\n").unwrap();
 
     let history = loader(10).load(&session_dir).unwrap();
-    assert_eq!(history.messages().len(), 0, "送信開始位置が末尾より後ろなので会話履歴0件");
+    assert_eq!(
+        history.messages().len(),
+        0,
+        "送信開始位置が末尾より後ろなので会話履歴0件"
+    );
 
     fs::remove_dir_all(session_path).unwrap();
 }
@@ -218,4 +218,3 @@ fn test_manifest_loader_uses_injected_strategy() {
 
     fs::remove_dir_all(session_path).unwrap();
 }
-

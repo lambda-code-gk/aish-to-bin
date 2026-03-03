@@ -195,10 +195,7 @@ mod tests {
             with_env_var("XDG_STATE_HOME", None, || {
                 with_env_var("AISH_HOME", Some("/tmp/aish_log_home"), || {
                     let path = r.resolve_log_file_path().unwrap();
-                    assert_eq!(
-                        path.to_string_lossy(),
-                        "/tmp/aish_log_home/state/log.jsonl"
-                    );
+                    assert_eq!(path.to_string_lossy(), "/tmp/aish_log_home/state/log.jsonl");
                 });
             });
         });
@@ -207,10 +204,7 @@ mod tests {
             with_env_var("XDG_STATE_HOME", Some("/tmp/xdg_state_log"), || {
                 with_env_var("HOME", Some("/tmp/fallback"), || {
                     let path = r.resolve_log_file_path().unwrap();
-                    assert_eq!(
-                        path.to_string_lossy(),
-                        "/tmp/xdg_state_log/aish/log.jsonl"
-                    );
+                    assert_eq!(path.to_string_lossy(), "/tmp/xdg_state_log/aish/log.jsonl");
                 });
             });
         });
@@ -294,10 +288,7 @@ mod tests {
             with_env_var("HOME", Some("/home/user"), || {
                 with_env_var("AISH_HOME", Some("/opt/aish"), || {
                     let path = r.resolve_command_rules_path().unwrap();
-                    assert_eq!(
-                        path.to_string_lossy(),
-                        "/opt/aish/config/command_rules.txt"
-                    );
+                    assert_eq!(path.to_string_lossy(), "/opt/aish/config/command_rules.txt");
                 });
             });
         });
@@ -305,10 +296,7 @@ mod tests {
             with_env_var("XDG_CONFIG_HOME", Some("/xdg/config"), || {
                 with_env_var("HOME", Some("/home/user"), || {
                     let path = r.resolve_command_rules_path().unwrap();
-                    assert_eq!(
-                        path.to_string_lossy(),
-                        "/xdg/config/aish/command_rules.txt"
-                    );
+                    assert_eq!(path.to_string_lossy(), "/xdg/config/aish/command_rules.txt");
                 });
             });
         });

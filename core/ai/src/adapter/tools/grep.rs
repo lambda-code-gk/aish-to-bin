@@ -69,7 +69,9 @@ impl Tool for GrepTool {
             .to_string();
 
         if pattern.trim().is_empty() {
-            return Err(ToolError::InvalidArgs("pattern must not be empty".to_string()));
+            return Err(ToolError::InvalidArgs(
+                "pattern must not be empty".to_string(),
+            ));
         }
 
         let path = args

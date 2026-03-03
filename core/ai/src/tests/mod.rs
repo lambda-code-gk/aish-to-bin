@@ -1,15 +1,16 @@
 //! 結合テスト（アダプタ経由で I/O を行うテスト）
 
 mod agent_loop_tests;
-mod query_loop_policy_integration_tests;
-mod query_loop_tests;
+mod config_explain_tests;
+mod config_provider_layering_tests;
+mod config_schema_version_tests;
 mod context_addons_budget_tests;
 mod context_addons_grep_selector_tests;
 mod context_addons_memory_selector_tests;
 mod context_artifact_store_tests;
 mod context_message_builder_tests;
-mod context_pack_builder_tests;
 mod context_pack_builder_sensitive_gate_tests;
+mod context_pack_builder_tests;
 mod context_sensitive_filter_tests;
 mod leakscan_text_filter_tests;
 mod manifest_reviewed_session_storage_tests;
@@ -17,10 +18,8 @@ mod policy_engine_egress_tests;
 mod policy_engine_tool_tests;
 mod policy_explain_provider_tests;
 mod policy_rule_chain_order_tests;
-mod tool_profile_provider_tests;
-mod config_provider_layering_tests;
-mod config_schema_version_tests;
-mod config_explain_tests;
+mod query_loop_policy_integration_tests;
+mod query_loop_tests;
 mod rebuild_command_tests;
 mod reviewed_session_storage_tests;
 mod run_app_tests;
@@ -28,3 +27,4 @@ mod save_response_tests;
 mod session_derived_builder_tests;
 mod session_event_store_ndjson_tests;
 mod session_tests;
+mod tool_profile_provider_tests;

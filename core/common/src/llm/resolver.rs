@@ -71,12 +71,10 @@ pub fn resolve_provider(
     requested: Option<&ProviderName>,
     cfg: Option<&ProfilesConfig>,
 ) -> Result<ResolvedProvider, Error> {
-    let effective_name: &str = requested
-        .map(|r| r.as_ref())
-        .unwrap_or_else(|| {
-            cfg.and_then(|c| c.default_provider.as_deref())
-                .unwrap_or("gemini")
-        });
+    let effective_name: &str = requested.map(|r| r.as_ref()).unwrap_or_else(|| {
+        cfg.and_then(|c| c.default_provider.as_deref())
+            .unwrap_or("gemini")
+    });
 
     // 1) cfg.providers に名前があればそれを優先
     if let Some(cfg) = cfg {

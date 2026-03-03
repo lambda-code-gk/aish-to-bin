@@ -89,12 +89,61 @@ fn should_retry_v2(cfg: &AgentLoopConfig, tool_delta: usize, assistant_text: &st
     }
 
     // 質問や追加入力待ちっぽければ押し込まない（NeedUserInput 相当）
-    if t.contains('?') || t.contains('？') || t.ends_with(':') {
+    if looks_like_question_or_need_user_input(t) {
         return false;
     }
 
     // コマンド列っぽい shape なら「手順提示で止まった」とみなす
     looks_like_command_block(t)
+}
+
+fn strip_fenced_code_blocks(s: &str) -> String {
+    let mut out = String::new();
+    let mut in_fence = false;
+
+    for line in s.lines() {
+        let l = line.trim_start();
+        if l.starts_with("```") || l.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if !in_fence {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn last_non_empty_line(s: &str) -> Option<&str> {
+    s.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(|l| l.trim())
+}
+
+fn looks_like_question_or_need_user_input(assistant_text: &str) -> bool {
+    let outside = strip_fenced_code_blocks(assistant_text);
+    let last = match last_non_empty_line(&outside) {
+        Some(l) => l,
+        None => return false,
+    };
+
+    if last.ends_with('?') || last.ends_with('？') {
+        return true;
+    }
+
+    if last.ends_with(':') || last.ends_with('：') {
+        let core = last.trim_end_matches(|c| c == ':' || c == '：').trim();
+        if !core.is_empty()
+            && core.chars().count() <= 24
+            && !core.chars().any(|c| c.is_whitespace())
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn looks_like_command_block(s: &str) -> bool {
@@ -120,11 +169,13 @@ fn looks_like_command_block(s: &str) -> bool {
 fn inject_internal_followup(messages: &mut Vec<Msg>) {
     // 同じ internal followup を多重挿入しない
     let marker = "[AISH_INTERNAL] retry_for_completion_v1";
-    if messages.iter().any(|m| matches!(m, Msg::User(s) if s.contains(marker))) {
+    if messages
+        .iter()
+        .any(|m| matches!(m, Msg::System(s) if s.contains(marker)))
+    {
         return;
     }
-    messages.push(Msg::User(format!(
+    messages.push(Msg::system(format!(
         "{marker}\nobjective: complete the user's request end-to-end\nrequirements:\n  - do not stop at suggested commands only\n  - prefer using tools to execute and verify\n  - if critical information is missing, ask exactly one clarification question\n"
     )));
 }
-

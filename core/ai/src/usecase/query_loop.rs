@@ -5,17 +5,17 @@
 
 use crate::domain::{hash64, ContextAttachment, ContextSource, EventEnvelope, PolicyVerdict};
 use crate::ports::outbound::{
-    Approval, ContextArtifactStore, InterruptChecker, LlmEventStream, PolicyEngine, ToolApproval,
-    EventAppender,
+    Approval, ContextArtifactStore, EventAppender, InterruptChecker, LlmEventStream, PolicyEngine,
+    ToolApproval,
 };
 use common::domain::event::{Event, RunId, SessionId};
-use common::domain::{SessionDir, EventEnvelopeWithoutSeq};
-use common::ports::outbound::Clock;
+use common::domain::{EventEnvelopeWithoutSeq, SessionDir};
 use common::error::Error;
 use common::event_hub::EventHubHandle;
 use common::llm::events::{FinishReason, LlmEvent};
 use common::llm::provider::Message;
 use common::msg::Msg;
+use common::ports::outbound::Clock;
 use common::sink::{AgentEvent, EventSink};
 use common::tool::{ToolContext, ToolRegistry};
 use serde_json::Value;
@@ -94,22 +94,48 @@ pub fn msgs_to_provider(msgs: &[Msg]) -> (Option<String>, String, Vec<Message>) 
                 }
             }
             Msg::User(s) => {
-                flush_assistant_with_tool_calls(&mut list, &mut pending_assistant, &mut pending_tool_calls);
+                flush_assistant_with_tool_calls(
+                    &mut list,
+                    &mut pending_assistant,
+                    &mut pending_tool_calls,
+                );
                 last_user = Some(s.clone());
                 list.push(Message::user(s));
             }
             Msg::Assistant(s) => {
-                flush_assistant_with_tool_calls(&mut list, &mut pending_assistant, &mut pending_tool_calls);
+                flush_assistant_with_tool_calls(
+                    &mut list,
+                    &mut pending_assistant,
+                    &mut pending_tool_calls,
+                );
                 pending_assistant = Some(s.clone());
             }
-            Msg::ToolCall { call_id, name, args, thought_signature } => {
+            Msg::ToolCall {
+                call_id,
+                name,
+                args,
+                thought_signature,
+            } => {
                 if pending_assistant.is_none() {
                     pending_assistant = Some(String::new());
                 }
-                pending_tool_calls.push((call_id.clone(), name.clone(), args.clone(), thought_signature.clone()));
+                pending_tool_calls.push((
+                    call_id.clone(),
+                    name.clone(),
+                    args.clone(),
+                    thought_signature.clone(),
+                ));
             }
-            Msg::ToolResult { call_id, name, result } => {
-                flush_assistant_with_tool_calls(&mut list, &mut pending_assistant, &mut pending_tool_calls);
+            Msg::ToolResult {
+                call_id,
+                name,
+                result,
+            } => {
+                flush_assistant_with_tool_calls(
+                    &mut list,
+                    &mut pending_assistant,
+                    &mut pending_tool_calls,
+                );
                 let content = serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string());
                 list.push(Message::tool_result(call_id.clone(), name.clone(), content));
             }
@@ -118,10 +144,17 @@ pub fn msgs_to_provider(msgs: &[Msg]) -> (Option<String>, String, Vec<Message>) 
     flush_assistant_with_tool_calls(&mut list, &mut pending_assistant, &mut pending_tool_calls);
 
     // 最後が User なら query に分離、そうでなければ継続呼び出しなので query="" で history を全文
-    let last_is_user = msgs.last().map(|m| matches!(m, Msg::User(_))).unwrap_or(false);
+    let last_is_user = msgs
+        .last()
+        .map(|m| matches!(m, Msg::User(_)))
+        .unwrap_or(false);
     let (query, history) = if last_is_user && last_user.is_some() {
         let q = last_user.as_ref().map(String::clone).unwrap_or_default();
-        let h = list.iter().take(list.len().saturating_sub(1)).cloned().collect();
+        let h = list
+            .iter()
+            .take(list.len().saturating_sub(1))
+            .cloned()
+            .collect();
         (q, h)
     } else {
         (String::new(), list)
@@ -161,7 +194,10 @@ impl ToolCallAccumulator {
         self.args_fragments.push_str(&fragment);
     }
 
-    fn on_end(&mut self, call_id: String) -> Result<Option<(String, String, Value, Option<String>)>, Error> {
+    fn on_end(
+        &mut self,
+        call_id: String,
+    ) -> Result<Option<(String, String, Value, Option<String>)>, Error> {
         let name = self.current_name.take().unwrap_or_default();
         let thought_signature = self.current_thought_signature.take();
         self.current_id = None;
@@ -405,18 +441,19 @@ impl QueryLoop {
             collected_inner.borrow_mut().push(ev);
             Ok(())
         };
-        self.stream.as_ref()
-            .stream_events(&query, system_instruction, &history, tools_ref, &mut cb)?;
+        self.stream.as_ref().stream_events(
+            &query,
+            system_instruction,
+            &history,
+            tools_ref,
+            &mut cb,
+        )?;
         let latency_ms = provider_start.elapsed().as_millis() as u64;
         if let Some(ref hub) = self.event_hub {
-            let finish_reason = collected
-                .borrow()
-                .iter()
-                .rev()
-                .find_map(|ev| match ev {
-                    LlmEvent::Completed { finish } => Some(finish.clone()),
-                    _ => None,
-                });
+            let finish_reason = collected.borrow().iter().rev().find_map(|ev| match ev {
+                LlmEvent::Completed { finish } => Some(finish.clone()),
+                _ => None,
+            });
             hub.emit(Event {
                 v: 1,
                 session_id: self.session_id.clone(),
@@ -437,9 +474,17 @@ impl QueryLoop {
         for ev in collected.borrow().iter() {
             match ev {
                 LlmEvent::TextDelta(s) | LlmEvent::ReasoningDelta(s) => assistant_text.push_str(s),
-                LlmEvent::ToolCallBegin { call_id, name, thought_signature } => {
+                LlmEvent::ToolCallBegin {
+                    call_id,
+                    name,
+                    thought_signature,
+                } => {
                     if tools_enabled {
-                        accumulator.on_begin(call_id.clone(), name.clone(), thought_signature.clone());
+                        accumulator.on_begin(
+                            call_id.clone(),
+                            name.clone(),
+                            thought_signature.clone(),
+                        );
                     }
                 }
                 LlmEvent::ToolCallArgsDelta { json_fragment, .. } => {
@@ -472,12 +517,19 @@ impl QueryLoop {
 
         if run_state == RunState::ExecutingTools && !pending_tool_calls.is_empty() {
             let cap = tool_execution_cap.unwrap_or(usize::MAX);
-            for (i, (call_id, name, args, thought_signature)) in pending_tool_calls.into_iter().enumerate() {
+            for (i, (call_id, name, args, thought_signature)) in
+                pending_tool_calls.into_iter().enumerate()
+            {
                 if i >= cap {
                     break;
                 }
                 // 履歴にツール呼び出し自体を記録（直前の assistant メッセージに紐付く）
-                new_messages.push(Msg::tool_call(call_id.clone(), name.clone(), args.clone(), thought_signature.clone()));
+                new_messages.push(Msg::tool_call(
+                    call_id.clone(),
+                    name.clone(),
+                    args.clone(),
+                    thought_signature.clone(),
+                ));
 
                 let verdict = self.policy_engine.evaluate_tool_call(
                     name.as_str(),
@@ -500,7 +552,11 @@ impl QueryLoop {
                         }
                         value
                     }
-                    PolicyVerdict::RequireApproval { value, decision, prompt } => {
+                    PolicyVerdict::RequireApproval {
+                        value,
+                        decision,
+                        prompt,
+                    } => {
                         if self.non_interactive {
                             let mut deny_decision = decision.clone();
                             deny_decision.status = "blocked".to_string();
@@ -572,7 +628,7 @@ impl QueryLoop {
                                 new_messages.push(Msg::tool_result(
                                     &call_id,
                                     &name,
-                                serde_json::json!({ "error": msg }),
+                                    serde_json::json!({ "error": msg }),
                                 ));
                                 continue;
                             }
@@ -628,7 +684,10 @@ impl QueryLoop {
                 }
 
                 let exec_start = std::time::Instant::now();
-                match self.tool_registry.call(name.as_str(), args.clone(), &effective_ctx) {
+                match self
+                    .tool_registry
+                    .call(name.as_str(), args.clone(), &effective_ctx)
+                {
                     Ok(result) => {
                         let elapsed_ms = exec_start.elapsed().as_millis() as u64;
                         // events.ndjson: tool call completed（巨大 result は artifacts 参照）
@@ -648,7 +707,10 @@ impl QueryLoop {
                                 payload.insert(k.clone(), v.clone());
                             }
                         }
-                        self.append_event("tool.call.completed", serde_json::Value::Object(payload))?;
+                        self.append_event(
+                            "tool.call.completed",
+                            serde_json::Value::Object(payload),
+                        )?;
 
                         self.emit(&AgentEvent::ToolResult {
                             call_id: call_id.clone(),
@@ -666,7 +728,10 @@ impl QueryLoop {
                         payload.insert("call_id".to_string(), serde_json::json!(call_id));
                         payload.insert("tool_id".to_string(), serde_json::json!(name));
                         payload.insert("elapsed_ms".to_string(), serde_json::json!(elapsed_ms));
-                        payload.insert("error".to_string(), serde_json::json!(Self::preview_str(&msg, 200)));
+                        payload.insert(
+                            "error".to_string(),
+                            serde_json::json!(Self::preview_str(&msg, 200)),
+                        );
                         self.append_event("tool.call.failed", serde_json::Value::Object(payload))?;
 
                         self.emit(&AgentEvent::ToolError {
@@ -713,7 +778,9 @@ impl QueryLoop {
             let current_tool_count = count_tool_results(&messages);
             if current_tool_count >= max_tool_calls {
                 // messages 末尾が ToolResult かつ text が空なら finalization を試す
-                if messages.last().map_or(false, |m| matches!(m, Msg::ToolResult { .. }))
+                if messages
+                    .last()
+                    .map_or(false, |m| matches!(m, Msg::ToolResult { .. }))
                     && last_assistant_text.trim().is_empty()
                 {
                     let (msgs2, _state2, text2) = self.run_once_impl(&messages, Some(0), false)?;
@@ -730,7 +797,8 @@ impl QueryLoop {
                 ));
             }
             let cap = max_tool_calls.saturating_sub(current_tool_count);
-            let (new_messages, state, assistant_text) = self.run_once_impl(&messages, Some(cap), true)?;
+            let (new_messages, state, assistant_text) =
+                self.run_once_impl(&messages, Some(cap), true)?;
             last_assistant_text = assistant_text;
             last_state = state.clone();
             let tool_count_after = count_tool_results(&new_messages);
@@ -738,7 +806,9 @@ impl QueryLoop {
 
             if tool_count_after >= max_tool_calls {
                 // messages 末尾が ToolResult かつ text が空なら finalization を試す
-                if messages.last().map_or(false, |m| matches!(m, Msg::ToolResult { .. }))
+                if messages
+                    .last()
+                    .map_or(false, |m| matches!(m, Msg::ToolResult { .. }))
                     && last_assistant_text.trim().is_empty()
                 {
                     let (msgs2, _state2, text2) = self.run_once_impl(&messages, Some(0), false)?;
@@ -775,7 +845,10 @@ impl QueryLoop {
             };
         }
 
-        Ok(QueryLoopOutcome::ReachedLimit(messages, last_assistant_text))
+        Ok(QueryLoopOutcome::ReachedLimit(
+            messages,
+            last_assistant_text,
+        ))
     }
 }
 
@@ -789,4 +862,3 @@ impl QueryLoopRunner for QueryLoop {
         QueryLoop::run_until_done(self, initial_messages, max_turns, max_additional_tool_calls)
     }
 }
-

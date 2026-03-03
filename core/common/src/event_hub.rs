@@ -74,7 +74,10 @@ pub fn build_event_hub(
     }
     match TranscriptSink::new(session_dir, env, fs) {
         Ok(transcript) => sinks.push(Box::new(transcript)),
-        Err(e) => eprintln!("[event_hub] transcript sink init failed (continuing without): {}", e),
+        Err(e) => eprintln!(
+            "[event_hub] transcript sink init failed (continuing without): {}",
+            e
+        ),
     }
     let hub = EventHub::new(sinks);
     EventHubHandle(Arc::new(Mutex::new(hub)))

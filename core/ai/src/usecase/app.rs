@@ -1,3 +1,5 @@
+use crate::domain::AgentMode;
+use crate::domain::Query;
 use crate::domain::{DryRunInfo, EventEnvelope, LifecycleEvent, PolicyVerdict, QueryOutcome};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextArtifactStore,
@@ -8,17 +10,15 @@ use crate::ports::outbound::{
     SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
-use crate::domain::AgentMode;
+use common::domain::event::{Event, RunId, SessionId};
+use common::domain::{EventEnvelopeWithoutSeq, SessionDir};
+use common::error::Error;
+use common::event_hub::EventHubHandle;
+use common::msg::Msg;
 use common::ports::outbound::Clock;
 use common::ports::outbound::EnvResolver;
-use common::ports::outbound::{now_iso8601, FileSystem, Log, LogLevel, LogRecord, Process};
-use common::error::Error;
-use crate::domain::Query;
-use common::msg::Msg;
-use common::domain::event::{Event, RunId, SessionId};
-use common::event_hub::EventHubHandle;
-use common::domain::{SessionDir, EventEnvelopeWithoutSeq};
 use common::ports::outbound::EventAppender;
+use common::ports::outbound::{now_iso8601, FileSystem, Log, LogLevel, LogRecord, Process};
 use common::tool::{CommandAllowRule, Tool, ToolContext, ToolRegistry};
 use std::sync::Arc;
 
@@ -102,7 +102,14 @@ impl AiUseCase {
 
     pub(crate) fn session_is_valid(&self, session_dir: &Option<SessionDir>) -> bool {
         if let Some(ref dir) = session_dir {
-            self.deps.session.fs.exists(dir.as_ref()) && self.deps.session.fs.metadata(dir.as_ref()).map(|m| m.is_dir()).unwrap_or(false)
+            self.deps.session.fs.exists(dir.as_ref())
+                && self
+                    .deps
+                    .session
+                    .fs
+                    .metadata(dir.as_ref())
+                    .map(|m| m.is_dir())
+                    .unwrap_or(false)
         } else {
             false
         }
@@ -117,7 +124,9 @@ impl AiUseCase {
     /// 有効なツール一覧を返す（名前と説明）。プロバイダごとの有効/無効は未対応のため常に全ツール。
     /// 表示は CLI の責務のため、usecase はデータのみ返す。
     pub fn list_tools(&self) -> Vec<(String, String)> {
-        self.deps.tooling.tools
+        self.deps
+            .tooling
+            .tools
             .iter()
             .map(|t| (t.name().to_string(), t.description().to_string()))
             .collect()
@@ -136,23 +145,32 @@ impl AiUseCase {
         mode_name: Option<String>,
     ) -> Result<DryRunInfo, Error> {
         let (profile_name, model_name) = self
-            .deps.model.resolve_profile_and_model
+            .deps
+            .model
+            .resolve_profile_and_model
             .resolve(provider.as_ref(), model.as_ref())?;
 
         let (messages, budget_report, attachments_count) = match query {
             None => {
                 let dir = session_dir.as_ref().ok_or_else(|| {
-                    Error::invalid_argument("No continuation state. Use -c with a session or provide a message.")
+                    Error::invalid_argument(
+                        "No continuation state. Use -c with a session or provide a message.",
+                    )
                 })?;
                 if !self.session_is_valid(&session_dir) {
                     return Err(Error::invalid_argument(
                         "No continuation state. Use -c with a session or provide a message.",
                     ));
                 }
-                let msgs = self.deps.session.agent_state_loader
+                let msgs = self
+                    .deps
+                    .session
+                    .agent_state_loader
                     .load(dir)?
                     .ok_or_else(|| {
-                        Error::invalid_argument("No continuation state. Use -c with a session or provide a message.")
+                        Error::invalid_argument(
+                            "No continuation state. Use -c with a session or provide a message.",
+                        )
                     })?;
                 (msgs, None, None)
             }
@@ -173,7 +191,11 @@ impl AiUseCase {
                     system_instruction,
                     query_placement,
                 )?;
-                (pack.messages, Some(pack.budget_report), Some(pack.attachments.len()))
+                (
+                    pack.messages,
+                    Some(pack.budget_report),
+                    Some(pack.attachments.len()),
+                )
             }
         };
 
@@ -239,8 +261,7 @@ impl AiUseCase {
         payload: serde_json::Value,
     ) -> Result<serde_json::Value, Error> {
         const EVENTS_ARTIFACTS_DIR: &str = "artifacts/events";
-        let serialized =
-            serde_json::to_string(&payload).map_err(|e| Error::json(e.to_string()))?;
+        let serialized = serde_json::to_string(&payload).map_err(|e| Error::json(e.to_string()))?;
         if serialized.len() <= EventEnvelope::RECOMMENDED_MAX_PAYLOAD_BYTES {
             return Ok(payload);
         }
@@ -297,8 +318,15 @@ impl AiUseCase {
 
     /// run 終了時に派生物（index.sqlite / summary.json）を再生成する（session_dir があるとき）
     fn rebuild_derived(&self, session_dir: &SessionDir) -> Result<(), Error> {
-        let mut iter = self.deps.session.session_event_store.read_all(session_dir)?;
-        self.deps.session.session_derived_builder.rebuild(session_dir, &mut iter)
+        let mut iter = self
+            .deps
+            .session
+            .session_event_store
+            .read_all(session_dir)?;
+        self.deps
+            .session
+            .session_derived_builder
+            .rebuild(session_dir, &mut iter)
     }
 
     fn truncate_console_log(&self, session_dir: &SessionDir) -> Result<(), Error> {
@@ -307,7 +335,11 @@ impl AiUseCase {
             session_dir.as_path().display().to_string(),
             "truncate_console_log".to_string(),
         ];
-        let _ = self.deps.system.process.run(std::path::Path::new("aish"), &args);
+        let _ = self
+            .deps
+            .system
+            .process
+            .run(std::path::Path::new("aish"), &args);
         Ok(())
     }
 
@@ -348,10 +380,7 @@ impl AiUseCase {
             .as_ref()
             .map(|d| {
                 let p = d.as_ref();
-                let name = p
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown");
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
                 SessionId::new(name)
             })
             .unwrap_or_else(|| SessionId::new("global"));
@@ -386,11 +415,16 @@ impl AiUseCase {
         }
 
         let (profile_name, model_name) = self
-            .deps.model.resolve_profile_and_model
+            .deps
+            .model
+            .resolve_profile_and_model
             .resolve(provider.as_ref(), model.as_ref())?;
         let mut fields = std::collections::BTreeMap::new();
         fields.insert("event".to_string(), serde_json::json!("query_started"));
-        fields.insert("profile".to_string(), serde_json::json!(profile_name.clone()));
+        fields.insert(
+            "profile".to_string(),
+            serde_json::json!(profile_name.clone()),
+        );
         fields.insert("model".to_string(), serde_json::json!(model_name.clone()));
         let _ = self.deps.obs.log.log(&LogRecord {
             ts: now_iso8601(),
@@ -415,7 +449,9 @@ impl AiUseCase {
                         "No continuation state. Please provide a message.",
                     ));
                 }
-                self.deps.session.agent_state_loader
+                self.deps
+                    .session
+                    .agent_state_loader
                     .load(dir)?
                     .ok_or_else(|| {
                         Error::invalid_argument("No continuation state. Please provide a message.")
@@ -424,18 +460,20 @@ impl AiUseCase {
             Some(q) => {
                 let (history_messages, query_placement) = if self.session_is_valid(&session_dir) {
                     let dir = session_dir.as_ref().expect("session_dir is Some");
-                    self.deps.session.response_saver.save_user(dir, q.as_ref())?;
+                    self.deps
+                        .session
+                        .response_saver
+                        .save_user(dir, q.as_ref())?;
                     if let Some(ref prep) = self.deps.session.prepare_session_for_sensitive_check {
                         prep.prepare(dir)?;
                     }
                     let loaded = self.deps.session.history_loader.load(dir);
                     match loaded {
-                        Ok(history) => {
-                            (history.messages().to_vec(), QueryPlacement::AlreadyInHistory)
-                        }
-                        Err(_) => {
-                            (Vec::new(), QueryPlacement::AppendAtEnd)
-                        }
+                        Ok(history) => (
+                            history.messages().to_vec(),
+                            QueryPlacement::AlreadyInHistory,
+                        ),
+                        Err(_) => (Vec::new(), QueryPlacement::AppendAtEnd),
                     }
                 } else {
                     (Vec::new(), QueryPlacement::AppendAtEnd)
@@ -477,7 +515,12 @@ impl AiUseCase {
                 };
 
                 // --- egress policy ---
-                match self.deps.session.policy_engine.evaluate_egress_context_pack(&pack, self.deps.non_interactive) {
+                match self
+                    .deps
+                    .session
+                    .policy_engine
+                    .evaluate_egress_context_pack(&pack, self.deps.non_interactive)
+                {
                     Ok(PolicyVerdict::Allow { value, decision }) => {
                         pack = value;
                         if let Some(ref hub) = event_hub {
@@ -490,7 +533,13 @@ impl AiUseCase {
                                 payload: pl.clone(),
                             });
                             if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "policy.evaluated", pl)?;
+                                self.append_event_to_store(
+                                    dir,
+                                    &session_id,
+                                    &run_id,
+                                    "policy.evaluated",
+                                    pl,
+                                )?;
                             }
                         }
                     }
@@ -509,7 +558,13 @@ impl AiUseCase {
                                 payload: block_pl.clone(),
                             });
                             if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "policy.evaluated", block_pl)?;
+                                self.append_event_to_store(
+                                    dir,
+                                    &session_id,
+                                    &run_id,
+                                    "policy.evaluated",
+                                    block_pl,
+                                )?;
                             }
                             let mut payload = serde_json::json!({
                                 "reason": "egress_policy_blocked",
@@ -528,7 +583,13 @@ impl AiUseCase {
                                 payload: payload.clone(),
                             });
                             if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                                self.append_event_to_store(
+                                    dir,
+                                    &session_id,
+                                    &run_id,
+                                    "run.failed",
+                                    payload,
+                                )?;
                             }
                         }
                         self.try_save_agent_state_on_error(&session_dir, &[]);
@@ -552,7 +613,13 @@ impl AiUseCase {
                                 payload: pl.clone(),
                             });
                             if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "policy.evaluated", pl)?;
+                                self.append_event_to_store(
+                                    dir,
+                                    &session_id,
+                                    &run_id,
+                                    "policy.evaluated",
+                                    pl,
+                                )?;
                             }
                             let mut payload = serde_json::json!({
                                 "reason": "egress_policy_blocked",
@@ -571,7 +638,13 @@ impl AiUseCase {
                                 payload: payload.clone(),
                             });
                             if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                                self.append_event_to_store(
+                                    dir,
+                                    &session_id,
+                                    &run_id,
+                                    "run.failed",
+                                    payload,
+                                )?;
                             }
                         }
                         self.try_save_agent_state_on_error(&session_dir, &[]);
@@ -597,7 +670,11 @@ impl AiUseCase {
 
                 if let Some(dir) = session_dir.as_ref() {
                     if !pack.attachments.is_empty() {
-                        match self.deps.session.artifact_store.store(dir, &run_id, &pack.attachments) {
+                        match self.deps.session.artifact_store.store(
+                            dir,
+                            &run_id,
+                            &pack.attachments,
+                        ) {
                             Ok(stored) => pack.attachments = stored,
                             Err(e) => {
                                 let elapsed_ms = run_start.elapsed().as_millis() as u64;
@@ -611,28 +688,37 @@ impl AiUseCase {
                                     if sessionless {
                                         payload["sessionless"] = serde_json::json!(true);
                                     }
-                            hub.emit(Event {
-                                v: 1,
-                                session_id: session_id.clone(),
-                                run_id: run_id.clone(),
-                                kind: "run.failed".to_string(),
-                                payload: payload.clone(),
-                            });
-                            if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
-                            }
-                        }
-                        self.try_save_agent_state_on_error(&session_dir, &[]);
-                        if let Some(ref dir) = session_dir {
-                            let _ = self.rebuild_derived(dir);
-                        }
-                        return Err(e);
+                                    hub.emit(Event {
+                                        v: 1,
+                                        session_id: session_id.clone(),
+                                        run_id: run_id.clone(),
+                                        kind: "run.failed".to_string(),
+                                        payload: payload.clone(),
+                                    });
+                                    if let Some(ref dir) = session_dir {
+                                        self.append_event_to_store(
+                                            dir,
+                                            &session_id,
+                                            &run_id,
+                                            "run.failed",
+                                            payload,
+                                        )?;
+                                    }
+                                }
+                                self.try_save_agent_state_on_error(&session_dir, &[]);
+                                if let Some(ref dir) = session_dir {
+                                    let _ = self.rebuild_derived(dir);
+                                }
+                                return Err(e);
                             }
                         }
                     }
                 }
 
-                let addons_count = pack.budget_report.decisions.iter()
+                let addons_count = pack
+                    .budget_report
+                    .decisions
+                    .iter()
                     .filter(|d| d.stage == "addon.select" && d.action == "keep")
                     .count();
                 if let Some(ref hub) = event_hub {
@@ -668,7 +754,13 @@ impl AiUseCase {
                         payload: pack_payload.clone(),
                     });
                     if let Some(ref dir) = session_dir {
-                        self.append_event_to_store(dir, &session_id, &run_id, "context.pack_built", pack_payload)?;
+                        self.append_event_to_store(
+                            dir,
+                            &session_id,
+                            &run_id,
+                            "context.pack_built",
+                            pack_payload,
+                        )?;
                     }
                 }
 
@@ -704,7 +796,13 @@ impl AiUseCase {
                         payload: payload.clone(),
                     });
                     if let Some(ref dir) = session_dir {
-                        self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                        self.append_event_to_store(
+                            dir,
+                            &session_id,
+                            &run_id,
+                            "run.failed",
+                            payload,
+                        )?;
                     }
                 }
                 self.try_save_agent_state_on_error(&session_dir, &messages);
@@ -719,7 +817,11 @@ impl AiUseCase {
         const DEFAULT_MAX_QUERIES_ACT: usize = 2;
         const DEFAULT_MAX_QUERIES_PLAN: usize = 1;
         let max_turns = max_turns_override.unwrap_or(DEFAULT_MAX_TURNS);
-        let max_tool_calls = self.deps.policy.env_resolver.ai_max_tool_calls()
+        let max_tool_calls = self
+            .deps
+            .policy
+            .env_resolver
+            .ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
         let agent_mode = agent_mode.unwrap_or(AgentMode::Act);
         let default_max_queries = match agent_mode {
@@ -759,7 +861,13 @@ impl AiUseCase {
                         payload: payload.clone(),
                     });
                     if let Some(ref dir) = session_dir {
-                        self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                        self.append_event_to_store(
+                            dir,
+                            &session_id,
+                            &run_id,
+                            "run.failed",
+                            payload,
+                        )?;
                     }
                 }
                 self.try_save_agent_state_on_error(&session_dir, &messages);
@@ -769,16 +877,19 @@ impl AiUseCase {
                 return Err(e);
             }
         };
-        let mut allow_rules =
-            self.deps.policy.command_allow_rules_loader.load_rules(&command_rules_path);
+        let mut allow_rules = self
+            .deps
+            .policy
+            .command_allow_rules_loader
+            .load_rules(&command_rules_path);
         for prefix in &self.deps.policy.run_shell_allowlist {
             allow_rules.push(CommandAllowRule::Prefix(prefix.clone()));
         }
 
         let mut messages = messages;
         let ctx = ctx.0;
-        let allowlist: Option<std::collections::HashSet<&str>> = tool_allowlist
-            .map(|s| s.iter().map(String::as_str).collect());
+        let allowlist: Option<std::collections::HashSet<&str>> =
+            tool_allowlist.map(|s| s.iter().map(String::as_str).collect());
 
         loop {
             let tools = self.deps.tooling.tools.clone();
@@ -809,12 +920,15 @@ impl AiUseCase {
                     }
                     registry.register(Arc::clone(t));
                 }
-                let (memory_project, memory_global) = match self.deps.policy.resolve_memory_dir.resolve() {
-                    Ok((p, g)) => (p, Some(g)),
-                    Err(_) => (None, None),
-                };
+                let (memory_project, memory_global) =
+                    match self.deps.policy.resolve_memory_dir.resolve() {
+                        Ok((p, g)) => (p, Some(g)),
+                        Err(_) => (None, None),
+                    };
                 let tool_context = ToolContext::new(
-                    session_dir_loop.as_ref().map(|s: &SessionDir| s.as_ref().to_path_buf()),
+                    session_dir_loop
+                        .as_ref()
+                        .map(|s: &SessionDir| s.as_ref().to_path_buf()),
                 )
                 .with_command_allow_rules(allow_rules.clone())
                 .with_memory_dirs(memory_project, memory_global)
@@ -878,7 +992,13 @@ impl AiUseCase {
                             payload: payload.clone(),
                         });
                         if let Some(ref dir) = session_dir {
-                            self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                            self.append_event_to_store(
+                                dir,
+                                &session_id,
+                                &run_id,
+                                "run.failed",
+                                payload,
+                            )?;
                         }
                     }
                     self.try_save_agent_state_on_error(&session_dir, &messages);
@@ -893,14 +1013,20 @@ impl AiUseCase {
                 AgentLoopOutcome::Done(msgs_done, assistant_text) => {
                     if self.session_is_valid(&session_dir) {
                         let dir = session_dir.as_ref().expect("session_dir is Some");
-                        self.deps.session
+                        self.deps
+                            .session
                             .agent_state_saver
                             .clear_resume_keep_pending(dir)?;
                         if !assistant_text.trim().is_empty() {
-                            self.deps.session.response_saver.save_assistant(dir, &assistant_text)?;
+                            self.deps
+                                .session
+                                .response_saver
+                                .save_assistant(dir, &assistant_text)?;
                             self.truncate_console_log(dir)?;
                         }
-                        if let Ok((mem_proj, mem_global)) = self.deps.policy.resolve_memory_dir.resolve() {
+                        if let Ok((mem_proj, mem_global)) =
+                            self.deps.policy.resolve_memory_dir.resolve()
+                        {
                             let event = LifecycleEvent::QueryEnd {
                                 session_dir: dir.clone(),
                                 memory_dir_project: mem_proj,
@@ -938,7 +1064,13 @@ impl AiUseCase {
                             payload: payload.clone(),
                         });
                         if let Some(ref dir) = session_dir {
-                            self.append_event_to_store(dir, &session_id, &run_id, "run.completed", payload)?;
+                            self.append_event_to_store(
+                                dir,
+                                &session_id,
+                                &run_id,
+                                "run.completed",
+                                payload,
+                            )?;
                         }
                     }
                     if let Some(ref dir) = session_dir {
@@ -978,7 +1110,13 @@ impl AiUseCase {
                                     payload: payload.clone(),
                                 });
                                 if let Some(ref dir) = session_dir {
-                                    self.append_event_to_store(dir, &session_id, &run_id, "run.failed", payload)?;
+                                    self.append_event_to_store(
+                                        dir,
+                                        &session_id,
+                                        &run_id,
+                                        "run.failed",
+                                        payload,
+                                    )?;
                                 }
                             }
                             self.try_save_agent_state_on_error(&session_dir, &msgs);
@@ -993,10 +1131,15 @@ impl AiUseCase {
                             let dir = session_dir.as_ref().expect("session_dir is Some");
                             self.deps.session.agent_state_saver.save(dir, &msgs)?;
                             if !assistant_text.trim().is_empty() {
-                                self.deps.session.response_saver.save_assistant(dir, &assistant_text)?;
+                                self.deps
+                                    .session
+                                    .response_saver
+                                    .save_assistant(dir, &assistant_text)?;
                                 self.truncate_console_log(dir)?;
                             }
-                            if let Ok((mem_proj, mem_global)) = self.deps.policy.resolve_memory_dir.resolve() {
+                            if let Ok((mem_proj, mem_global)) =
+                                self.deps.policy.resolve_memory_dir.resolve()
+                            {
                                 let event = LifecycleEvent::QueryEnd {
                                     session_dir: dir.clone(),
                                     memory_dir_project: mem_proj,
@@ -1034,7 +1177,13 @@ impl AiUseCase {
                                 payload: payload.clone(),
                             });
                             if let Some(ref dir) = session_dir {
-                                self.append_event_to_store(dir, &session_id, &run_id, "run.completed", payload)?;
+                                self.append_event_to_store(
+                                    dir,
+                                    &session_id,
+                                    &run_id,
+                                    "run.completed",
+                                    payload,
+                                )?;
                             }
                         }
                         if let Some(ref dir) = session_dir {
@@ -1085,4 +1234,3 @@ impl RunQuery for AiUseCase {
         )
     }
 }
-

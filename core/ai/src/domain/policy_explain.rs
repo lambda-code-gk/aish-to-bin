@@ -24,4 +24,3 @@ pub struct PolicyExplainExample {
     /// オプション: どのルールがヒットしたかなどの補足
     pub decisions: Vec<PolicyDecision>,
 }
-

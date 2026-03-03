@@ -105,7 +105,9 @@ impl LlmProvider for AnyProvider {
         match self {
             Self::Gemini(p) => p.make_request_payload(query, system_instruction, history, tools),
             Self::Gpt(p) => p.make_request_payload(query, system_instruction, history, tools),
-            Self::OpenAiCompat(p) => p.make_request_payload(query, system_instruction, history, tools),
+            Self::OpenAiCompat(p) => {
+                p.make_request_payload(query, system_instruction, history, tools)
+            }
             Self::Echo(p) => p.make_request_payload(query, system_instruction, history, tools),
         }
     }
@@ -159,12 +161,8 @@ pub fn create_provider(
             Ok(AnyProvider::Gemini(provider))
         }
         ProviderType::Gpt => {
-            let provider = GptProvider::new(
-                model,
-                temperature.map(|t| t as f64),
-                base_url,
-                api_key_env,
-            )?;
+            let provider =
+                GptProvider::new(model, temperature.map(|t| t as f64), base_url, api_key_env)?;
             Ok(AnyProvider::Gpt(provider))
         }
         ProviderType::OpenAiCompat => {
@@ -208,7 +206,10 @@ mod tests {
         assert_eq!(ProviderType::from_str("gpt"), Some(ProviderType::Gpt));
         assert_eq!(ProviderType::from_str("GPT"), Some(ProviderType::Gpt));
         assert_eq!(ProviderType::from_str("openai"), Some(ProviderType::Gpt));
-        assert_eq!(ProviderType::from_str("openai_compat"), Some(ProviderType::OpenAiCompat));
+        assert_eq!(
+            ProviderType::from_str("openai_compat"),
+            Some(ProviderType::OpenAiCompat)
+        );
         assert_eq!(ProviderType::from_str("echo"), Some(ProviderType::Echo));
         assert_eq!(ProviderType::from_str("ECHO"), Some(ProviderType::Echo));
         assert_eq!(ProviderType::from_str("unknown"), None);
@@ -235,4 +236,3 @@ mod tests {
         // ここでは基本的な構造のテストのみ
     }
 }
-

@@ -110,11 +110,16 @@ where
     W: AsyncWrite + Unpin,
     T: Serialize,
 {
-    let bytes = serde_json::to_vec(value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let bytes =
+        serde_json::to_vec(value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     if bytes.len() > MAX_FRAME_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("frame too large: {} bytes (max {})", bytes.len(), MAX_FRAME_BYTES),
+            format!(
+                "frame too large: {} bytes (max {})",
+                bytes.len(),
+                MAX_FRAME_BYTES
+            ),
         ));
     }
     let len = bytes.len() as u32;
@@ -139,8 +144,8 @@ where
     }
     let mut buf = vec![0u8; len];
     reader.read_exact(&mut buf).await?;
-    let value = serde_json::from_slice(&buf)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let value =
+        serde_json::from_slice(&buf).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     Ok(value)
 }
 
@@ -153,6 +158,7 @@ pub fn default_socket_path() -> std::path::PathBuf {
         .ok()
         .or_else(|| std::env::var("TMPDIR").ok())
         .unwrap_or_else(|| "/tmp".to_string());
-    std::path::PathBuf::from(base).join("aish").join("aishd.sock")
+    std::path::PathBuf::from(base)
+        .join("aish")
+        .join("aishd.sock")
 }
-

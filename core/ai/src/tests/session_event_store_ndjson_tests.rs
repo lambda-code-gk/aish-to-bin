@@ -2,11 +2,11 @@
 
 use crate::domain::EventEnvelope;
 use crate::ports::outbound::SessionEventStore;
-use storage::NdjsonSessionEventStore;
 use common::adapter::StdFileSystem;
 use common::domain::SessionDir;
 use common::ports::outbound::FileSystem;
 use std::sync::Arc;
+use storage::NdjsonSessionEventStore;
 
 #[test]
 fn test_append_and_read_all_same_seq_kind() {

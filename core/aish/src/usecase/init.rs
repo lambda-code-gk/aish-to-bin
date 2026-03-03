@@ -101,7 +101,8 @@ impl InitUseCase {
                 if dry_run {
                     copied_paths.push(dest_path.clone());
                 } else {
-                    self.fs.create_dir_all(dest_path.parent().unwrap_or(dest_root))?;
+                    self.fs
+                        .create_dir_all(dest_path.parent().unwrap_or(dest_root))?;
                     // 標準 FS 実装ではパーミッションを保持したままコピーする
                     self.fs.copy_file(&src_path, &dest_path)?;
                     copied_paths.push(dest_path.clone());

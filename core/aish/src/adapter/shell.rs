@@ -1,19 +1,21 @@
-use std::env;
-use std::io::{self, Write};
-use std::os::unix::io::AsRawFd;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use common::domain::event::{Event, RunId, SessionId};
-use common::domain::{PendingInput, PolicyStatus};
-use common::error::Error;
-use common::event_hub::build_event_hub;
-use common::ports::outbound::{EnvResolver, FileSystem, PtyProcessStatus, PtySpawn, Signal, Winsize};
-use common::part_id::IdGenerator;
 use crate::adapter::console_handler::ConsoleLogHandler;
 use crate::adapter::platform::{get_winsize, TermMode};
 use crate::adapter::prompt_ready_detector::PromptReadyDetector;
 use crate::adapter::terminal::TerminalBuffer;
 use crate::domain::SessionEvent;
+use common::domain::event::{Event, RunId, SessionId};
+use common::domain::{PendingInput, PolicyStatus};
+use common::error::Error;
+use common::event_hub::build_event_hub;
+use common::part_id::IdGenerator;
+use common::ports::outbound::{
+    EnvResolver, FileSystem, PtyProcessStatus, PtySpawn, Signal, Winsize,
+};
+use std::env;
+use std::io::{self, Write};
+use std::os::unix::io::AsRawFd;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const PENDING_INPUT_FILENAME: &str = "pending_input.json";
 const PROMPT_SUGGESTION_FILENAME: &str = "prompt_suggestion.txt";
@@ -111,11 +113,13 @@ fn build_shell_command<F: FileSystem + ?Sized>(shell_path: &str, fs: &F) -> Vec<
 
     candidates.extend(default_aishrc_candidates());
 
-    let aishrc_path = (shell_name == "bash").then(|| {
-        candidates.into_iter().find(|p| {
-            fs.exists(p) && fs.metadata(p).map(|m| m.is_file()).unwrap_or(false)
+    let aishrc_path = (shell_name == "bash")
+        .then(|| {
+            candidates
+                .into_iter()
+                .find(|p| fs.exists(p) && fs.metadata(p).map(|m| m.is_file()).unwrap_or(false))
         })
-    }).flatten();
+        .flatten();
 
     if let Some(path) = aishrc_path {
         vec![
@@ -138,7 +142,10 @@ fn libc_winsize_to_common(ws: libc::winsize) -> Winsize {
 }
 
 /// pending_input.json から PendingInput を読み出す。無い・不正なら None。agent_state.json は読まない。
-fn try_load_pending_input(session_dir: &Path, fs: &dyn FileSystem) -> Result<Option<PendingInput>, Error> {
+fn try_load_pending_input(
+    session_dir: &Path,
+    fs: &dyn FileSystem,
+) -> Result<Option<PendingInput>, Error> {
     let path = session_dir.join(PENDING_INPUT_FILENAME);
     if !fs.exists(&path) {
         return Ok(None);
@@ -198,9 +205,17 @@ fn inject_pending_to_pty(master_fd: libc::c_int, pending: &PendingInput) -> Resu
     const BRACKETED_PASTE_END: &[u8] = b"\x1b[201~";
     unsafe {
         let _ = libc::write(master_fd, [CTRL_U].as_ptr() as *const libc::c_void, 1);
-        let _ = libc::write(master_fd, BRACKETED_PASTE_START.as_ptr() as *const libc::c_void, BRACKETED_PASTE_START.len());
+        let _ = libc::write(
+            master_fd,
+            BRACKETED_PASTE_START.as_ptr() as *const libc::c_void,
+            BRACKETED_PASTE_START.len(),
+        );
         let _ = libc::write(master_fd, text.as_ptr() as *const libc::c_void, text.len());
-        let _ = libc::write(master_fd, BRACKETED_PASTE_END.as_ptr() as *const libc::c_void, BRACKETED_PASTE_END.len());
+        let _ = libc::write(
+            master_fd,
+            BRACKETED_PASTE_END.as_ptr() as *const libc::c_void,
+            BRACKETED_PASTE_END.len(),
+        );
     }
     Ok(())
 }
@@ -253,7 +268,9 @@ pub fn run_shell(
     };
     eprintln!("aish: session started: {}", display_id);
 
-    let aish_home_set = env::var("AISH_HOME").map(|v| !v.is_empty()).unwrap_or(false);
+    let aish_home_set = env::var("AISH_HOME")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
     let source = if aish_home_set { "AISH_HOME" } else { "XDG" };
 
     if let Ok(dirs) = env.resolve_dirs() {
@@ -261,16 +278,28 @@ pub fn run_shell(
             eprintln!("aish:   source: {}", source);
         } else {
             let mut xdg_vars = Vec::new();
-            if env::var("XDG_CONFIG_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+            if env::var("XDG_CONFIG_HOME")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
                 xdg_vars.push("XDG_CONFIG_HOME");
             }
-            if env::var("XDG_DATA_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+            if env::var("XDG_DATA_HOME")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
                 xdg_vars.push("XDG_DATA_HOME");
             }
-            if env::var("XDG_STATE_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+            if env::var("XDG_STATE_HOME")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
                 xdg_vars.push("XDG_STATE_HOME");
             }
-            if env::var("XDG_CACHE_HOME").map(|v| !v.is_empty()).unwrap_or(false) {
+            if env::var("XDG_CACHE_HOME")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false)
+            {
                 xdg_vars.push("XDG_CACHE_HOME");
             }
 
@@ -306,7 +335,10 @@ pub fn run_shell(
     fs_ref.write(&pid_file_path, &aish_pid.to_string())?;
 
     let mut env_vars = Vec::new();
-    env_vars.push(("AISH_SESSION".to_string(), session_dir.to_string_lossy().to_string()));
+    env_vars.push((
+        "AISH_SESSION".to_string(),
+        session_dir.to_string_lossy().to_string(),
+    ));
     env_vars.push(("AISH_PID".to_string(), aish_pid.to_string()));
 
     // 親プロセス環境に既に AISH_HOME がある場合のみ、それを子プロセスに伝播する
@@ -326,7 +358,7 @@ pub fn run_shell(
 
     let pty = pty_spawn.spawn(Some(&cmd), Some(&cwd), &env_vars)?;
     let master_fd = pty.master_fd();
-    
+
     // master_fdを非ブロッキングモードに設定
     unsafe {
         let flags = libc::fcntl(master_fd, libc::F_GETFL);
@@ -334,12 +366,12 @@ pub fn run_shell(
             libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
         }
     }
-    
+
     // ターミナルをrawモードに設定
     let stdin_fd = io::stdin().as_raw_fd();
     let _term_mode = TermMode::set_raw(stdin_fd)
         .map_err(|e| Error::io_msg(format!("Failed to set raw mode: {}", e)))?;
-    
+
     // ターミナルバッファを初期化
     let mut terminal_buffer = TerminalBuffer::new();
 
@@ -348,7 +380,7 @@ pub fn run_shell(
 
     // PromptReady マーカー検知（次のプロンプトで pending を注入するため）
     let mut prompt_ready_detector = PromptReadyDetector::new();
-    
+
     // メインループ用のバッファ（Alt+S = \x1b s 検出用に 1 バイト保留）
     const MAX_CHUNK: usize = 32768;
     let mut stdin_buf = vec![0u8; MAX_CHUNK];
@@ -403,27 +435,33 @@ pub fn run_shell(
                 return Err(e);
             }
         }
-        
+
         // pollのセットアップ
-        let mut pollfds = vec![
-            libc::pollfd {
-                fd: master_fd,
-                events: libc::POLLIN,
-                revents: 0,
-            },
-        ];
-        
+        let mut pollfds = vec![libc::pollfd {
+            fd: master_fd,
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+
         let mut stdin_idx = None;
         if !stdin_eof {
             stdin_idx = Some(pollfds.len());
-            pollfds.push(libc::pollfd { fd: stdin_fd, events: libc::POLLIN, revents: 0 });
+            pollfds.push(libc::pollfd {
+                fd: stdin_fd,
+                events: libc::POLLIN,
+                revents: 0,
+            });
         }
-        
+
         let timeout_ms = 50;
         let n = unsafe {
-            libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::c_ulong, timeout_ms)
+            libc::poll(
+                pollfds.as_mut_ptr(),
+                pollfds.len() as libc::c_ulong,
+                timeout_ms,
+            )
         };
-        
+
         if n < 0 {
             let err = io::Error::last_os_error();
             if err.kind() == io::ErrorKind::Interrupted {
@@ -431,19 +469,26 @@ pub fn run_shell(
             }
             return Err(Error::io_msg(format!("poll failed: {}", err)));
         }
-        
+
         if n == 0 {
             // タイムアウト
             continue;
         }
-        
+
         // 標準入力から読み取り（Alt+S = \x1b s のときは注入し、キーはシェルに渡さない）
         if let Some(idx) = stdin_idx {
             if (pollfds[idx].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR)) != 0 {
-                let n = unsafe { libc::read(stdin_fd, stdin_buf.as_mut_ptr() as *mut libc::c_void, MAX_CHUNK) };
+                let n = unsafe {
+                    libc::read(
+                        stdin_fd,
+                        stdin_buf.as_mut_ptr() as *mut libc::c_void,
+                        MAX_CHUNK,
+                    )
+                };
                 if n > 0 {
                     let n = n as usize;
-                    let mut chunk = Vec::with_capacity(stdin_esc_pending.as_ref().map(|_| 1).unwrap_or(0) + n);
+                    let mut chunk =
+                        Vec::with_capacity(stdin_esc_pending.as_ref().map(|_| 1).unwrap_or(0) + n);
                     if let Some(b) = stdin_esc_pending.take() {
                         chunk.push(b);
                     }
@@ -479,7 +524,11 @@ pub fn run_shell(
                     };
                     if !to_forward.is_empty() {
                         let _ = unsafe {
-                            libc::write(master_fd, to_forward.as_ptr() as *const libc::c_void, to_forward.len())
+                            libc::write(
+                                master_fd,
+                                to_forward.as_ptr() as *const libc::c_void,
+                                to_forward.len(),
+                            )
                         };
                     }
                 } else if n == 0 {
@@ -488,10 +537,16 @@ pub fn run_shell(
                 }
             }
         }
-        
+
         // PTYから読み取り
         if (pollfds[0].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR)) != 0 {
-            let n = unsafe { libc::read(master_fd, pty_buf.as_mut_ptr() as *mut libc::c_void, MAX_CHUNK) };
+            let n = unsafe {
+                libc::read(
+                    master_fd,
+                    pty_buf.as_mut_ptr() as *mut libc::c_void,
+                    MAX_CHUNK,
+                )
+            };
             if n > 0 {
                 let chunk = &pty_buf[..n as usize];
                 // 標準出力に表示
@@ -508,15 +563,21 @@ pub fn run_shell(
                 }
             } else if n <= 0 {
                 // EOFまたはエラー - 子プロセスがまだ生きているかチェック
-                let err = if n < 0 { Some(io::Error::last_os_error()) } else { None };
+                let err = if n < 0 {
+                    Some(io::Error::last_os_error())
+                } else {
+                    None
+                };
                 let is_real_end = match err {
                     Some(ref e) => {
                         let errno = e.raw_os_error().unwrap_or(0);
-                        e.kind() != io::ErrorKind::Interrupted && errno != libc::EAGAIN && errno != libc::EWOULDBLOCK
+                        e.kind() != io::ErrorKind::Interrupted
+                            && errno != libc::EAGAIN
+                            && errno != libc::EWOULDBLOCK
                     }
                     None => true,
                 };
-                
+
                 if is_real_end {
                     let mut wait_count = 0;
                     while wait_count < 20 {
@@ -714,8 +775,11 @@ mod tests {
         fs::create_dir_all(&tmp).unwrap();
         let fs = StdFileSystem;
         let path = tmp.join(PENDING_INPUT_FILENAME);
-        fs.write(&path, r#"{"text":"x","policy":"Allowed","created_at_unix_ms":0,"source":"t"}"#)
-            .unwrap();
+        fs.write(
+            &path,
+            r#"{"text":"x","policy":"Allowed","created_at_unix_ms":0,"source":"t"}"#,
+        )
+        .unwrap();
         assert!(fs.exists(&path));
         clear_pending_input(&tmp, &fs).unwrap();
         assert!(!fs.exists(&path));

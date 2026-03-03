@@ -60,7 +60,9 @@ impl HistoryUseCase {
             ));
         }
         if ids.is_empty() {
-            return Err(Error::invalid_argument("history get requires at least one id".to_string()));
+            return Err(Error::invalid_argument(
+                "history get requires at least one id".to_string(),
+            ));
         }
         let session = self.resolve_session(path_input)?;
         self.reader.get_entries(session.session_dir().as_ref(), ids)
@@ -68,7 +70,9 @@ impl HistoryUseCase {
 
     fn resolve_session(&self, path_input: &PathResolverInput) -> Result<Session, Error> {
         let home_dir = self.path_resolver.resolve_home_dir(path_input)?;
-        let session_path = self.path_resolver.resolve_session_dir(path_input, &home_dir)?;
+        let session_path = self
+            .path_resolver
+            .resolve_session_dir(path_input, &home_dir)?;
         Session::new(&session_path, &home_dir)
     }
 }

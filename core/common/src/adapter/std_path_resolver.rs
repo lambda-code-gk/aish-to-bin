@@ -262,9 +262,7 @@ mod tests {
         with_env_var("AISH_SESSION", None, || {
             with_env_var("AISH_HOME", Some("/tmp/test"), || {
                 with_env_var("HOME", Some("/tmp/fallback"), || {
-                    let session = resolver
-                        .resolve_session_dir(&input, "/tmp/test")
-                        .unwrap();
+                    let session = resolver.resolve_session_dir(&input, "/tmp/test").unwrap();
                     let suffix = session.strip_prefix("/tmp/test/state/session/").unwrap();
                     assert_eq!(suffix.len(), 8);
                     for c in suffix.chars() {

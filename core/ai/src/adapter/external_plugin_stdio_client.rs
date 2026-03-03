@@ -111,9 +111,8 @@ fn parse_json_rpc_response_line(
             message: err_resp.error.message,
         });
     }
-    let succ: JsonRpcSuccess = serde_json::from_str(line).map_err(|e| {
-        ExternalPluginError::MalformedResponse(format!("parse response: {}", e))
-    })?;
+    let succ: JsonRpcSuccess = serde_json::from_str(line)
+        .map_err(|e| ExternalPluginError::MalformedResponse(format!("parse response: {}", e)))?;
     let got = json_rpc_id_to_u64(&succ.id);
     if got != Some(expected_id) {
         return Err(ExternalPluginError::MalformedResponse(format!(
@@ -211,9 +210,10 @@ impl ExternalPluginStdioClient {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(Err(ExternalPluginError::MalformedResponse(
-                            format!("stdout read: {}", e),
-                        )));
+                        let _ = tx.send(Err(ExternalPluginError::MalformedResponse(format!(
+                            "stdout read: {}",
+                            e
+                        ))));
                         break;
                     }
                 }
@@ -228,7 +228,8 @@ impl ExternalPluginStdioClient {
         };
         let line = serde_json::to_string(&req)
             .map_err(|e| ExternalPluginError::StartFailed(format!("serialize: {}", e)))?;
-        if let Err(e) = stdin.write_all(line.as_bytes())
+        if let Err(e) = stdin
+            .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
             .and_then(|_| stdin.flush())
         {
@@ -301,12 +302,13 @@ impl ExternalPluginStdioClient {
         };
         let line = serde_json::to_string(&req)
             .map_err(|e| ExternalPluginError::MalformedResponse(format!("serialize: {}", e)))?;
-        let mut guard = self.stdin.lock().map_err(|_| {
-            ExternalPluginError::ToolCallFailed("stdin lock poisoned".to_string())
-        })?;
-        let stdin = guard.as_mut().ok_or_else(|| {
-            ExternalPluginError::ProcessExited("stdin closed".to_string())
-        })?;
+        let mut guard = self
+            .stdin
+            .lock()
+            .map_err(|_| ExternalPluginError::ToolCallFailed("stdin lock poisoned".to_string()))?;
+        let stdin = guard
+            .as_mut()
+            .ok_or_else(|| ExternalPluginError::ProcessExited("stdin closed".to_string()))?;
         stdin
             .write_all(line.as_bytes())
             .map_err(|e| ExternalPluginError::ToolCallFailed(format!("write: {}", e)))?;
@@ -320,7 +322,9 @@ impl ExternalPluginStdioClient {
         let response = self
             .stdout_rx
             .lock()
-            .map_err(|_| ExternalPluginError::ToolCallFailed("stdout_rx lock poisoned".to_string()))?
+            .map_err(|_| {
+                ExternalPluginError::ToolCallFailed("stdout_rx lock poisoned".to_string())
+            })?
             .recv_timeout(Duration::from_millis(self.call_timeout_ms))
             .map_err(|e| match e {
                 mpsc::RecvTimeoutError::Timeout => {
@@ -351,9 +355,10 @@ impl ExternalPluginStdioClient {
         })?;
         let mut out = Vec::with_capacity(arr.len());
         for item in arr {
-            let desc: ExternalToolDescriptor = serde_json::from_value(item.clone()).map_err(|e| {
-                ExternalPluginError::ListToolsFailed(format!("tool descriptor: {}", e))
-            })?;
+            let desc: ExternalToolDescriptor =
+                serde_json::from_value(item.clone()).map_err(|e| {
+                    ExternalPluginError::ListToolsFailed(format!("tool descriptor: {}", e))
+                })?;
             out.push(desc);
         }
         Ok(out)
@@ -402,4 +407,3 @@ mod tests {
         assert_eq!(back.name, "browser.open");
     }
 }
-

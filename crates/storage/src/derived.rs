@@ -16,7 +16,8 @@ const INDEX_DIR: &str = "index";
 const INDEX_DB: &str = "index.sqlite";
 const SNAPSHOTS_DIR: &str = "snapshots";
 const SUMMARY_JSON: &str = "summary.json";
-const METADATA_TABLE: &str = "CREATE TABLE IF NOT EXISTS metadata (k TEXT PRIMARY KEY, v INTEGER NOT NULL);";
+const METADATA_TABLE: &str =
+    "CREATE TABLE IF NOT EXISTS metadata (k TEXT PRIMARY KEY, v INTEGER NOT NULL);";
 const LAST_APPLIED_SEQ_KEY: &str = "last_applied_seq";
 
 const PREVIEW_MAX: usize = 200;
@@ -166,9 +167,8 @@ impl DerivedApplier {
         if need_init {
             fs::create_dir_all(&index_dir)
                 .map_err(|e| Error::io_msg(format!("create_dir_all index: {}", e)))?;
-            let conn =
-                rusqlite::Connection::open(&index_path)
-                    .map_err(|e| Error::io_msg(format!("open index.sqlite: {}", e)))?;
+            let conn = rusqlite::Connection::open(&index_path)
+                .map_err(|e| Error::io_msg(format!("open index.sqlite: {}", e)))?;
             let sql = format!(
                 r#"
                 CREATE TABLE events (
@@ -188,7 +188,7 @@ impl DerivedApplier {
                 METADATA_TABLE
             );
             conn.execute_batch(&sql)
-            .map_err(|e| Error::io_msg(format!("create table: {}", e)))?;
+                .map_err(|e| Error::io_msg(format!("create table: {}", e)))?;
         }
 
         let conn = rusqlite::Connection::open(&index_path)
@@ -199,8 +199,7 @@ impl DerivedApplier {
             )
             .map_err(|e| Error::io_msg(format!("prepare insert: {}", e)))?;
         for (ev, resolved_val) in &resolved {
-            let (subject, text) =
-                subject_and_text_from_payload(ev.kind.as_str(), resolved_val);
+            let (subject, text) = subject_and_text_from_payload(ev.kind.as_str(), resolved_val);
             let payload_json =
                 serde_json::to_string(resolved_val).unwrap_or_else(|_| "{}".to_string());
             insert
@@ -226,10 +225,7 @@ impl DerivedApplier {
 
         self.write_summary(session_dir, &index_path, &summary_path, &snapshots_dir)?;
 
-        Ok(AppliedRange {
-            from_seq,
-            to_seq,
-        })
+        Ok(AppliedRange { from_seq, to_seq })
     }
 
     fn write_summary(
@@ -405,7 +401,7 @@ impl DerivedRebuilder {
             METADATA_TABLE
         );
         conn.execute_batch(&sql)
-        .map_err(|e| Error::io_msg(format!("create table: {}", e)))?;
+            .map_err(|e| Error::io_msg(format!("create table: {}", e)))?;
 
         let mut insert = conn
             .prepare(
@@ -421,8 +417,7 @@ impl DerivedRebuilder {
         let last_seq = list.last().map(|e| e.seq).unwrap_or(0);
         for (ev, resolved) in &resolved_list {
             let (subject, text) = subject_and_text_from_payload(ev.kind.as_str(), resolved);
-            let payload_json =
-                serde_json::to_string(resolved).unwrap_or_else(|_| "{}".to_string());
+            let payload_json = serde_json::to_string(resolved).unwrap_or_else(|_| "{}".to_string());
             insert
                 .execute(params![
                     ev.seq as i64,
@@ -466,7 +461,10 @@ impl DerivedRebuilder {
             *counts_by_kind.entry(ev.kind.clone()).or_insert(0) += 1;
             last_ts_ms = Some(ev.ts_ms);
             if ev.kind == "policy.evaluated" {
-                let status = resolved.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                let status = resolved
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 if status == "blocked" {
                     blocked_count += 1;
                 } else if status == "warn" || status.contains("warning") {
@@ -520,10 +518,7 @@ impl DerivedRebuilder {
 
 /// index の metadata から last_applied_seq を読む。無ければ 0。
 pub fn read_last_applied_seq(session_dir: &SessionDir) -> u64 {
-    let path = session_dir
-        .as_ref()
-        .join(INDEX_DIR)
-        .join(INDEX_DB);
+    let path = session_dir.as_ref().join(INDEX_DIR).join(INDEX_DB);
     let conn = match rusqlite::Connection::open(&path) {
         Ok(c) => c,
         Err(_) => return 0,

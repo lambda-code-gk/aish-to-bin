@@ -15,14 +15,8 @@ pub struct ClearUseCase {
 }
 
 impl ClearUseCase {
-    pub fn new(
-        path_resolver: Arc<dyn PathResolver>,
-        fs: Arc<dyn FileSystem>,
-    ) -> Self {
-        Self {
-            path_resolver,
-            fs,
-        }
+    pub fn new(path_resolver: Arc<dyn PathResolver>, fs: Arc<dyn FileSystem>) -> Self {
+        Self { path_resolver, fs }
     }
 
     /// Clear を実行する
@@ -48,7 +42,9 @@ impl ClearUseCase {
 
     fn resolve_session(&self, path_input: &PathResolverInput) -> Result<Session, Error> {
         let home_dir = self.path_resolver.resolve_home_dir(path_input)?;
-        let session_path = self.path_resolver.resolve_session_dir(path_input, &home_dir)?;
+        let session_path = self
+            .path_resolver
+            .resolve_session_dir(path_input, &home_dir)?;
         Session::new(&session_path, &home_dir)
     }
 
@@ -64,7 +60,11 @@ impl ClearUseCase {
             if let Some(file_name) = entry.file_name().and_then(|n| n.to_str()) {
                 #[allow(clippy::collapsible_if)]
                 if file_name.starts_with("part_")
-                    && self.fs.metadata(&entry).map(|m| m.is_file()).unwrap_or(false)
+                    && self
+                        .fs
+                        .metadata(&entry)
+                        .map(|m| m.is_file())
+                        .unwrap_or(false)
                 {
                     self.fs.remove_file(&entry)?;
                 }

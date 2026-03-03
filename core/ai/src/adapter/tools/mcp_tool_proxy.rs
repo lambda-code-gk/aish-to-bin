@@ -64,4 +64,3 @@ impl Tool for McpToolProxy {
         }
     }
 }
-

@@ -1,8 +1,8 @@
 //! deterministic compaction（正しさ非依存の最適化）
 
 use crate::adapter::session_manifest;
-use crate::domain::{ManifestRecordV1, ManifestRole};
 use crate::domain::manifest::CompactionRecordV1;
+use crate::domain::{ManifestRecordV1, ManifestRole};
 use crate::ports::outbound::CompactionStrategy;
 use common::error::Error;
 use common::ports::outbound::{now_iso8601, FileSystem};
@@ -23,11 +23,7 @@ impl CompactionStrategy for DeterministicCompactionStrategy {
         session_dir: &Path,
         records: &[ManifestRecordV1],
     ) -> Result<(), Error> {
-        if std::env::var("AISH_COMPACTION_ENABLE")
-            .ok()
-            .as_deref()
-            != Some("1")
-        {
+        if std::env::var("AISH_COMPACTION_ENABLE").ok().as_deref() != Some("1") {
             return Ok(());
         }
 
@@ -156,9 +152,12 @@ mod tests {
 
         let reviewed_dir = dir.join("reviewed");
         fs.create_dir_all(&reviewed_dir).unwrap();
-        fs.write(&reviewed_dir.join("reviewed_001_user.txt"), "u1\nbody").unwrap();
-        fs.write(&reviewed_dir.join("reviewed_002_assistant.txt"), "a2").unwrap();
-        fs.write(&reviewed_dir.join("reviewed_003_user.txt"), "u3").unwrap();
+        fs.write(&reviewed_dir.join("reviewed_001_user.txt"), "u1\nbody")
+            .unwrap();
+        fs.write(&reviewed_dir.join("reviewed_002_assistant.txt"), "a2")
+            .unwrap();
+        fs.write(&reviewed_dir.join("reviewed_003_user.txt"), "u3")
+            .unwrap();
         fs.write(
             &dir.join("manifest.jsonl"),
             "\
@@ -174,7 +173,11 @@ mod tests {
 
         let body = fs.read_to_string(&dir.join("manifest.jsonl")).unwrap();
         let records = crate::domain::parse_lines(&body);
-        let comp = records.iter().filter_map(|r| r.compaction()).last().unwrap();
+        let comp = records
+            .iter()
+            .filter_map(|r| r.compaction())
+            .last()
+            .unwrap();
         assert_eq!(comp.from_id, "001");
         assert_eq!(comp.to_id, "002");
         assert_eq!(comp.method, "deterministic");
@@ -200,4 +203,3 @@ mod tests {
         }
     }
 }
-

@@ -21,6 +21,8 @@ mod tests {
             args: serde_json::json!({"cmd": "ls"}),
             result: serde_json::json!({"ok": true}),
         };
-        assert!(matches!(ev, AgentEvent::ToolResult { call_id, name, .. } if call_id == "c1" && name == "run"));
+        assert!(
+            matches!(ev, AgentEvent::ToolResult { call_id, name, .. } if call_id == "c1" && name == "run")
+        );
     }
 }

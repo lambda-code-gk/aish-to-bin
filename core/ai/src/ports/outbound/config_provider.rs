@@ -5,4 +5,3 @@ use common::error::Error;
 pub trait ConfigProvider: Send + Sync {
     fn policy_config(&self) -> Result<PolicyConfig, Error>;
 }
-

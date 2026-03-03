@@ -32,7 +32,9 @@ fn plugin_search_dirs(env: &Arc<dyn EnvResolver>) -> Vec<PathBuf> {
 /// 1 ファイルを YAML としてパースし、PluginManifest に変換。不正なら Err で内容を返す。
 fn parse_manifest_file(content: &str, _path: &Path) -> Result<PluginManifest, String> {
     let raw: serde_yaml::Value = serde_yaml::from_str(content).map_err(|e| e.to_string())?;
-    let map = raw.as_mapping().ok_or_else(|| "manifest must be a YAML object".to_string())?;
+    let map = raw
+        .as_mapping()
+        .ok_or_else(|| "manifest must be a YAML object".to_string())?;
     let id = map
         .get("id")
         .and_then(|v| v.as_str())
@@ -82,18 +84,18 @@ fn parse_manifest_file(content: &str, _path: &Path) -> Result<PluginManifest, St
                 .collect()
         })
         .unwrap_or_default();
-    let timeouts = map.get("timeouts").and_then(|t| {
-        let startup_ms = t.get("startup_ms").and_then(|v| v.as_u64());
-        let call_ms = t.get("call_ms").and_then(|v| v.as_u64());
-        Some(crate::domain::external_plugin::PluginTimeouts {
-            startup_ms,
-            call_ms,
+    let timeouts = map
+        .get("timeouts")
+        .and_then(|t| {
+            let startup_ms = t.get("startup_ms").and_then(|v| v.as_u64());
+            let call_ms = t.get("call_ms").and_then(|v| v.as_u64());
+            Some(crate::domain::external_plugin::PluginTimeouts {
+                startup_ms,
+                call_ms,
+            })
         })
-    }).unwrap_or_else(|| crate::domain::external_plugin::PluginTimeouts::default());
-    let enabled = map
-        .get("enabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+        .unwrap_or_else(|| crate::domain::external_plugin::PluginTimeouts::default());
+    let enabled = map.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
     Ok(PluginManifest {
         id: id.clone(),
         version,

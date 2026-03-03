@@ -97,11 +97,13 @@ impl UseCaseRunner for AishRunner {
                 }
                 Ok(0)
             }
-            Command::SessionsRebuildDerived { session_id } => entry_run_ai_sessions_rebuild_derived(
-                &path_input,
-                session_id.as_deref(),
-                &self.app.path_resolver,
-            ),
+            Command::SessionsRebuildDerived { session_id } => {
+                entry_run_ai_sessions_rebuild_derived(
+                    &path_input,
+                    session_id.as_deref(),
+                    &self.app.path_resolver,
+                )
+            }
             Command::Init {
                 force,
                 dry_run,
@@ -207,8 +209,11 @@ impl UseCaseRunner for AishRunner {
                 let path = daemon::default_socket_path();
                 let rt = tokio::runtime::Runtime::new()
                     .map_err(|e| Error::invalid_argument(e.to_string()))?;
-                rt.block_on(daemon::run_server(path))
-                    .map_err(|e: Box<dyn std::error::Error + Send + Sync>| Error::invalid_argument(e.to_string()))?;
+                rt.block_on(daemon::run_server(path)).map_err(
+                    |e: Box<dyn std::error::Error + Send + Sync>| {
+                        Error::invalid_argument(e.to_string())
+                    },
+                )?;
                 Ok(0)
             }
             #[cfg(unix)]
@@ -216,8 +221,11 @@ impl UseCaseRunner for AishRunner {
                 let path = daemon::default_socket_path();
                 let rt = tokio::runtime::Runtime::new()
                     .map_err(|e| Error::invalid_argument(e.to_string()))?;
-                let ok = rt.block_on(daemon::run_ping(&path))
-                    .map_err(|e: Box<dyn std::error::Error + Send + Sync>| Error::invalid_argument(e.to_string()))?;
+                let ok = rt.block_on(daemon::run_ping(&path)).map_err(
+                    |e: Box<dyn std::error::Error + Send + Sync>| {
+                        Error::invalid_argument(e.to_string())
+                    },
+                )?;
                 Ok(if ok { 0 } else { 1 })
             }
             #[cfg(unix)]
@@ -225,8 +233,11 @@ impl UseCaseRunner for AishRunner {
                 let path = daemon::default_socket_path();
                 let rt = tokio::runtime::Runtime::new()
                     .map_err(|e| Error::invalid_argument(e.to_string()))?;
-                rt.block_on(daemon::run_status(&path))
-                    .map_err(|e: Box<dyn std::error::Error + Send + Sync>| Error::invalid_argument(e.to_string()))?;
+                rt.block_on(daemon::run_status(&path)).map_err(
+                    |e: Box<dyn std::error::Error + Send + Sync>| {
+                        Error::invalid_argument(e.to_string())
+                    },
+                )?;
                 Ok(0)
             }
             Command::ToolsList => {
@@ -398,7 +409,9 @@ fn entry_print_history_list(entries: &[domain::HistoryListEntry], width: usize) 
         } else {
             format!(
                 "{}...",
-                &e.datetime[..e.datetime.floor_char_boundary(DATETIME_WIDTH.saturating_sub(3))]
+                &e.datetime[..e
+                    .datetime
+                    .floor_char_boundary(DATETIME_WIDTH.saturating_sub(3))]
             )
         };
         let dt = format!("{:16}", dt_show);

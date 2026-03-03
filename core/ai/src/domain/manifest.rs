@@ -116,4 +116,3 @@ pub fn hash64(content: &str) -> String {
     content.hash(&mut h);
     format!("{:016x}", h.finish())
 }
-

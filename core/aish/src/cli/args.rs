@@ -49,44 +49,44 @@ pub enum ParseOutcome {
 
 fn global_args(cmd: clap::Command) -> clap::Command {
     cmd.disable_help_flag(true)
-    .arg(
-        clap::Arg::new("help")
-            .short('h')
-            .long("help")
-            .help("Print help")
-            .action(ArgAction::SetTrue),
-    )
-    .arg(
-        clap::Arg::new("session-dir")
-            .short('s')
-            .long("session-dir")
-            .value_name("directory")
-            .help("Specify a session directory (for resume)")
-            .num_args(1),
-    )
-    .arg(
-        clap::Arg::new("home-dir")
-            .short('d')
-            .long("home-dir")
-            .value_name("directory")
-            .help("Specify a home directory (sets AISH_HOME for this process)")
-            .num_args(1),
-    )
-    .arg(
-        clap::Arg::new("verbose")
-            .short('v')
-            .long("verbose")
-            .help("Emit verbose debug logs (for troubleshooting)")
-            .action(ArgAction::SetTrue),
-    )
-    .arg(
-        clap::Arg::new("generate")
-            .long("generate")
-            .value_name("shell")
-            .help("Generate shell completion script")
-            .value_parser(value_parser!(Shell))
-            .num_args(1),
-    )
+        .arg(
+            clap::Arg::new("help")
+                .short('h')
+                .long("help")
+                .help("Print help")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("session-dir")
+                .short('s')
+                .long("session-dir")
+                .value_name("directory")
+                .help("Specify a session directory (for resume)")
+                .num_args(1),
+        )
+        .arg(
+            clap::Arg::new("home-dir")
+                .short('d')
+                .long("home-dir")
+                .value_name("directory")
+                .help("Specify a home directory (sets AISH_HOME for this process)")
+                .num_args(1),
+        )
+        .arg(
+            clap::Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .help("Emit verbose debug logs (for troubleshooting)")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            clap::Arg::new("generate")
+                .long("generate")
+                .value_name("shell")
+                .help("Generate shell completion script")
+                .value_parser(value_parser!(Shell))
+                .num_args(1),
+        )
 }
 
 fn build_memory_subcommand() -> clap::Command {
@@ -97,12 +97,22 @@ fn build_memory_subcommand() -> clap::Command {
         .subcommand(
             clap::Command::new("get")
                 .about("Get memory content by ID(s)")
-                .arg(clap::Arg::new("ids").num_args(1..).value_name("id").required(true)),
+                .arg(
+                    clap::Arg::new("ids")
+                        .num_args(1..)
+                        .value_name("id")
+                        .required(true),
+                ),
         )
         .subcommand(
             clap::Command::new("remove")
                 .about("Remove memory by ID(s)")
-                .arg(clap::Arg::new("ids").num_args(1..).value_name("id").required(true)),
+                .arg(
+                    clap::Arg::new("ids")
+                        .num_args(1..)
+                        .value_name("id")
+                        .required(true),
+                ),
         )
 }
 
@@ -263,25 +273,64 @@ fn build_clap_command() -> clap::Command {
 
 fn matches_to_config(matches: &clap::ArgMatches) -> Config {
     let help = matches.get_flag("help");
-    let session_dir = matches
-        .get_one::<String>("session-dir")
-        .cloned();
+    let session_dir = matches.get_one::<String>("session-dir").cloned();
     let home_dir = matches.get_one::<String>("home-dir").cloned();
     let verbose = matches.get_flag("verbose");
 
-    let (command_name, command_args, init_force, init_dry_run, init_defaults_dir, sessions_rebuild_derived_session_id) = match matches.subcommand() {
+    let (
+        command_name,
+        command_args,
+        init_force,
+        init_dry_run,
+        init_defaults_dir,
+        sessions_rebuild_derived_session_id,
+    ) = match matches.subcommand() {
         None => (None, Vec::new(), false, false, None, None),
         Some(("shell", _)) => (None, Vec::new(), false, false, None, None),
         Some(("plugins", m)) => {
-            let sub = m.subcommand().map(|(n, _)| n.to_string()).unwrap_or_else(|| "list".to_string());
-            (Some("plugins".to_string()), vec![sub], false, false, None, None)
+            let sub = m
+                .subcommand()
+                .map(|(n, _)| n.to_string())
+                .unwrap_or_else(|| "list".to_string());
+            (
+                Some("plugins".to_string()),
+                vec![sub],
+                false,
+                false,
+                None,
+                None,
+            )
         }
         Some(("tools", m)) => {
-            let sub = m.subcommand().map(|(n, _)| n.to_string()).unwrap_or_else(|| "list".to_string());
-            (Some("tools".to_string()), vec![sub], false, false, None, None)
+            let sub = m
+                .subcommand()
+                .map(|(n, _)| n.to_string())
+                .unwrap_or_else(|| "list".to_string());
+            (
+                Some("tools".to_string()),
+                vec![sub],
+                false,
+                false,
+                None,
+                None,
+            )
         }
-        Some(("truncate_console_log", _)) => (Some("truncate_console_log".to_string()), vec![], false, false, None, None),
-        Some(("rollout", _)) => (Some("rollout".to_string()), vec![], false, false, None, None),
+        Some(("truncate_console_log", _)) => (
+            Some("truncate_console_log".to_string()),
+            vec![],
+            false,
+            false,
+            None,
+            None,
+        ),
+        Some(("rollout", _)) => (
+            Some("rollout".to_string()),
+            vec![],
+            false,
+            false,
+            None,
+            None,
+        ),
         Some(("mute", _)) => (Some("mute".to_string()), vec![], false, false, None, None),
         Some(("unmute", _)) => (Some("unmute".to_string()), vec![], false, false, None, None),
         Some(("clear", _)) => (Some("clear".to_string()), vec![], false, false, None, None),
@@ -317,7 +366,14 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
             };
             let mut command_args = vec![sub.to_string()];
             command_args.extend(args);
-            (Some("memory".to_string()), command_args, false, false, None, None)
+            (
+                Some("memory".to_string()),
+                command_args,
+                false,
+                false,
+                None,
+                None,
+            )
         }
         Some(("history", history_m)) => {
             let (sub, args) = match history_m.subcommand() {
@@ -344,7 +400,14 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
             };
             let mut command_args = vec![sub.to_string()];
             command_args.extend(args);
-            (Some("history".to_string()), command_args, false, false, None, None)
+            (
+                Some("history".to_string()),
+                command_args,
+                false,
+                false,
+                None,
+                None,
+            )
         }
         Some(("policy", policy_m)) => {
             let (sub, args) = match policy_m.subcommand() {
@@ -357,7 +420,14 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
                 vec![sub.to_string()]
             };
             command_args.extend(args);
-            (Some("policy".to_string()), command_args, false, false, None, None)
+            (
+                Some("policy".to_string()),
+                command_args,
+                false,
+                false,
+                None,
+                None,
+            )
         }
         Some(("sessions", sessions_m)) => {
             let (cmd_name, cmd_args, rebuild_session_id) = match sessions_m.subcommand() {
@@ -379,7 +449,11 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
             };
             (
                 Some("daemon".to_string()),
-                if sub.is_empty() { vec![] } else { vec![sub.to_string()] },
+                if sub.is_empty() {
+                    vec![]
+                } else {
+                    vec![sub.to_string()]
+                },
                 false,
                 false,
                 None,
@@ -412,14 +486,11 @@ pub fn parse_args() -> Result<ParseOutcome, Error> {
 pub fn parse_args_from_os(
     args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
 ) -> Result<ParseOutcome, Error> {
-    let args: Vec<std::ffi::OsString> = args
-        .into_iter()
-        .map(|a| a.as_ref().to_owned())
-        .collect();
+    let args: Vec<std::ffi::OsString> = args.into_iter().map(|a| a.as_ref().to_owned()).collect();
     let cmd = build_clap_command();
-    let matches = cmd.try_get_matches_from(args).map_err(|e| {
-        Error::invalid_argument(e.to_string())
-    })?;
+    let matches = cmd
+        .try_get_matches_from(args)
+        .map_err(|e| Error::invalid_argument(e.to_string()))?;
 
     if let Some(&shell) = matches.get_one::<Shell>("generate") {
         return Ok(ParseOutcome::GenerateCompletion(shell));
@@ -596,8 +667,13 @@ pub fn config_to_command(config: &Config) -> Command {
             dry_run: config.init_dry_run,
             defaults_dir: config.init_defaults_dir.clone(),
         },
-        Some(name) if name == "sessions" && config.command_args.first().map(|s| s.as_str()) == Some("rebuild-derived") => {
-            Command::SessionsRebuildDerived { session_id: config.sessions_rebuild_derived_session_id.clone() }
+        Some(name)
+            if name == "sessions"
+                && config.command_args.first().map(|s| s.as_str()) == Some("rebuild-derived") =>
+        {
+            Command::SessionsRebuildDerived {
+                session_id: config.sessions_rebuild_derived_session_id.clone(),
+            }
         }
         Some(name) => Command::parse_with_args(name, &config.command_args),
         None => Command::Shell,

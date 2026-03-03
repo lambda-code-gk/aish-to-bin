@@ -17,17 +17,17 @@ impl Cursor {
             saved_col: 0,
         }
     }
-    
+
     fn save_position(&mut self) {
         self.saved_row = self.row;
         self.saved_col = self.col;
     }
-    
+
     fn restore_position(&mut self) {
         self.row = self.saved_row;
         self.col = self.saved_col;
     }
-    
+
     fn move_left(&mut self, steps: usize) {
         if steps > self.col {
             self.col = 0;
@@ -35,11 +35,11 @@ impl Cursor {
             self.col -= steps;
         }
     }
-    
+
     fn move_right(&mut self, steps: usize) {
         self.col += steps;
     }
-    
+
     fn move_up(&mut self, steps: usize) {
         if steps > self.row {
             self.row = 0;
@@ -47,11 +47,11 @@ impl Cursor {
             self.row -= steps;
         }
     }
-    
+
     fn move_down(&mut self, steps: usize) {
         self.row += steps;
     }
-    
+
     fn set_position(&mut self, row: usize, col: usize) {
         self.row = row;
         self.col = col;
@@ -71,39 +71,41 @@ impl TerminalBuffer {
             cursor: Cursor::new(),
         }
     }
-    
+
     fn ensure_line(&mut self, row: usize) {
         while self.lines.len() <= row {
             self.lines.push(String::new());
         }
     }
-    
+
     fn get_line(&mut self, row: usize) -> &mut String {
         self.ensure_line(row);
         &mut self.lines[row]
     }
-    
+
     fn insert_char(&mut self, ch: char) {
         let row = self.cursor.row;
         let col = self.cursor.col;
         let line = self.get_line(row);
-        
+
         // カーソル位置が行の文字数を超えている場合は空白で埋める
         let mut char_count = line.chars().count();
         while char_count < col {
             line.push(' ');
             char_count += 1;
         }
-        
+
         // カーソル位置に文字を挿入（既存の文字を上書き）
         if col < char_count {
             // 文字位置をバイト位置に変換
-            let byte_pos = line.char_indices()
+            let byte_pos = line
+                .char_indices()
                 .nth(col)
                 .map(|(pos, _)| pos)
                 .unwrap_or(line.len());
             // 次の文字のバイト位置を取得
-            let next_byte_pos = line.char_indices()
+            let next_byte_pos = line
+                .char_indices()
                 .nth(col + 1)
                 .map(|(pos, _)| pos)
                 .unwrap_or(line.len());
@@ -111,17 +113,17 @@ impl TerminalBuffer {
         } else {
             line.push(ch);
         }
-        
+
         self.cursor.move_right(1);
     }
-    
+
     fn process_ansi_escape(&mut self, data: &[u8], mut i: usize) -> usize {
         if i >= data.len() || data[i] != 0x1B {
             return i;
         }
-        
+
         i += 1; // ESCをスキップ
-        
+
         // OSCシーケンス: \x1B]...\x07 または \x1B]...\x1B\\
         if i < data.len() && data[i] == b']' {
             i += 1;
@@ -140,24 +142,24 @@ impl TerminalBuffer {
             // 終端が見つからない場合は終端までスキップ
             return i;
         }
-        
+
         // CSIシーケンス: \x1B[...]
         if i >= data.len() || data[i] != b'[' {
             return i;
         }
-        
+
         i += 1; // [をスキップ
-        
+
         // プライベートパラメータ（?）をチェック
         let has_private_param = i < data.len() && data[i] == b'?';
         if has_private_param {
             i += 1; // ?をスキップ
         }
-        
+
         // パラメータを読み取る
         let mut params = Vec::new();
         let mut current_param = String::new();
-        
+
         while i < data.len() {
             let ch = data[i] as char;
             if ch.is_ascii_digit() {
@@ -174,19 +176,19 @@ impl TerminalBuffer {
             }
             i += 1;
         }
-        
+
         if !current_param.is_empty() {
             params.push(current_param.parse().unwrap_or(0));
         }
-        
+
         // 終端文字を取得
         if i >= data.len() {
             return i;
         }
-        
+
         let terminator = data[i] as char;
         i += 1;
-        
+
         match terminator {
             'D' => {
                 // カーソル左移動（デフォルト値: 1）
@@ -243,7 +245,8 @@ impl TerminalBuffer {
                         let char_count = line.chars().count();
                         if cursor_col < char_count {
                             // 文字位置をバイト位置に変換
-                            let byte_pos = line.char_indices()
+                            let byte_pos = line
+                                .char_indices()
                                 .nth(cursor_col)
                                 .map(|(pos, _)| pos)
                                 .unwrap_or(line.len());
@@ -257,7 +260,8 @@ impl TerminalBuffer {
                             let char_count = line.chars().count();
                             if cursor_col < char_count {
                                 // 文字位置をバイト位置に変換
-                                let byte_pos = line.char_indices()
+                                let byte_pos = line
+                                    .char_indices()
                                     .nth(cursor_col)
                                     .map(|(pos, _)| pos)
                                     .unwrap_or(line.len());
@@ -291,7 +295,8 @@ impl TerminalBuffer {
                         let char_count = line.chars().count();
                         if cursor_col < char_count {
                             // 文字位置をバイト位置に変換
-                            let byte_pos = line.char_indices()
+                            let byte_pos = line
+                                .char_indices()
                                 .nth(cursor_col)
                                 .map(|(pos, _)| pos)
                                 .unwrap_or(line.len());
@@ -306,7 +311,8 @@ impl TerminalBuffer {
                             let char_count = line.chars().count();
                             if cursor_col < char_count {
                                 // 文字位置をバイト位置に変換
-                                let byte_pos = line.char_indices()
+                                let byte_pos = line
+                                    .char_indices()
                                     .nth(cursor_col)
                                     .map(|(pos, _)| pos)
                                     .unwrap_or(line.len());
@@ -354,10 +360,10 @@ impl TerminalBuffer {
                 // その他のエスケープシーケンスは無視
             }
         }
-        
+
         i
     }
-    
+
     pub fn process_data(&mut self, data: &[u8]) {
         // UTF-8文字列として解析
         let s = match std::str::from_utf8(data) {
@@ -376,7 +382,8 @@ impl TerminalBuffer {
                                 let line = self.get_line(self.cursor.row);
                                 let char_count = line.chars().count();
                                 if col_to_remove < char_count {
-                                    let byte_pos = line.char_indices()
+                                    let byte_pos = line
+                                        .char_indices()
                                         .nth(col_to_remove)
                                         .map(|(pos, _)| pos)
                                         .unwrap_or(line.len());
@@ -409,7 +416,7 @@ impl TerminalBuffer {
                 return;
             }
         };
-        
+
         // 文字列として処理（UTF-8マルチバイト文字を正しく処理）
         let s_bytes = s.as_bytes();
         let mut byte_pos = 0;
@@ -423,12 +430,12 @@ impl TerminalBuffer {
                     continue;
                 }
             }
-            
+
             // 文字を取得
             let remaining = &s[byte_pos..];
             if let Some(ch) = remaining.chars().next() {
                 let ch_len = ch.len_utf8();
-                
+
                 if ch == '\x08' {
                     // バックスペース
                     if self.cursor.col > 0 {
@@ -437,7 +444,8 @@ impl TerminalBuffer {
                             let line = self.get_line(self.cursor.row);
                             let char_count = line.chars().count();
                             if col_to_remove < char_count {
-                                let line_byte_pos = line.char_indices()
+                                let line_byte_pos = line
+                                    .char_indices()
                                     .nth(col_to_remove)
                                     .map(|(pos, _)| pos)
                                     .unwrap_or(line.len());
@@ -468,18 +476,18 @@ impl TerminalBuffer {
                     // 通常の文字
                     self.insert_char(ch);
                 }
-                
+
                 byte_pos += ch_len;
             } else {
                 break;
             }
         }
     }
-    
+
     pub fn output(&self) -> String {
         self.lines.join("\n")
     }
-    
+
     pub fn clear(&mut self) {
         self.lines.clear();
         self.lines.push(String::new());
@@ -506,4 +514,3 @@ mod tests {
         assert_eq!(buffer.output(), "a\tbc");
     }
 }
-

@@ -60,7 +60,10 @@ impl Error {
     /// CLI 境界で使用: 終了コードを返す（BSD exit codes を参考）
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::InvalidArgument(_) | Error::Env(_) | Error::Provider(_) | Error::TaskNotFound(_) => 64,
+            Error::InvalidArgument(_)
+            | Error::Env(_)
+            | Error::Provider(_)
+            | Error::TaskNotFound(_) => 64,
             Error::System(_) => 70,
             Error::Io { .. } | Error::Http(_) | Error::Json(_) => 74,
             Error::WithContext { source, .. } => source.exit_code(),
@@ -162,7 +165,8 @@ mod tests {
 
     #[test]
     fn test_with_context_delegates_exit_code_and_usage() {
-        let e = Error::http("connection refused").with_context("Provider profile: local (base_url: http://localhost:11434/v1)");
+        let e = Error::http("connection refused")
+            .with_context("Provider profile: local (base_url: http://localhost:11434/v1)");
         assert_eq!(e.exit_code(), 74);
         assert!(!e.is_usage());
         let e2 = Error::invalid_argument("bad").with_context("Context");

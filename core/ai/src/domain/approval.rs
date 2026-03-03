@@ -11,11 +11,15 @@ pub struct StubApproval {
 #[cfg(test)]
 impl StubApproval {
     pub fn approved() -> Self {
-        Self { result: Approval::Approved }
+        Self {
+            result: Approval::Approved,
+        }
     }
 
     pub fn denied() -> Self {
-        Self { result: Approval::Denied }
+        Self {
+            result: Approval::Denied,
+        }
     }
 }
 
@@ -33,12 +37,18 @@ mod tests {
     #[test]
     fn test_stub_approval_approved() {
         let stub = StubApproval::approved();
-        assert_eq!(stub.approve_unsafe_shell("rm -rf /").unwrap(), Approval::Approved);
+        assert_eq!(
+            stub.approve_unsafe_shell("rm -rf /").unwrap(),
+            Approval::Approved
+        );
     }
 
     #[test]
     fn test_stub_approval_denied() {
         let stub = StubApproval::denied();
-        assert_eq!(stub.approve_unsafe_shell("rm -rf /").unwrap(), Approval::Denied);
+        assert_eq!(
+            stub.approve_unsafe_shell("rm -rf /").unwrap(),
+            Approval::Denied
+        );
     }
 }

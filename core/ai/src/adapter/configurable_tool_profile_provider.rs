@@ -88,9 +88,7 @@ impl ConfigurableToolProfileProvider {
                 "fs_write" => vec![ToolCapability::FsWrite {
                     paths: vec!["*".to_string()],
                 }],
-                "exec" => vec![ToolCapability::Exec {
-                    allowlist: vec![],
-                }],
+                "exec" => vec![ToolCapability::Exec { allowlist: vec![] }],
                 _ => vec![],
             };
         }

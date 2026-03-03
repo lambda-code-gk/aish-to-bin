@@ -39,7 +39,10 @@ impl ResolveSystemPromptFromHooks for StdResolveSystemPromptFromHooks {
         // 2. ユーザー: $HOME/.aish/hooks/system_prompt
         if let Ok(home) = std::env::var("HOME") {
             if !home.is_empty() {
-                let user_dir = PathBuf::from(&home).join(AISH_DIR).join(HOOKS_SUBDIR).join(SYSTEM_PROMPT_HOOK);
+                let user_dir = PathBuf::from(&home)
+                    .join(AISH_DIR)
+                    .join(HOOKS_SUBDIR)
+                    .join(SYSTEM_PROMPT_HOOK);
                 if let Some(s) = run_hook_dir(self.fs.as_ref(), &user_dir)? {
                     parts.push(s);
                 }
@@ -51,7 +54,10 @@ impl ResolveSystemPromptFromHooks for StdResolveSystemPromptFromHooks {
         // 「プロジェクトフック無し」として解決を継続する。
         if let Ok(current) = self.env.current_dir() {
             if let Some(project_root) = find_project_root(current.as_path())? {
-                let project_dir = project_root.join(AISH_DIR).join(HOOKS_SUBDIR).join(SYSTEM_PROMPT_HOOK);
+                let project_dir = project_root
+                    .join(AISH_DIR)
+                    .join(HOOKS_SUBDIR)
+                    .join(SYSTEM_PROMPT_HOOK);
                 if let Some(s) = run_hook_dir(self.fs.as_ref(), &project_dir)? {
                     parts.push(s);
                 }
@@ -179,10 +185,14 @@ mod tests {
     fn test_resolve_system_prompt_from_hooks_project_hook() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let project_root = tmp.path();
-        let hook_dir = project_root.join(".aish").join("hooks").join("system_prompt");
+        let hook_dir = project_root
+            .join(".aish")
+            .join("hooks")
+            .join("system_prompt");
         fs::create_dir_all(&hook_dir).expect("create hook dir");
         let script = hook_dir.join("01_echo.sh");
-        fs::write(&script, "#!/bin/sh\necho 'You are a helpful assistant.'\n").expect("write script");
+        fs::write(&script, "#!/bin/sh\necho 'You are a helpful assistant.'\n")
+            .expect("write script");
         use std::os::unix::fs::PermissionsExt;
         let mut perms = fs::metadata(&script).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -196,7 +206,8 @@ mod tests {
 
         // 環境変数をモック
         let original_home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        let original_xdg_config = std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| "".to_string());
+        let original_xdg_config =
+            std::env::var("XDG_CONFIG_HOME").unwrap_or_else(|_| "".to_string());
         let original_aish_home = std::env::var("AISH_HOME").unwrap_or_else(|_| "".to_string());
 
         std::env::set_var("HOME", &mock_home);
@@ -210,8 +221,10 @@ mod tests {
         let cwd = std::env::current_dir().expect("cwd");
         std::env::set_current_dir(project_root).expect("set_current_dir");
 
-        let out = resolver.resolve_system_prompt_from_hooks().expect("resolve");
-        
+        let out = resolver
+            .resolve_system_prompt_from_hooks()
+            .expect("resolve");
+
         // 環境変数を元に戻す
         if original_aish_home.is_empty() {
             std::env::remove_var("AISH_HOME");
@@ -224,7 +237,7 @@ mod tests {
             std::env::set_var("XDG_CONFIG_HOME", &original_xdg_config);
         }
         std::env::set_var("HOME", &original_home);
-        
+
         let _ = std::env::set_current_dir(&cwd); // 元のディレクトリに戻す
         assert!(out.is_some());
         assert_eq!(out.unwrap().trim(), "You are a helpful assistant.");

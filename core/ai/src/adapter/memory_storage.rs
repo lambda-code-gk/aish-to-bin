@@ -5,7 +5,7 @@
 
 use crate::domain::{MemoryEntry, MemoryMeta};
 use common::error::Error;
-use common::ports::outbound::{Log, LogLevel, LogRecord, now_iso8601};
+use common::ports::outbound::{now_iso8601, Log, LogLevel, LogRecord};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -43,11 +43,7 @@ fn generate_memory_id() -> String {
 
 /// 1 件保存。dir を初期化し、entries/<id>.json と metadata に追加。
 /// log に Some を渡すとメモリ書き込みをログに記録する。
-pub fn save_entry(
-    dir: &Path,
-    entry: &MemoryEntry,
-    log: Option<&dyn Log>,
-) -> Result<String, Error> {
+pub fn save_entry(dir: &Path, entry: &MemoryEntry, log: Option<&dyn Log>) -> Result<String, Error> {
     init_memory_dir(dir)?;
     let id = if entry.id.is_empty() {
         generate_memory_id()
@@ -81,7 +77,10 @@ pub fn save_entry(
         let mut fields = BTreeMap::new();
         fields.insert("operation".to_string(), serde_json::json!("write"));
         fields.insert("memory_id".to_string(), serde_json::json!(id));
-        fields.insert("dir".to_string(), serde_json::json!(dir.to_string_lossy().to_string()));
+        fields.insert(
+            "dir".to_string(),
+            serde_json::json!(dir.to_string_lossy().to_string()),
+        );
         fields.insert("category".to_string(), serde_json::json!(e.category));
         let _ = logger.log(&LogRecord {
             ts: now_iso8601(),
@@ -131,7 +130,10 @@ pub fn load_metadata(dir: &Path, log: Option<&dyn Log>) -> Result<Vec<MemoryMeta
     if let Some(logger) = log {
         let mut fields = BTreeMap::new();
         fields.insert("operation".to_string(), serde_json::json!("load_metadata"));
-        fields.insert("dir".to_string(), serde_json::json!(dir.to_string_lossy().to_string()));
+        fields.insert(
+            "dir".to_string(),
+            serde_json::json!(dir.to_string_lossy().to_string()),
+        );
         fields.insert("count".to_string(), serde_json::json!(meta.memories.len()));
         let _ = logger.log(&LogRecord {
             ts: now_iso8601(),
@@ -158,8 +160,7 @@ pub fn search_entries(
     log: Option<&dyn Log>,
 ) -> Result<Vec<MemoryEntry>, Error> {
     let query_lower = query.to_lowercase();
-    let mut scored: Vec<(MemoryMeta, std::path::PathBuf, String, u64)> =
-        Vec::new(); // (meta, dir, source, score)
+    let mut scored: Vec<(MemoryMeta, std::path::PathBuf, String, u64)> = Vec::new(); // (meta, dir, source, score)
 
     for (dir, source) in [(project_dir, "project"), (Some(global_dir), "global")] {
         let Some(d) = dir else { continue };
@@ -242,8 +243,8 @@ fn get_entry_by_id_single(dir: &Path, id: &str) -> Result<MemoryEntry, Error> {
     }
     let s = std::fs::read_to_string(&path)
         .map_err(|e| Error::io_msg(format!("read {}: {}", path.display(), e)))?;
-    let e: MemoryEntry =
-        serde_json::from_str(&s).map_err(|err| Error::io_msg(format!("parse {}: {}", path.display(), err)))?;
+    let e: MemoryEntry = serde_json::from_str(&s)
+        .map_err(|err| Error::io_msg(format!("parse {}: {}", path.display(), err)))?;
     Ok(e)
 }
 

@@ -12,8 +12,11 @@ pub trait MemoryRepository: Send + Sync {
     fn resolve(&self) -> Result<(Option<PathBuf>, PathBuf), Error>;
 
     /// メモリ一覧（project + global をマージ、content なし）
-    fn list(&self, project_dir: Option<&std::path::Path>, global_dir: &std::path::Path)
-        -> Result<Vec<MemoryListEntry>, Error>;
+    fn list(
+        &self,
+        project_dir: Option<&std::path::Path>,
+        global_dir: &std::path::Path,
+    ) -> Result<Vec<MemoryListEntry>, Error>;
 
     /// ID で 1 件取得（project 優先、なければ global）
     fn get(

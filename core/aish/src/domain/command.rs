@@ -90,8 +90,16 @@ impl Command {
         if name == "memory" {
             match args.first().map(|s| s.as_str()) {
                 Some("list") => return Command::MemoryList,
-                Some("get") => return Command::MemoryGet { ids: args[1..].to_vec() },
-                Some("remove") => return Command::MemoryRemove { ids: args[1..].to_vec() },
+                Some("get") => {
+                    return Command::MemoryGet {
+                        ids: args[1..].to_vec(),
+                    }
+                }
+                Some("remove") => {
+                    return Command::MemoryRemove {
+                        ids: args[1..].to_vec(),
+                    }
+                }
                 _ => {
                     let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
                     return Command::Unknown(format!("memory {}", sub).trim_end().to_string());
@@ -165,7 +173,11 @@ impl Command {
                         assistant_only,
                     };
                 }
-                Some("get") => return Command::HistoryGet { ids: args[1..].to_vec() },
+                Some("get") => {
+                    return Command::HistoryGet {
+                        ids: args[1..].to_vec(),
+                    }
+                }
                 _ => {
                     let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
                     return Command::Unknown(format!("history {}", sub).trim_end().to_string());
@@ -251,8 +263,13 @@ mod tests {
 
     #[test]
     fn test_parse_with_args_memory_get() {
-        let cmd = Command::parse_with_args("memory", &["get".to_string(), "id1".to_string(), "id2".to_string()]);
-        assert!(matches!(&cmd, Command::MemoryGet { ids } if ids == &["id1".to_string(), "id2".to_string()]));
+        let cmd = Command::parse_with_args(
+            "memory",
+            &["get".to_string(), "id1".to_string(), "id2".to_string()],
+        );
+        assert!(
+            matches!(&cmd, Command::MemoryGet { ids } if ids == &["id1".to_string(), "id2".to_string()])
+        );
     }
 
     #[test]
@@ -305,8 +322,13 @@ mod tests {
 
     #[test]
     fn test_parse_with_args_history_get() {
-        let cmd = Command::parse_with_args("history", &["get".to_string(), "001".to_string(), "002".to_string()]);
-        assert!(matches!(&cmd, Command::HistoryGet { ids } if ids == &["001".to_string(), "002".to_string()]));
+        let cmd = Command::parse_with_args(
+            "history",
+            &["get".to_string(), "001".to_string(), "002".to_string()],
+        );
+        assert!(
+            matches!(&cmd, Command::HistoryGet { ids } if ids == &["001".to_string(), "002".to_string()])
+        );
     }
 
     #[test]

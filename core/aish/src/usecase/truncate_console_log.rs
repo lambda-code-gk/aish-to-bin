@@ -1,7 +1,7 @@
 //! TruncateConsoleLog コマンドのユースケース
 
-use common::ports::outbound::FileSystem;
 use common::error::Error;
+use common::ports::outbound::FileSystem;
 use common::ports::outbound::{PathResolver, PathResolverInput, Signal};
 use common::session::Session;
 use std::path::Path;
@@ -35,7 +35,9 @@ impl TruncateConsoleLogUseCase {
 
     fn resolve_session(&self, path_input: &PathResolverInput) -> Result<Session, Error> {
         let home_dir = self.path_resolver.resolve_home_dir(path_input)?;
-        let session_path = self.path_resolver.resolve_session_dir(path_input, &home_dir)?;
+        let session_path = self
+            .path_resolver
+            .resolve_session_dir(path_input, &home_dir)?;
         Session::new(&session_path, &home_dir)
     }
 

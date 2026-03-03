@@ -4,7 +4,7 @@
 
 - コード編集・追加・修正の**前**にこのAGENTS.mdを読む
 - **作業前**: `./tests/architecture.sh && ./tests/units.sh && ./tests/integration.sh` で全テスト成功を確認
-- **作業後**: `./tests/architecture.sh && ./tests/units.sh && ./tests/integration.sh` で既存機能が壊れていないことを確認
+- **作業後**: `cargo fmt && ./tests/architecture.sh && ./tests/units.sh && ./tests/integration.sh` で既存機能が壊れていないことを確認
 - **エラー修正時**: 修正後、同様の失敗を繰り返さないように AGENTS.md に注意・ルールを追記する
 
 ---

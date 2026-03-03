@@ -31,14 +31,16 @@ impl LlmProvider for EchoProvider {
         // クエリを表示
         println!("[Echo Provider] Request JSON:");
         println!("{}", request_json);
-        
+
         // ダミーのレスポンスを返す（実際のAPI呼び出しは行わない）
         Ok(r#"{"echo": "This is a dummy response from echo provider"}"#.to_string())
     }
 
     fn parse_response_text(&self, _response_json: &str) -> Result<Option<String>, Error> {
         // Echoプロバイダは常に固定のメッセージを返す
-        Ok(Some("[Echo Provider] Query received (no actual LLM call made)".to_string()))
+        Ok(Some(
+            "[Echo Provider] Query received (no actual LLM call made)".to_string(),
+        ))
     }
 
     fn check_tool_calls(&self, _response_json: &str) -> Result<bool, Error> {
@@ -58,26 +60,29 @@ impl LlmProvider for EchoProvider {
         if !history.is_empty() {
             println!("[Echo Provider] History: {} messages", history.len());
         }
-        
+
         // シンプルなペイロードを生成
         let mut payload = json!({
             "query": query,
         });
-        
+
         if let Some(system) = system_instruction {
             payload["system_instruction"] = json!(system);
         }
-        
+
         if !history.is_empty() {
-            let history_json: Vec<Value> = history.iter()
-                .map(|msg| json!({
-                    "role": msg.role,
-                    "content": msg.content
-                }))
+            let history_json: Vec<Value> = history
+                .iter()
+                .map(|msg| {
+                    json!({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
+                })
                 .collect();
             payload["history"] = json!(history_json);
         }
-        
+
         Ok(payload)
     }
 
@@ -87,14 +92,14 @@ impl LlmProvider for EchoProvider {
         callback: Box<dyn Fn(&str) -> Result<(), Error>>,
     ) -> Result<(), Error> {
         let text = "[Echo Provider] This is a simulated streaming response from the echo provider. It displays text chunk by chunk to demonstrate the streaming capability.";
-        
+
         for word in text.split_whitespace() {
             callback(word)?;
             callback(" ")?;
             io::stdout().flush().ok();
             thread::sleep(Duration::from_millis(50));
         }
-        
+
         Ok(())
     }
 
@@ -113,7 +118,10 @@ impl LlmProvider for EchoProvider {
             }
         };
         let query = payload["query"].as_str().unwrap_or("").trim();
-        let history = payload["history"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        let history = payload["history"]
+            .as_array()
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
 
         // ストリーム入口でもシステムプロンプトを表示
         if let Some(s) = payload.get("system_instruction").and_then(|v| v.as_str()) {
@@ -169,7 +177,10 @@ impl LlmProvider for EchoProvider {
             let msg = format!(
                 "[Echo Provider] Tool result was received. Proceeding with: {}",
                 if result_preview.len() > 60 {
-                    format!("{}...", &result_preview[..result_preview.floor_char_boundary(60)])
+                    format!(
+                        "{}...",
+                        &result_preview[..result_preview.floor_char_boundary(60)]
+                    )
                 } else {
                     result_preview.to_string()
                 }
@@ -198,14 +209,20 @@ impl LlmProvider for EchoProvider {
             let is_call = query.eq_ignore_ascii_case(&prefix)
                 || query.starts_with(&prefix_sp)
                 || (query.len() >= prefix.len()
-                    && query.get(..prefix.len()).map(|s| s.eq_ignore_ascii_case(&prefix)) == Some(true));
+                    && query
+                        .get(..prefix.len())
+                        .map(|s| s.eq_ignore_ascii_case(&prefix))
+                        == Some(true));
             if is_call {
                 let args_str = query
                     .strip_prefix(&prefix)
                     .or_else(|| query.strip_prefix(&prefix_sp))
                     .or_else(|| {
                         if query.len() >= prefix.len()
-                            && query.get(..prefix.len()).map(|s| s.eq_ignore_ascii_case(&prefix)) == Some(true)
+                            && query
+                                .get(..prefix.len())
+                                .map(|s| s.eq_ignore_ascii_case(&prefix))
+                                == Some(true)
                         {
                             Some(&query[prefix.len()..])
                         } else {
@@ -257,7 +274,10 @@ impl EchoProvider {
         callback: &mut dyn FnMut(LlmEvent) -> Result<(), Error>,
         history_count: usize,
     ) -> Result<(), Error> {
-        let header = format!("[Echo Provider] 採用された履歴件数: {} 件。\n\n", history_count);
+        let header = format!(
+            "[Echo Provider] 採用された履歴件数: {} 件。\n\n",
+            history_count
+        );
         callback(LlmEvent::TextDelta(header))?;
         io::stdout().flush().ok();
 
@@ -288,14 +308,18 @@ mod tests {
     #[test]
     fn test_echo_provider_make_request_payload() {
         let provider = EchoProvider::new();
-        let payload = provider.make_request_payload("Hello", None, &[], None).unwrap();
+        let payload = provider
+            .make_request_payload("Hello", None, &[], None)
+            .unwrap();
         assert_eq!(payload["query"], "Hello");
     }
 
     #[test]
     fn test_echo_provider_make_request_payload_with_system() {
         let provider = EchoProvider::new();
-        let payload = provider.make_request_payload("Hello", Some("You are helpful"), &[], None).unwrap();
+        let payload = provider
+            .make_request_payload("Hello", Some("You are helpful"), &[], None)
+            .unwrap();
         assert_eq!(payload["query"], "Hello");
         assert_eq!(payload["system_instruction"], "You are helpful");
     }
@@ -303,11 +327,10 @@ mod tests {
     #[test]
     fn test_echo_provider_make_request_payload_with_history() {
         let provider = EchoProvider::new();
-        let history = vec![
-            Message::user("Hi"),
-            Message::assistant("Hello!"),
-        ];
-        let payload = provider.make_request_payload("How are you?", None, &history, None).unwrap();
+        let history = vec![Message::user("Hi"), Message::assistant("Hello!")];
+        let payload = provider
+            .make_request_payload("How are you?", None, &history, None)
+            .unwrap();
         assert_eq!(payload["query"], "How are you?");
         assert!(payload["history"].is_array());
         assert_eq!(payload["history"].as_array().unwrap().len(), 2);
@@ -328,4 +351,3 @@ mod tests {
         assert_eq!(result, false);
     }
 }
-

@@ -131,7 +131,10 @@ mod tests {
             max_messages: 10,
             max_chars: 3,
         };
-        let messages = vec![LlmMessage::user("short"), LlmMessage::user("very-long-last")];
+        let messages = vec![
+            LlmMessage::user("short"),
+            LlmMessage::user("very-long-last"),
+        ];
         let got = reducer.reduce(&messages, budget);
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].content, "very-long-last");
@@ -144,10 +147,7 @@ mod tests {
             max_messages: 1,
             max_chars: 1,
         };
-        let messages = vec![
-            LlmMessage::user("hello"),
-            LlmMessage::user("world"),
-        ];
+        let messages = vec![LlmMessage::user("hello"), LlmMessage::user("world")];
         let got = reducer.reduce(&messages, budget);
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].content, "hello");

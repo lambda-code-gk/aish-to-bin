@@ -118,7 +118,11 @@ fn find_task_dir<F: FileSystem + ?Sized>(fs: &F) -> Option<PathBuf> {
     None
 }
 
-fn resolve_task_path<F: FileSystem + ?Sized>(fs: &F, task_dir: &Path, task_name: &str) -> Option<PathBuf> {
+fn resolve_task_path<F: FileSystem + ?Sized>(
+    fs: &F,
+    task_dir: &Path,
+    task_name: &str,
+) -> Option<PathBuf> {
     let dir_execute = task_dir.join(task_name).join("execute");
     if fs.exists(&dir_execute) {
         if let Ok(m) = fs.metadata(&dir_execute) {
@@ -228,7 +232,12 @@ mod tests {
         let script_path = config_dir.join("hello.sh");
         let mut file = File::create(&script_path).unwrap();
         writeln!(file, "#!/usr/bin/env bash").unwrap();
-        writeln!(file, "echo \"script executed with args: $@\" >> \"{}/output.txt\"", tmp.display()).unwrap();
+        writeln!(
+            file,
+            "echo \"script executed with args: $@\" >> \"{}/output.txt\"",
+            tmp.display()
+        )
+        .unwrap();
 
         #[cfg(unix)]
         {
@@ -258,7 +267,12 @@ mod tests {
         let execute_path = task_dir.join("execute");
         let mut file = File::create(&execute_path).unwrap();
         writeln!(file, "#!/usr/bin/env bash").unwrap();
-        writeln!(file, "echo \"execute called\" >> \"{}/exec.txt\"", tmp.display()).unwrap();
+        writeln!(
+            file,
+            "echo \"execute called\" >> \"{}/exec.txt\"",
+            tmp.display()
+        )
+        .unwrap();
 
         #[cfg(unix)]
         {
@@ -289,7 +303,8 @@ mod tests {
         env::remove_var("XDG_CONFIG_HOME");
 
         let fs = StdFileSystem;
-        let dir = find_task_dir(&fs).expect("task dir should be found when AISH_HOME is config root");
+        let dir =
+            find_task_dir(&fs).expect("task dir should be found when AISH_HOME is config root");
         assert_eq!(dir, task_d);
         let resolved = resolve_task_path(&fs, &dir, "commit_staged").expect("task should resolve");
         assert_eq!(resolved, script);
@@ -375,5 +390,3 @@ mod tests {
         }
     }
 }
-
-

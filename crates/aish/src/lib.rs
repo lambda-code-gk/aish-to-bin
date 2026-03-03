@@ -41,30 +41,38 @@ pub fn run() -> Result<i32, common::error::Error> {
                 .long("verbose")
                 .action(ArgAction::SetTrue),
         )
-        .arg(
-            clap::Arg::new("generate")
-                .long("generate")
-                .num_args(1),
-        )
+        .arg(clap::Arg::new("generate").long("generate").num_args(1))
         .subcommand_required(false)
         .subcommand(
             clap::Command::new("ai")
                 .about("Run ai (LLM query, task, policy-explain, etc.)")
                 .trailing_var_arg(true)
-                .arg(clap::Arg::new("ai_rest").num_args(0..).allow_hyphen_values(true)),
+                .arg(
+                    clap::Arg::new("ai_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
         )
         .subcommand(clap::Command::new("shell").about("Start the interactive shell (default)"))
         .subcommand(
             clap::Command::new("plugins")
                 .about("External plugins (aish plugins list)")
                 .trailing_var_arg(true)
-                .arg(clap::Arg::new("plugins_rest").num_args(0..).allow_hyphen_values(true)),
+                .arg(
+                    clap::Arg::new("plugins_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
         )
         .subcommand(
             clap::Command::new("tools")
                 .about("External tools (aish tools list)")
                 .trailing_var_arg(true)
-                .arg(clap::Arg::new("tools_rest").num_args(0..).allow_hyphen_values(true)),
+                .arg(
+                    clap::Arg::new("tools_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
         )
         .subcommand(clap::Command::new("sessions").about("List sessions or rebuild-derived"))
         .subcommand(clap::Command::new("policy").about("Policy explain (ai --policy-explain)"))

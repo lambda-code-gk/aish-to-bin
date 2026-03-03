@@ -8,10 +8,7 @@ use common::msg::Msg;
 use std::sync::Arc;
 
 fn make_builder() -> StdContextMessageBuilder {
-    StdContextMessageBuilder::new(
-        Arc::new(PassThroughReducer),
-        ContextBudget::legacy(),
-    )
+    StdContextMessageBuilder::new(Arc::new(PassThroughReducer), ContextBudget::legacy())
 }
 
 #[test]

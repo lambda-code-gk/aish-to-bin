@@ -8,9 +8,8 @@ use crate::adapter::{
     StdPolicyEngine, ToolModeRule,
 };
 use crate::domain::{
-    PolicyChain, SensitiveAction, ToolMode, ToolProfile,
-    BudgetReport, Budget, BudgetStats, ContextAttachment, ContextPack, PolicyVerdict,
-    SensitiveFilterOutcome,
+    Budget, BudgetReport, BudgetStats, ContextAttachment, ContextPack, PolicyChain, PolicyVerdict,
+    SensitiveAction, SensitiveFilterOutcome, ToolMode, ToolProfile,
 };
 use crate::ports::outbound::{PolicyEngine, SensitiveTextFilter, ToolProfileProvider};
 use common::error::Error;
@@ -90,10 +89,7 @@ fn make_egress_engine(
         Arc::new(EgressBudgetHardCapRule {
             hard_cap_chars: usize::MAX,
         }),
-        Arc::new(EgressSensitiveRule {
-            filter,
-            action,
-        }),
+        Arc::new(EgressSensitiveRule { filter, action }),
     ];
     let run_shell_profile = ToolProfile {
         tool_name: "run_shell".to_string(),
@@ -213,7 +209,10 @@ fn test_mask_filter_on_attachment() {
             assert_eq!(decision.reason, "sensitive_masked");
             let att = &value.attachments[0];
             assert_eq!(att.content.as_deref(), Some("contains *** data"));
-            assert_ne!(att.hash64, "0000000000000000", "hash should be recalculated");
+            assert_ne!(
+                att.hash64, "0000000000000000",
+                "hash should be recalculated"
+            );
         }
         _ => panic!("expected Allow with masked attachment"),
     }

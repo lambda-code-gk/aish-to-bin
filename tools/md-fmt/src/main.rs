@@ -2,11 +2,11 @@
 //! ストリーミング入力（例: ai コマンドの出力）を随時処理し、できるだけ随時出力する。
 
 use std::io::{self, BufRead, Write};
-use unicode_width::UnicodeWidthStr;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use unicode_width::UnicodeWidthStr;
 
 /// ANSI エスケープ（決め打ち）
 const RESET: &str = "\x1b[0m";
@@ -96,7 +96,9 @@ fn fence_start(line: &str) -> Option<&str> {
     let s = line.trim_start();
     if s.starts_with("```") {
         let rest = s[3..].trim_start();
-        let len = 3 + rest.find(|c: char| c.is_whitespace() || c == '\n').unwrap_or(rest.len());
+        let len = 3 + rest
+            .find(|c: char| c.is_whitespace() || c == '\n')
+            .unwrap_or(rest.len());
         Some(&s[..len.min(s.len())])
     } else {
         None
@@ -104,10 +106,7 @@ fn fence_start(line: &str) -> Option<&str> {
 }
 
 fn fence_len(line: &str) -> usize {
-    line.trim_start()
-        .chars()
-        .take_while(|&c| c == '`')
-        .count()
+    line.trim_start().chars().take_while(|&c| c == '`').count()
 }
 
 fn is_fence(line: &str, _fence: &str) -> bool {
@@ -122,15 +121,15 @@ fn extract_lang(fence_line: &str) -> Option<&str> {
     if rest.is_empty() {
         return None;
     }
-    let lang = rest
-        .split_whitespace()
-        .next()
-        .filter(|t| !t.is_empty())?;
+    let lang = rest.split_whitespace().next().filter(|t| !t.is_empty())?;
     Some(lang)
 }
 
 /// 言語トークンから syntect の Syntax を解決する。```bash 等でシェル用が取れるようフォールバックする
-fn resolve_syntax<'a>(ps: &'a SyntaxSet, lang: &str) -> Option<&'a syntect::parsing::SyntaxReference> {
+fn resolve_syntax<'a>(
+    ps: &'a SyntaxSet,
+    lang: &str,
+) -> Option<&'a syntect::parsing::SyntaxReference> {
     ps.find_syntax_by_token(lang).or_else(|| {
         // シェル系は拡張子が "sh" のことが多い
         let lower = lang.to_lowercase();
@@ -300,7 +299,12 @@ fn output_table(lines: &[String], w: &mut impl Write) -> io::Result<()> {
 
         if is_data {
             let row_num = i - data_start + 1;
-            write!(w, " {DIM}{:>width$}. {RESET}", row_num, width = row_num_width)?;
+            write!(
+                w,
+                " {DIM}{:>width$}. {RESET}",
+                row_num,
+                width = row_num_width
+            )?;
         } else if row_num_width > 0 {
             write!(w, "{}", " ".repeat(row_num_width + 3))?;
         }
@@ -309,7 +313,11 @@ fn output_table(lines: &[String], w: &mut impl Write) -> io::Result<()> {
         if is_sep {
             for j in 0..ncols {
                 let col_w = widths.get(j).copied().unwrap_or(0).max(1);
-                write!(w, " {TABLE_FRAME}{}{RESET} {TABLE_FRAME}|{RESET}", "-".repeat(col_w))?;
+                write!(
+                    w,
+                    " {TABLE_FRAME}{}{RESET} {TABLE_FRAME}|{RESET}",
+                    "-".repeat(col_w)
+                )?;
             }
         } else if is_header {
             for j in 0..ncols {
@@ -317,7 +325,12 @@ fn output_table(lines: &[String], w: &mut impl Write) -> io::Result<()> {
                 let col_w = widths.get(j).copied().unwrap_or(0);
                 let len = cell_width(cell);
                 let pad_len = col_w.saturating_sub(len);
-                write!(w, " {YELLOW}{BOLD}{}{RESET}{} {TABLE_FRAME}|{RESET}", cell, " ".repeat(pad_len))?;
+                write!(
+                    w,
+                    " {YELLOW}{BOLD}{}{RESET}{} {TABLE_FRAME}|{RESET}",
+                    cell,
+                    " ".repeat(pad_len)
+                )?;
             }
         } else {
             for j in 0..ncols {
@@ -392,7 +405,8 @@ fn format_inline(s: &str, w: &mut impl Write) -> io::Result<()> {
         if i + 2 <= bytes.len() && &bytes[i..i + 2] == b"**" {
             i += 2;
             if let Some(end) = find_subslice(bytes, i, b"**") {
-                let _ = std::str::from_utf8(&bytes[i..end]).map(|t| write!(w, "{BOLD}{}{RESET}", t));
+                let _ =
+                    std::str::from_utf8(&bytes[i..end]).map(|t| write!(w, "{BOLD}{}{RESET}", t));
                 i = end + 2;
                 continue;
             }
@@ -403,7 +417,8 @@ fn format_inline(s: &str, w: &mut impl Write) -> io::Result<()> {
         if bytes[i] == b'`' {
             i += 1;
             if let Some(end) = find_byte(bytes, i, b'`') {
-                let _ = std::str::from_utf8(&bytes[i..end]).map(|t| write!(w, "{CYAN}{}{RESET}", t));
+                let _ =
+                    std::str::from_utf8(&bytes[i..end]).map(|t| write!(w, "{CYAN}{}{RESET}", t));
                 i = end + 1;
                 continue;
             }
@@ -430,5 +445,8 @@ fn find_subslice(haystack: &[u8], start: usize, needle: &[u8]) -> Option<usize> 
 }
 
 fn find_byte(haystack: &[u8], start: usize, b: u8) -> Option<usize> {
-    haystack[start..].iter().position(|&x| x == b).map(|p| start + p)
+    haystack[start..]
+        .iter()
+        .position(|&x| x == b)
+        .map(|p| start + p)
 }

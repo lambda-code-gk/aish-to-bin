@@ -5,10 +5,17 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SensitiveFilterOutcome {
     Clean,
-    Masked { masked: String, verbose: String },
+    Masked {
+        masked: String,
+        verbose: String,
+    },
     /// Allow 時にヒットしたが置換しない（decisions に warn を残す）
-    Hit { verbose: String },
-    Deny { verbose: String },
+    Hit {
+        verbose: String,
+    },
+    Deny {
+        verbose: String,
+    },
 }
 
 /// addons 送信前の leakscan 挙動

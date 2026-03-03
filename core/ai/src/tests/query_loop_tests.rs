@@ -106,7 +106,10 @@ impl PolicyEngine for ShellRequireApprovalPolicyEngine {
         _non_interactive: bool,
     ) -> Result<PolicyVerdict<ToolContext>, Error> {
         if tool_name == "run_shell" {
-            let command = tool_args.get("command").and_then(Value::as_str).unwrap_or("");
+            let command = tool_args
+                .get("command")
+                .and_then(Value::as_str)
+                .unwrap_or("");
             Ok(PolicyVerdict::RequireApproval {
                 value: tool_ctx.clone().with_allow_unsafe(true),
                 decision: PolicyDecision {
@@ -167,11 +170,7 @@ fn test_msgs_to_provider_simple() {
 
 #[test]
 fn test_msgs_to_provider_with_history() {
-    let msgs = vec![
-        Msg::user("Hi"),
-        Msg::assistant("Hello!"),
-        Msg::user("Bye"),
-    ];
+    let msgs = vec![Msg::user("Hi"), Msg::assistant("Hello!"), Msg::user("Bye")];
     let (_sys, query, history) = msgs_to_provider(&msgs);
     assert_eq!(query, "Bye");
     assert_eq!(history.len(), 2);
@@ -201,11 +200,15 @@ fn test_msgs_to_provider_with_tool_call_and_result() {
     assert_eq!(history[1].role, "assistant");
     assert!(history[1].tool_calls.is_some());
     assert_eq!(history[1].tool_calls.as_ref().unwrap().len(), 1);
-    assert_eq!(history[1].tool_calls.as_ref().unwrap()[0].thought_signature.as_deref(), Some("sig123"));
+    assert_eq!(
+        history[1].tool_calls.as_ref().unwrap()[0]
+            .thought_signature
+            .as_deref(),
+        Some("sig123")
+    );
     assert_eq!(history[2].role, "tool");
     assert!(history[2].tool_call_id.as_deref() == Some("c1"));
 }
 
 // StubLlm + QueryLoop の単体テスト以降は、もとの AgentLoop テストに準拠しつつ
 // 型名のみ QueryLoop に変更して追加していく前提。
-

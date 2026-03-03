@@ -73,7 +73,9 @@ mod tests {
             name: "run_shell".to_string(),
             thought_signature: Some("sig123".to_string()),
         };
-        assert!(matches!(ev, LlmEvent::ToolCallBegin { call_id, name, thought_signature } if call_id == "call_1" && name == "run_shell" && thought_signature == Some("sig123".to_string())));
+        assert!(
+            matches!(ev, LlmEvent::ToolCallBegin { call_id, name, thought_signature } if call_id == "call_1" && name == "run_shell" && thought_signature == Some("sig123".to_string()))
+        );
     }
 
     #[test]
@@ -81,6 +83,11 @@ mod tests {
         let ev = LlmEvent::Completed {
             finish: FinishReason::Stop,
         };
-        assert!(matches!(ev, LlmEvent::Completed { finish: FinishReason::Stop }));
+        assert!(matches!(
+            ev,
+            LlmEvent::Completed {
+                finish: FinishReason::Stop
+            }
+        ));
     }
 }

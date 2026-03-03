@@ -104,7 +104,10 @@ fn test_run_app_with_message() {
             ..Default::default()
         };
         let result = run_app(config);
-        assert!(result.is_ok(), "echo profile should succeed without API key");
+        assert!(
+            result.is_ok(),
+            "echo profile should succeed without API key"
+        );
     });
 }
 
@@ -119,7 +122,10 @@ fn test_run_app_with_task_and_message() {
             ..Default::default()
         };
         let result = run_app(config);
-        assert!(result.is_ok(), "echo profile should succeed without API key");
+        assert!(
+            result.is_ok(),
+            "echo profile should succeed without API key"
+        );
     });
 }
 
@@ -173,6 +179,9 @@ fn test_run_app_list_tools_echo() {
         ..Default::default()
     };
     let result = run_app(config);
-    assert!(result.is_ok(), "list-tools with profile echo should succeed");
+    assert!(
+        result.is_ok(),
+        "list-tools with profile echo should succeed"
+    );
     assert_eq!(result.unwrap(), 0);
 }

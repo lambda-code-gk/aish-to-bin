@@ -17,14 +17,14 @@ impl<P: LlmProvider> LlmDriver<P> {
     pub fn new(provider: P) -> Self {
         Self { provider }
     }
-    
+
     /// LLMにクエリを送信してレスポンスを取得
-    /// 
+    ///
     /// # Arguments
     /// * `query` - ユーザークエリ
     /// * `system_instruction` - システム指示（オプション）
     /// * `history` - 会話履歴（オプション）
-    /// 
+    ///
     /// # Returns
     /// * `Ok(String)` - LLMからの応答テキスト
     /// * `Err(Error)` - エラーメッセージと終了コード
@@ -36,30 +36,33 @@ impl<P: LlmProvider> LlmDriver<P> {
     ) -> Result<String, Error> {
         // リクエストペイロードを生成（ツールなし）
         let payload =
-            self.provider.make_request_payload(query, system_instruction, history, None)?;
-        
+            self.provider
+                .make_request_payload(query, system_instruction, history, None)?;
+
         // JSON文字列に変換
         let request_json = serde_json::to_string(&payload)
             .map_err(|e| Error::json(format!("Failed to serialize request: {}", e)))?;
-        
+
         // HTTPリクエストを実行
         let response_json = self.provider.make_http_request(&request_json)?;
-        
+
         // レスポンスからテキストを抽出
-        let text = self.provider.parse_response_text(&response_json)?
+        let text = self
+            .provider
+            .parse_response_text(&response_json)?
             .ok_or_else(|| Error::json("No text in response"))?;
-        
+
         Ok(text)
     }
 
     /// LLMにクエリを送信してレスポンスをストリーミング表示
-    /// 
+    ///
     /// # Arguments
     /// * `query` - ユーザークエリ
     /// * `system_instruction` - システム指示（オプション）
     /// * `history` - 会話履歴（オプション）
     /// * `callback` - テキストチャンクを受け取るコールバック関数
-    /// 
+    ///
     /// # Returns
     /// * `Ok(())` - 成功
     /// * `Err(Error)` - エラーメッセージと終了コード
@@ -72,14 +75,16 @@ impl<P: LlmProvider> LlmDriver<P> {
     ) -> Result<(), Error> {
         // リクエストペイロードを生成（ツールなし）
         let payload =
-            self.provider.make_request_payload(query, system_instruction, history, None)?;
-        
+            self.provider
+                .make_request_payload(query, system_instruction, history, None)?;
+
         // JSON文字列に変換
         let request_json = serde_json::to_string(&payload)
             .map_err(|e| Error::json(format!("Failed to serialize request: {}", e)))?;
-        
+
         // ストリーミングHTTPリクエストを実行
-        self.provider.make_http_streaming_request(&request_json, callback)
+        self.provider
+            .make_http_streaming_request(&request_json, callback)
     }
 
     /// LLMにクエリを送信し、ストリームを LlmEvent 列に正規化してコールバックに渡す
@@ -92,12 +97,13 @@ impl<P: LlmProvider> LlmDriver<P> {
         callback: &mut dyn FnMut(LlmEvent) -> Result<(), Error>,
     ) -> Result<(), Error> {
         let payload =
-            self.provider.make_request_payload(query, system_instruction, history, tools)?;
+            self.provider
+                .make_request_payload(query, system_instruction, history, tools)?;
         let request_json = serde_json::to_string(&payload)
             .map_err(|e| Error::json(format!("Failed to serialize request: {}", e)))?;
         self.provider.stream_events(&request_json, tools, callback)
     }
-    
+
     /// プロバイダを取得
     pub fn provider(&self) -> &P {
         &self.provider
@@ -205,10 +211,7 @@ mod tests {
     fn test_llm_driver_query_with_history() {
         let provider = MockProvider;
         let driver = LlmDriver::new(provider);
-        let history = vec![
-            Message::user("Hi"),
-            Message::assistant("Hello!"),
-        ];
+        let history = vec![Message::user("Hi"), Message::assistant("Hello!")];
         let result = driver.query("test", None, &history);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Hello, world!");
@@ -218,10 +221,7 @@ mod tests {
     fn test_llm_driver_query_with_system_and_history() {
         let provider = MockProvider;
         let driver = LlmDriver::new(provider);
-        let history = vec![
-            Message::user("Hi"),
-            Message::assistant("Hello!"),
-        ];
+        let history = vec![Message::user("Hi"), Message::assistant("Hello!")];
         let result = driver.query("test", Some("You are helpful"), &history);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Hello, world!");
@@ -406,12 +406,8 @@ mod tests {
         use crate::llm::echo::EchoProvider;
         let provider = EchoProvider::new();
         let driver = LlmDriver::new(provider);
-        let history = vec![
-            Message::user("Hi"),
-            Message::assistant("Hello!"),
-        ];
+        let history = vec![Message::user("Hi"), Message::assistant("Hello!")];
         let result = driver.query("How are you?", None, &history);
         assert!(result.is_ok());
     }
 }
-

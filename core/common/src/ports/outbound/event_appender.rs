@@ -15,4 +15,3 @@ pub trait EventAppender: Send + Sync {
         envelope: EventEnvelopeWithoutSeq,
     ) -> Result<EventEnvelope, Error>;
 }
-

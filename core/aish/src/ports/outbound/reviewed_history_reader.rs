@@ -16,5 +16,9 @@ pub trait ReviewedHistoryReader: Send + Sync {
     ) -> Result<Vec<HistoryListEntry>, Error>;
 
     /// 指定 id の内容を取得。存在しない id はスキップ（エラーにしない）。
-    fn get_entries(&self, session_dir: &Path, ids: &[String]) -> Result<Vec<HistoryGetEntry>, Error>;
+    fn get_entries(
+        &self,
+        session_dir: &Path,
+        ids: &[String],
+    ) -> Result<Vec<HistoryGetEntry>, Error>;
 }

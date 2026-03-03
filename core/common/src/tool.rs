@@ -154,8 +154,7 @@ impl ToolRegistry {
     }
 
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
-        self.tools
-            .insert(tool.name().to_string(), tool);
+        self.tools.insert(tool.name().to_string(), tool);
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
@@ -176,12 +175,7 @@ impl ToolRegistry {
             .collect()
     }
 
-    pub fn call(
-        &self,
-        name: &str,
-        args: Value,
-        ctx: &ToolContext,
-    ) -> Result<Value, ToolError> {
+    pub fn call(&self, name: &str, args: Value, ctx: &ToolContext) -> Result<Value, ToolError> {
         let tool = self
             .tools
             .get(name)

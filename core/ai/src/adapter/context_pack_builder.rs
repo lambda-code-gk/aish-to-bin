@@ -25,7 +25,9 @@ fn approx_char_count_llm(m: &LlmMessage) -> usize {
     if let Some(ref tcs) = m.tool_calls {
         for tc in tcs {
             n += tc.name.len();
-            n += serde_json::to_string(&tc.args).map(|s| s.len()).unwrap_or(0);
+            n += serde_json::to_string(&tc.args)
+                .map(|s| s.len())
+                .unwrap_or(0);
         }
     }
     if let Some(ref s) = m.tool_call_id {
@@ -168,7 +170,9 @@ fn msg_char_len(msg: &Msg) -> usize {
     match msg {
         Msg::System(s) | Msg::User(s) | Msg::Assistant(s) => s.len(),
         Msg::ToolCall { args, .. } => serde_json::to_string(args).map(|s| s.len()).unwrap_or(0),
-        Msg::ToolResult { result, .. } => serde_json::to_string(result).map(|s| s.len()).unwrap_or(0),
+        Msg::ToolResult { result, .. } => {
+            serde_json::to_string(result).map(|s| s.len()).unwrap_or(0)
+        }
     }
 }
 
@@ -257,15 +261,25 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
         let input_chars = count_chars_llm(&all_messages);
 
         let history_budget = ContextBudget {
-            max_messages: self.budget.max_messages.saturating_sub(self.addons_budget.max_messages),
-            max_chars: self.budget.max_chars.saturating_sub(self.addons_budget.max_chars),
+            max_messages: self
+                .budget
+                .max_messages
+                .saturating_sub(self.addons_budget.max_messages),
+            max_chars: self
+                .budget
+                .max_chars
+                .saturating_sub(self.addons_budget.max_chars),
         };
         let reduced = self.reducer.reduce(&all_messages, history_budget);
 
         let output_count = reduced.len();
         let output_chars = count_chars_llm(&reduced);
 
-        let history_action = if output_count == input_count { "keep" } else { "truncate" };
+        let history_action = if output_count == input_count {
+            "keep"
+        } else {
+            "truncate"
+        };
         decisions.push(BudgetDecision {
             stage: "history.reduce".to_string(),
             action: history_action.to_string(),

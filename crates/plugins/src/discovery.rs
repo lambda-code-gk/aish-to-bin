@@ -56,14 +56,20 @@ fn xdg_config_plugins_dir() -> Option<PathBuf> {
     if home.trim().is_empty() {
         return None;
     }
-    Some(PathBuf::from(home).join(".config").join("aish").join("plugins"))
+    Some(
+        PathBuf::from(home)
+            .join(".config")
+            .join("aish")
+            .join("plugins"),
+    )
 }
 
 fn read_toml_file(path: &Path) -> Result<PluginToml, Error> {
     let s = std::fs::read_to_string(path)
         .map_err(|e| Error::io_msg(format!("read {}: {}", path.display(), e)))?;
-    toml::from_str::<PluginToml>(&s)
-        .map_err(|e| Error::invalid_argument(format!("invalid plugin.toml {}: {}", path.display(), e)))
+    toml::from_str::<PluginToml>(&s).map_err(|e| {
+        Error::invalid_argument(format!("invalid plugin.toml {}: {}", path.display(), e))
+    })
 }
 
 fn read_legacy_yaml_manifest(path: &Path) -> Result<PluginToml, Error> {
@@ -150,7 +156,10 @@ fn collect_from_dir(dir: &Path) -> Vec<PathBuf> {
                 out.push(p);
             } else if p.extension().and_then(|s| s.to_str()) == Some("toml") {
                 out.push(p);
-            } else if matches!(p.extension().and_then(|s| s.to_str()), Some("yaml") | Some("yml")) {
+            } else if matches!(
+                p.extension().and_then(|s| s.to_str()),
+                Some("yaml") | Some("yml")
+            ) {
                 // legacy YAML (plugins.d 相当も同ディレクトリに置かれ得るため)
                 out.push(p);
             }
@@ -169,13 +178,18 @@ pub fn discover_plugins() -> Result<Vec<DiscoveredPlugin>, Error> {
         files.extend(collect_from_dir(&p));
     }
     // legacy trusted dirs: ~/.config/aish/plugins.d, ~/.aish/plugins.d
-    if let Some(p) = xdg_config_plugins_dir().map(|d| d.parent().unwrap().to_path_buf().join("plugins.d")) {
+    if let Some(p) =
+        xdg_config_plugins_dir().map(|d| d.parent().unwrap().to_path_buf().join("plugins.d"))
+    {
         files.extend(collect_from_dir(&p));
     }
     if let Ok(home) = std::env::var("HOME") {
         if !home.trim().is_empty() {
             files.extend(collect_from_dir(
-                PathBuf::from(home).join(".aish").join("plugins.d").as_path(),
+                PathBuf::from(home)
+                    .join(".aish")
+                    .join("plugins.d")
+                    .as_path(),
             ));
         }
     }
@@ -203,4 +217,3 @@ pub fn discover_plugins() -> Result<Vec<DiscoveredPlugin>, Error> {
     }
     Ok(out)
 }
-

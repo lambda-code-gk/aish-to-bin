@@ -53,9 +53,9 @@ impl OpenAiCompatProvider {
     }
 
     fn auth_header(&self) -> Option<String> {
-        self.api_key_env.as_ref().and_then(|name| {
-            env::var(name).ok().map(|key| format!("Bearer {}", key))
-        })
+        self.api_key_env
+            .as_ref()
+            .and_then(|name| env::var(name).ok().map(|key| format!("Bearer {}", key)))
     }
 }
 
@@ -92,7 +92,10 @@ impl LlmProvider for OpenAiCompatProvider {
             } else {
                 format!("HTTP {}: {}", status, response_text)
             };
-            return Err(Error::http(format!("Chat completions error: {}", error_msg)));
+            return Err(Error::http(format!(
+                "Chat completions error: {}",
+                error_msg
+            )));
         }
 
         Ok(response_text)
@@ -160,7 +163,8 @@ impl LlmProvider for OpenAiCompatProvider {
                     let openai_tool_calls: Vec<Value> = tool_calls
                         .iter()
                         .map(|tc| {
-                            let args = serde_json::to_string(&tc.args).unwrap_or_else(|_| "{}".to_string());
+                            let args = serde_json::to_string(&tc.args)
+                                .unwrap_or_else(|_| "{}".to_string());
                             json!({
                                 "id": tc.id,
                                 "type": "function",
@@ -256,7 +260,10 @@ impl LlmProvider for OpenAiCompatProvider {
             } else {
                 format!("HTTP {}: {}", status, response_text)
             };
-            return Err(Error::http(format!("Chat completions error: {}", error_msg)));
+            return Err(Error::http(format!(
+                "Chat completions error: {}",
+                error_msg
+            )));
         }
 
         let reader = BufReader::new(response);
@@ -324,7 +331,10 @@ impl LlmProvider for OpenAiCompatProvider {
             } else {
                 format!("HTTP {}: {}", status, response_text)
             };
-            return Err(Error::http(format!("Chat completions error: {}", error_msg)));
+            return Err(Error::http(format!(
+                "Chat completions error: {}",
+                error_msg
+            )));
         }
 
         let reader = BufReader::new(response);
@@ -392,10 +402,7 @@ impl LlmProvider for OpenAiCompatProvider {
                 for tc in tool_calls {
                     let index = tc["index"].as_u64().unwrap_or(0) as usize;
                     if let Some(id) = tc["id"].as_str() {
-                        let name = tc["function"]["name"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string();
+                        let name = tc["function"]["name"].as_str().unwrap_or("").to_string();
                         index_to_call.insert(index, (id.to_string(), name.clone()));
                         index_to_args.insert(index, String::new());
                         callback(LlmEvent::ToolCallBegin {
@@ -407,10 +414,7 @@ impl LlmProvider for OpenAiCompatProvider {
                     }
                     if let Some(args_delta) = tc["function"]["arguments"].as_str() {
                         if !args_delta.is_empty() {
-                            index_to_args
-                                .entry(index)
-                                .or_default()
-                                .push_str(args_delta);
+                            index_to_args.entry(index).or_default().push_str(args_delta);
                         }
                     }
                 }
@@ -519,7 +523,10 @@ mod tests {
         assert_eq!(messages.len(), 3);
         assert!(messages[0]["tool_calls"].is_array());
         assert_eq!(messages[0]["tool_calls"][0]["id"], "call_1");
-        assert_eq!(messages[0]["tool_calls"][0]["function"]["name"], "run_shell");
+        assert_eq!(
+            messages[0]["tool_calls"][0]["function"]["name"],
+            "run_shell"
+        );
         assert_eq!(messages[1]["role"], "tool");
         assert_eq!(messages[1]["tool_call_id"], "call_1");
         assert_eq!(payload["tools"][0]["function"]["name"], "run_shell");
@@ -545,7 +552,8 @@ mod tests {
     #[test]
     fn test_openai_compat_check_tool_calls() {
         let p = OpenAiCompatProvider::new(None, None, None, None).unwrap();
-        let json = r#"{"choices":[{"message":{"tool_calls":[{"id":"c1","function":{"name":"f"}}]}}]}"#;
+        let json =
+            r#"{"choices":[{"message":{"tool_calls":[{"id":"c1","function":{"name":"f"}}]}}]}"#;
         assert!(p.check_tool_calls(json).unwrap());
         let json_no_tools = r#"{"choices":[{"message":{"content":"Hi"}}]}"#;
         assert!(!p.check_tool_calls(json_no_tools).unwrap());
@@ -574,5 +582,4 @@ mod tests {
         assert_eq!(tool_calls[0]["function"]["name"], "run_shell");
         assert_eq!(tool_calls[0]["function"]["arguments"], "{\"x\":1}");
     }
-
 }

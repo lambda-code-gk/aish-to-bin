@@ -55,13 +55,13 @@ impl Pty {
         unsafe {
             let mut master: c_int = 0;
             let ws = get_winsize(0)?;
-            
+
             let pid = forkpty(&mut master, std::ptr::null(), std::ptr::null(), &ws);
-            
+
             if pid < 0 {
                 return Err(io::Error::last_os_error());
             }
-            
+
             if pid == 0 {
                 // Child process
                 if let Some(cwd) = cwd {
@@ -73,7 +73,7 @@ impl Pty {
                         libc::_exit(127);
                     }
                 }
-                
+
                 // Set environment variables
                 for (key, value) in env {
                     let key_cstr = match CString::new(key.as_bytes()) {
@@ -88,13 +88,13 @@ impl Pty {
                         libc::_exit(127);
                     }
                 }
-                
+
                 // Execute command
                 if let Some(cmd_args) = cmd {
                     if cmd_args.is_empty() {
                         libc::_exit(127);
                     }
-                    
+
                     // Convert to CStrings - must live until execvp
                     let cmd_cstr = match CString::new(cmd_args[0].as_bytes()) {
                         Ok(s) => s,
@@ -105,13 +105,11 @@ impl Pty {
                         .map(|s| CString::new(s.as_bytes()))
                         .collect::<Result<Vec<_>, _>>()
                         .unwrap_or_else(|_| libc::_exit(127));
-                    
-                    let mut argv: Vec<*const libc::c_char> = argv_cstrs
-                        .iter()
-                        .map(|s| s.as_ptr())
-                        .collect();
+
+                    let mut argv: Vec<*const libc::c_char> =
+                        argv_cstrs.iter().map(|s| s.as_ptr()).collect();
                     argv.push(std::ptr::null());
-                    
+
                     libc::execvp(cmd_cstr.as_ptr(), argv.as_ptr());
                     libc::_exit(127);
                 } else {
@@ -129,7 +127,7 @@ impl Pty {
                     libc::_exit(127);
                 }
             }
-            
+
             // Parent process
             Ok(Pty {
                 master_fd: master,
@@ -137,16 +135,16 @@ impl Pty {
             })
         }
     }
-    
+
     pub fn master_fd(&self) -> RawFd {
         self.master_fd
     }
-    
+
     #[allow(dead_code)]
     pub fn child_pid(&self) -> pid_t {
         self.child_pid
     }
-    
+
     pub fn set_winsize(&self, ws: libc::winsize) -> io::Result<()> {
         unsafe {
             if libc::ioctl(self.master_fd, libc::TIOCSWINSZ, &ws) < 0 {
@@ -155,7 +153,7 @@ impl Pty {
         }
         Ok(())
     }
-    
+
     pub fn wait_nonblocking(&self) -> io::Result<Option<ProcessStatus>> {
         unsafe {
             let mut status: c_int = 0;
@@ -166,7 +164,7 @@ impl Pty {
             if pid == 0 {
                 return Ok(None);
             }
-            
+
             if libc::WIFEXITED(status) {
                 Ok(Some(ProcessStatus::Exited(libc::WEXITSTATUS(status))))
             } else if libc::WIFSIGNALED(status) {
@@ -213,20 +211,23 @@ impl TermMode {
     pub fn set_raw(stdin_fd: RawFd) -> io::Result<Self> {
         unsafe {
             if libc::isatty(stdin_fd) == 0 {
-                return Ok(TermMode { saved_termios: None, stdin_fd });
+                return Ok(TermMode {
+                    saved_termios: None,
+                    stdin_fd,
+                });
             }
             let mut termios: libc::termios = std::mem::zeroed();
             if libc::tcgetattr(stdin_fd, &mut termios) < 0 {
                 return Err(io::Error::last_os_error());
             }
             let saved = termios;
-            
+
             // Set raw mode
             libc::cfmakeraw(&mut termios);
             if libc::tcsetattr(stdin_fd, libc::TCSANOW, &termios) < 0 {
                 return Err(io::Error::last_os_error());
             }
-            
+
             Ok(TermMode {
                 saved_termios: Some(saved),
                 stdin_fd,
@@ -289,4 +290,3 @@ pub fn setup_sigusr2() -> io::Result<()> {
 pub fn check_sigusr2() -> bool {
     SIGUSR2_RECEIVED.swap(false, Ordering::Relaxed)
 }
-

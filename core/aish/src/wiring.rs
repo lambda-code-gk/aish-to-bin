@@ -15,8 +15,8 @@ use crate::adapter::{
 };
 use crate::ports::outbound::{MemoryRepository, ReviewedHistoryReader, ShellRunner};
 use crate::usecase::{
-    ClearUseCase, HistoryUseCase, InitUseCase, MemoryUseCase, RolloutUseCase, ResumeUseCase,
-    SessionsUseCase, ShellUseCase, TruncateConsoleLogUseCase, MuteUseCase, UnmuteUseCase,
+    ClearUseCase, HistoryUseCase, InitUseCase, MemoryUseCase, MuteUseCase, ResumeUseCase,
+    RolloutUseCase, SessionsUseCase, ShellUseCase, TruncateConsoleLogUseCase, UnmuteUseCase,
 };
 
 /// 配線で組み立てたポート群とユースケース（main の Command ディスパッチで利用）
@@ -93,12 +93,12 @@ pub fn wire_aish() -> App {
         Arc::clone(&fs),
         Arc::clone(&signal),
     );
-    let unmute_use_case = UnmuteUseCase::new(
+    let unmute_use_case = UnmuteUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
+    let resume_use_case = ResumeUseCase::new(
         Arc::clone(&path_resolver),
         Arc::clone(&fs),
+        Arc::clone(&shell_runner),
     );
-    let resume_use_case =
-        ResumeUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs), Arc::clone(&shell_runner));
     let sessions_use_case = SessionsUseCase::new(
         Arc::clone(&path_resolver),
         Arc::clone(&fs),
@@ -106,10 +106,7 @@ pub fn wire_aish() -> App {
     );
     let reviewed_history_reader: Arc<dyn ReviewedHistoryReader> =
         Arc::new(StdReviewedHistoryReader::new(Arc::clone(&fs)));
-    let history_use_case = HistoryUseCase::new(
-        Arc::clone(&path_resolver),
-        reviewed_history_reader,
-    );
+    let history_use_case = HistoryUseCase::new(Arc::clone(&path_resolver), reviewed_history_reader);
     let init_use_case = InitUseCase::new(Arc::clone(&env_resolver), Arc::clone(&fs));
     let mcp_host: Arc<dyn McpHost> = Arc::new(StdioJsonRpcMcpBridgeHost::new());
     let get_terminal_width: Box<dyn Fn() -> usize + Send + Sync> = Box::new(|| {

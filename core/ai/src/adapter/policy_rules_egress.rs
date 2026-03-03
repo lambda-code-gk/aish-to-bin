@@ -1,9 +1,9 @@
+use crate::domain::EgressPolicyRule;
 use crate::domain::SensitiveAction;
 use crate::domain::{
     hash64, ContextAttachment, ContextPack, PolicyDecision, PolicyVerdict, RuleVerdict,
     SensitiveFilterOutcome,
 };
-use crate::domain::EgressPolicyRule;
 use crate::ports::outbound::SensitiveTextFilter;
 use common::error::Error;
 use common::msg::Msg;
@@ -243,4 +243,3 @@ impl EgressPolicyRule for EgressSensitiveRule {
         }
     }
 }
-

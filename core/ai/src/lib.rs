@@ -10,9 +10,9 @@ mod wiring;
 #[cfg(test)]
 mod tests;
 
-pub use entry::{run, run_with_args};
 #[cfg(test)]
 pub(crate) use entry::Runner;
+pub use entry::{run, run_with_args};
 
 mod entry {
     use common::domain::{ModelName, ProviderName, SessionDir};
@@ -361,9 +361,7 @@ mod entry {
                 AiCommand::ListTools { profile } => self.run_list_tools(profile),
                 AiCommand::PolicyExplain => self.run_policy_explain(),
                 AiCommand::ConfigExplain => self.run_config_explain(),
-                AiCommand::SessionsRebuildDerived => {
-                    self.run_sessions_rebuild_derived(session_dir)
-                }
+                AiCommand::SessionsRebuildDerived => self.run_sessions_rebuild_derived(session_dir),
                 AiCommand::Task {
                     name,
                     args,
@@ -454,7 +452,10 @@ mod entry {
     ) {
         let mut m = std::collections::BTreeMap::new();
         m.insert("command".to_string(), serde_json::json!(command_name));
-        m.insert("non_interactive".to_string(), serde_json::json!(non_interactive));
+        m.insert(
+            "non_interactive".to_string(),
+            serde_json::json!(non_interactive),
+        );
         if let Some(p) = profile {
             m.insert("profile".to_string(), serde_json::json!(p));
         }

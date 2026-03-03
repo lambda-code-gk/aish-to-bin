@@ -65,10 +65,7 @@ impl LifecycleHandler for SelfImproveHandler {
             }
         };
         let response = response.trim();
-        if response.is_empty()
-            || response.eq_ignore_ascii_case("NONE")
-            || response == "null"
-        {
+        if response.is_empty() || response.eq_ignore_ascii_case("NONE") || response == "null" {
             return Ok(());
         }
         let json_str = extract_json_from_response(response);
@@ -180,7 +177,10 @@ fn extract_json_from_response(response: &str) -> &str {
         }
     }
     // ```json ... ``` の場合は中身を探す
-    if let Some(inner) = response.strip_prefix("```json").or_else(|| response.strip_prefix("```")) {
+    if let Some(inner) = response
+        .strip_prefix("```json")
+        .or_else(|| response.strip_prefix("```"))
+    {
         if let Some(end) = inner.find("```") {
             return inner[..end].trim();
         }

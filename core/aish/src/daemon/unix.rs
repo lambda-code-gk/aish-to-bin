@@ -6,7 +6,7 @@ use common::domain::{EventEnvelopeWithoutSeq, SessionDir};
 use common::ports::outbound::EventAppender;
 use daemon_api::{
     read_frame, write_frame, AppendResult, DerivedStatusResult, ErrorPayload, RebuildDerivedResult,
-    MAX_FRAME_BYTES, PROTOCOL_VERSION, Request, RequestOp, Response,
+    Request, RequestOp, Response, MAX_FRAME_BYTES, PROTOCOL_VERSION,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -25,11 +25,14 @@ pub fn default_socket_path() -> PathBuf {
 }
 
 /// サーバを起動し、接続ごとにリクエストを処理する（foreground、Ctrl-C で終了）
-pub async fn run_server(socket_path: PathBuf) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_server(
+    socket_path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let fs: Arc<dyn common::ports::outbound::FileSystem> = Arc::new(common::adapter::StdFileSystem);
     let store: Arc<dyn common::ports::outbound::SessionEventStore> =
         Arc::new(NdjsonSessionEventStore::new(Arc::clone(&fs)));
-    let event_appender: Arc<dyn EventAppender> = Arc::new(LocalEventAppender::new(Arc::clone(&store)));
+    let event_appender: Arc<dyn EventAppender> =
+        Arc::new(LocalEventAppender::new(Arc::clone(&store)));
     let derived_applier: Arc<DerivedApplier> =
         Arc::new(DerivedApplier::new(Arc::clone(&store), Arc::clone(&fs)));
     let derived_rebuilder: Arc<DerivedRebuilder> =
@@ -133,7 +136,9 @@ async fn handle_connection(
                             v: PROTOCOL_VERSION,
                             id: req.id.clone(),
                             ok: true,
-                            result: Some(serde_json::to_value(AppendResult { envelope: with_seq })?),
+                            result: Some(serde_json::to_value(AppendResult {
+                                envelope: with_seq,
+                            })?),
                             error: None,
                         }
                     }
@@ -202,9 +207,17 @@ async fn handle_connection(
 }
 
 /// ping を送り、応答があれば true
-pub async fn run_ping(socket_path: &std::path::Path) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_ping(
+    socket_path: &std::path::Path,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let mut stream = UnixStream::connect(socket_path).await?;
-    let id = format!("ping-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+    let id = format!(
+        "ping-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
     let req = Request {
         v: PROTOCOL_VERSION,
         id: id.clone(),
@@ -222,7 +235,9 @@ pub async fn run_ping(socket_path: &std::path::Path) -> Result<bool, Box<dyn std
 }
 
 /// status: ping と同様で、表示は CLI 側
-pub async fn run_status(socket_path: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run_status(
+    socket_path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let ok = run_ping(socket_path).await?;
     if ok {
         println!("daemon is running");
@@ -258,11 +273,9 @@ pub async fn run_rebuild_derived(
     write_frame(&mut stream, &req).await?;
     let len = stream.read_u32_le().await? as usize;
     if len == 0 || len > MAX_FRAME_BYTES {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "invalid frame length",
-        )
-        .into());
+        return Err(
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid frame length").into(),
+        );
     }
     let mut buf = vec![0u8; len];
     stream.read_exact(&mut buf).await?;

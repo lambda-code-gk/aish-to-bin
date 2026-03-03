@@ -78,13 +78,11 @@ impl FilteringStdoutSink {
         let stdin = child.stdin.take().ok_or_else(|| {
             Error::io_msg("AISH_FILTER process stdin was not captured".to_string())
         })?;
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::io_msg("AISH_FILTER process stdout was not captured".to_string()))?;
-        let reader_handle = thread::spawn(move || {
-            io::copy(&mut stdout, &mut io::stdout()).map(|_| ())
-        });
+        let mut stdout = child.stdout.take().ok_or_else(|| {
+            Error::io_msg("AISH_FILTER process stdout was not captured".to_string())
+        })?;
+        let reader_handle =
+            thread::spawn(move || io::copy(&mut stdout, &mut io::stdout()).map(|_| ()));
         Ok(Self {
             verbose,
             filter_stdin: Some(stdin),
@@ -95,7 +93,9 @@ impl FilteringStdoutSink {
 
     fn write_llm_to_filter(&mut self, s: &str) -> Result<(), Error> {
         if let Some(ref mut stdin) = self.filter_stdin {
-            stdin.write_all(s.as_bytes()).map_err(|e| Error::io_msg(e.to_string()))?;
+            stdin
+                .write_all(s.as_bytes())
+                .map_err(|e| Error::io_msg(e.to_string()))?;
             stdin.flush().map_err(|e| Error::io_msg(e.to_string()))?;
         }
         Ok(())
@@ -104,7 +104,8 @@ impl FilteringStdoutSink {
     fn finish_filter(&mut self) -> Result<(), Error> {
         self.filter_stdin = None;
         if let Some(h) = self.reader_handle.take() {
-            h.join().map_err(|_| Error::io_msg("AISH_FILTER reader thread panicked".to_string()))??;
+            h.join()
+                .map_err(|_| Error::io_msg("AISH_FILTER reader thread panicked".to_string()))??;
         }
         if let Some(mut c) = self.filter_child.take() {
             let status = c.wait().map_err(|e| Error::io_msg(e.to_string()))?;
@@ -124,7 +125,8 @@ impl FilteringStdoutSink {
 impl EventSink for FilteringStdoutSink {
     fn on_event(&mut self, ev: &AgentEvent) -> Result<(), Error> {
         match ev {
-            AgentEvent::Llm(LlmEvent::TextDelta(s)) | AgentEvent::Llm(LlmEvent::ReasoningDelta(s)) => {
+            AgentEvent::Llm(LlmEvent::TextDelta(s))
+            | AgentEvent::Llm(LlmEvent::ReasoningDelta(s)) => {
                 self.write_llm_to_filter(s)?;
             }
             AgentEvent::Llm(LlmEvent::ToolCallBegin {
@@ -135,17 +137,20 @@ impl EventSink for FilteringStdoutSink {
                 if self.verbose {
                     eprintln!(
                         "{}  [verbose] call_id={} thought_signature={:?}{}",
-                        DARK_GREY,
-                        call_id,
-                        thought_signature,
-                        RESET
+                        DARK_GREY, call_id, thought_signature, RESET
                     );
                 }
             }
-            AgentEvent::Llm(LlmEvent::ToolCallArgsDelta { call_id, json_fragment }) => {
+            AgentEvent::Llm(LlmEvent::ToolCallArgsDelta {
+                call_id,
+                json_fragment,
+            }) => {
                 if self.verbose {
                     let snippet = if json_fragment.len() > 120 {
-                        format!("{}...", &json_fragment[..json_fragment.floor_char_boundary(120)])
+                        format!(
+                            "{}...",
+                            &json_fragment[..json_fragment.floor_char_boundary(120)]
+                        )
                     } else {
                         json_fragment.clone()
                     };
@@ -157,7 +162,10 @@ impl EventSink for FilteringStdoutSink {
             }
             AgentEvent::Llm(LlmEvent::ToolCallEnd { call_id }) => {
                 if self.verbose {
-                    eprintln!("{}  [verbose] ToolCallEnd call_id={}{}", DARK_GREY, call_id, RESET);
+                    eprintln!(
+                        "{}  [verbose] ToolCallEnd call_id={}{}",
+                        DARK_GREY, call_id, RESET
+                    );
                 }
             }
             AgentEvent::Llm(LlmEvent::Completed { finish }) => {
@@ -176,10 +184,15 @@ impl EventSink for FilteringStdoutSink {
                     );
                 }
             }
-            AgentEvent::ToolResult { name, args, result, .. } => {
+            AgentEvent::ToolResult {
+                name, args, result, ..
+            } => {
                 let args_str = args.to_string();
                 let args_display = if args_str.len() > MAX_ARGS_DISPLAY {
-                    format!("{}...", &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)])
+                    format!(
+                        "{}...",
+                        &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)]
+                    )
                 } else {
                     args_str
                 };
@@ -191,16 +204,21 @@ impl EventSink for FilteringStdoutSink {
                     } else {
                         result_str
                     };
-                    eprintln!(
-                        "{}  [verbose] result={}{}",
-                        DARK_GREY, snippet, RESET
-                    );
+                    eprintln!("{}  [verbose] result={}{}", DARK_GREY, snippet, RESET);
                 }
             }
-            AgentEvent::ToolError { name, args, message, .. } => {
+            AgentEvent::ToolError {
+                name,
+                args,
+                message,
+                ..
+            } => {
                 let args_str = args.to_string();
                 let args_display = if args_str.len() > MAX_ARGS_DISPLAY {
-                    format!("{}...", &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)])
+                    format!(
+                        "{}...",
+                        &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)]
+                    )
                 } else {
                     args_str
                 };
@@ -239,7 +257,9 @@ impl StdEventSinkFactory {
     pub fn new(verbose: bool) -> Self {
         Self {
             verbose,
-            filter_command: std::env::var("AISH_FILTER").ok().filter(|s| !s.trim().is_empty()),
+            filter_command: std::env::var("AISH_FILTER")
+                .ok()
+                .filter(|s| !s.trim().is_empty()),
         }
     }
 
@@ -301,18 +321,21 @@ impl EventSink for StdoutSink {
                 if self.verbose {
                     eprintln!(
                         "{}  [verbose] call_id={} thought_signature={:?}{}",
-                        DARK_GREY,
-                        call_id,
-                        thought_signature,
-                        RESET
+                        DARK_GREY, call_id, thought_signature, RESET
                     );
                 }
             }
-            AgentEvent::Llm(LlmEvent::ToolCallArgsDelta { call_id, json_fragment }) => {
+            AgentEvent::Llm(LlmEvent::ToolCallArgsDelta {
+                call_id,
+                json_fragment,
+            }) => {
                 self.close_reasoning_block_if_open()?;
                 if self.verbose {
                     let snippet = if json_fragment.len() > 120 {
-                        format!("{}...", &json_fragment[..json_fragment.floor_char_boundary(120)])
+                        format!(
+                            "{}...",
+                            &json_fragment[..json_fragment.floor_char_boundary(120)]
+                        )
                     } else {
                         json_fragment.clone()
                     };
@@ -325,7 +348,10 @@ impl EventSink for StdoutSink {
             AgentEvent::Llm(LlmEvent::ToolCallEnd { call_id }) => {
                 self.close_reasoning_block_if_open()?;
                 if self.verbose {
-                    eprintln!("{}  [verbose] ToolCallEnd call_id={}{}", DARK_GREY, call_id, RESET);
+                    eprintln!(
+                        "{}  [verbose] ToolCallEnd call_id={}{}",
+                        DARK_GREY, call_id, RESET
+                    );
                 }
             }
             AgentEvent::Llm(LlmEvent::Completed { finish }) => {
@@ -346,11 +372,16 @@ impl EventSink for StdoutSink {
                     );
                 }
             }
-            AgentEvent::ToolResult { name, args, result, .. } => {
+            AgentEvent::ToolResult {
+                name, args, result, ..
+            } => {
                 self.close_reasoning_block_if_open()?;
                 let args_str = args.to_string();
                 let args_display = if args_str.len() > MAX_ARGS_DISPLAY {
-                    format!("{}...", &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)])
+                    format!(
+                        "{}...",
+                        &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)]
+                    )
                 } else {
                     args_str
                 };
@@ -362,17 +393,22 @@ impl EventSink for StdoutSink {
                     } else {
                         result_str
                     };
-                    eprintln!(
-                        "{}  [verbose] result={}{}",
-                        DARK_GREY, snippet, RESET
-                    );
+                    eprintln!("{}  [verbose] result={}{}", DARK_GREY, snippet, RESET);
                 }
             }
-            AgentEvent::ToolError { name, args, message, .. } => {
+            AgentEvent::ToolError {
+                name,
+                args,
+                message,
+                ..
+            } => {
                 self.close_reasoning_block_if_open()?;
                 let args_str = args.to_string();
                 let args_display = if args_str.len() > MAX_ARGS_DISPLAY {
-                    format!("{}...", &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)])
+                    format!(
+                        "{}...",
+                        &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)]
+                    )
                 } else {
                     args_str
                 };
@@ -381,7 +417,10 @@ impl EventSink for StdoutSink {
                 } else {
                     message.clone()
                 };
-                eprintln!("{}Tool {} args: {} failed: {}{}", DARK_GREY, name, args_display, msg_display, RESET);
+                eprintln!(
+                    "{}Tool {} args: {} failed: {}{}",
+                    DARK_GREY, name, args_display, msg_display, RESET
+                );
             }
         }
         Ok(())
@@ -448,7 +487,8 @@ impl PartFileSink {
 impl EventSink for PartFileSink {
     fn on_event(&mut self, ev: &AgentEvent) -> Result<(), Error> {
         match ev {
-            AgentEvent::Llm(LlmEvent::TextDelta(s)) | AgentEvent::Llm(LlmEvent::ReasoningDelta(s)) => {
+            AgentEvent::Llm(LlmEvent::TextDelta(s))
+            | AgentEvent::Llm(LlmEvent::ReasoningDelta(s)) => {
                 self.buffer.push_str(s);
             }
             _ => {}
@@ -485,8 +525,10 @@ mod tests {
             "User asks 1+1. Answer: 2.".to_string(),
         )))
         .unwrap();
-        sink.on_event(&AgentEvent::Llm(LlmEvent::TextDelta("1 + 1 は **2** です。".to_string())))
-            .unwrap();
+        sink.on_event(&AgentEvent::Llm(LlmEvent::TextDelta(
+            "1 + 1 は **2** です。".to_string(),
+        )))
+        .unwrap();
         // 実際の出力は <<< \x1b[90m...\x1b[0m >>>\n1 + 1 は **2** です。 となる（ANSI 含む）
         // ここでは in_reasoning_block が false に戻っていることだけ確認
         sink.on_event(&AgentEvent::Llm(LlmEvent::Completed {
@@ -508,8 +550,10 @@ mod tests {
     #[test]
     fn test_part_file_sink_buffer_includes_reasoning() {
         let mut sink = PartFileSink::new("/tmp", "part_xxx_assistant.txt");
-        sink.on_event(&AgentEvent::Llm(LlmEvent::ReasoningDelta("think ".to_string())))
-            .unwrap();
+        sink.on_event(&AgentEvent::Llm(LlmEvent::ReasoningDelta(
+            "think ".to_string(),
+        )))
+        .unwrap();
         sink.on_event(&AgentEvent::Llm(LlmEvent::TextDelta("answer".to_string())))
             .unwrap();
         assert_eq!(sink.assistant_text(), "think answer");
@@ -532,7 +576,9 @@ mod tests {
         let mut sinks = factory.create_sinks();
         assert_eq!(sinks.len(), 1);
         sinks[0]
-            .on_event(&AgentEvent::Llm(LlmEvent::TextDelta("filtered".to_string())))
+            .on_event(&AgentEvent::Llm(LlmEvent::TextDelta(
+                "filtered".to_string(),
+            )))
             .unwrap();
         sinks[0].on_end().unwrap();
     }

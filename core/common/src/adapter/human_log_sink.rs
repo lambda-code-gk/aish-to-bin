@@ -49,10 +49,7 @@ impl Default for HumanLogSink {
 impl EventRecordSink for HumanLogSink {
     fn emit(&mut self, rec: &EventRecord) -> Result<()> {
         let summary = payload_summary(&rec.payload);
-        let line = format!(
-            "[event] {} #{} {} {}",
-            rec.ts, rec.seq, rec.kind, summary
-        );
+        let line = format!("[event] {} #{} {} {}", rec.ts, rec.seq, rec.kind, summary);
         if is_warn_or_error(&rec.kind) {
             eprintln!("[event] warn: {} #{} {}", rec.ts, rec.seq, rec.kind);
             if !summary.is_empty() && summary != "{}" {

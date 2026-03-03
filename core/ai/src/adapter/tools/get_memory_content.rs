@@ -50,10 +50,9 @@ impl Tool for GetMemoryContentTool {
         }
 
         let project_dir = ctx.memory_dir_project.clone();
-        let global_dir = ctx
-            .memory_dir_global
-            .clone()
-            .ok_or_else(|| ToolError::ExecutionFailed("memory is not configured (memory_dir_global)".to_string()))?;
+        let global_dir = ctx.memory_dir_global.clone().ok_or_else(|| {
+            ToolError::ExecutionFailed("memory is not configured (memory_dir_global)".to_string())
+        })?;
 
         let entry = memory_storage::get_entry_by_id(
             project_dir.as_deref(),

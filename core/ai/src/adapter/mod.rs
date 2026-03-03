@@ -5,20 +5,21 @@ pub(crate) mod config;
 pub(crate) mod config_explain_provider;
 pub(crate) mod config_loader;
 pub(crate) mod config_toml;
+pub(crate) mod configurable_tool_profile_provider;
 pub(crate) mod context_addon_selectors;
 pub(crate) mod context_addon_selectors_grep;
 pub(crate) mod context_addon_selectors_memory;
 pub(crate) mod context_artifact_store;
-pub(crate) mod daemon_event_appender;
-pub(crate) mod fallback_event_appender;
 pub(crate) mod context_message_builder;
 pub(crate) mod context_pack_builder;
 pub(crate) mod continue_prompt;
+pub(crate) mod daemon_event_appender;
 pub(crate) mod dry_run_report_sink;
 pub(crate) mod external_plugin_loader;
 pub(crate) mod external_plugin_manifest_loader;
 pub(crate) mod external_plugin_stdio_client;
 pub(crate) mod external_tool_executor_impl;
+pub(crate) mod fallback_event_appender;
 pub(crate) mod leakscan_prepare_session;
 pub(crate) mod leakscan_text_filter;
 pub(crate) mod lifecycle;
@@ -43,7 +44,6 @@ pub(crate) mod session_manifest;
 pub(crate) mod sigint_checker;
 pub(crate) mod sinks;
 pub(crate) mod task;
-pub(crate) mod configurable_tool_profile_provider;
 pub(crate) mod tool_profile_provider;
 pub(crate) mod tools;
 
@@ -68,6 +68,7 @@ pub(crate) use context_artifact_store::StdContextArtifactStore;
 pub(crate) use daemon_event_appender::DaemonEventAppender;
 pub(crate) use fallback_event_appender::FallbackEventAppender;
 // 以下はテストで参照（context_message_builder_tests, context_pack_builder_tests）。本ビルドでは未使用のため allow。
+pub(crate) use configurable_tool_profile_provider::ConfigurableToolProfileProvider;
 #[allow(unused_imports)]
 pub(crate) use context_message_builder::StdContextMessageBuilder;
 #[allow(unused_imports)]
@@ -96,11 +97,11 @@ pub(crate) use session_derived_builder::StdSessionDerivedBuilder;
 pub(crate) use sigint_checker::{NoopInterruptChecker, SigintChecker};
 pub(crate) use sinks::StdEventSinkFactory;
 pub(crate) use task::StdTaskRunner;
-pub(crate) use configurable_tool_profile_provider::ConfigurableToolProfileProvider;
-#[allow(unused_imports)] // used by tests (policy_engine_tool_tests, tool_profile_provider_tests, etc.)
+#[allow(unused_imports)]
+// used by tests (policy_engine_tool_tests, tool_profile_provider_tests, etc.)
 pub(crate) use tool_profile_provider::StaticToolProfileProvider;
 pub(crate) use tools::{
-    GetMemoryContentTool, GrepTool, HistoryGetTool, HistorySearchTool, QueueShellSuggestionTool,
-    McpToolProxy, ReadFileTool, ReplaceFileTool, SaveMemoryTool, SearchMemoryTool, ShellTool,
-    WriteFileTool,
+    GetMemoryContentTool, GrepTool, HistoryGetTool, HistorySearchTool, McpToolProxy,
+    QueueShellSuggestionTool, ReadFileTool, ReplaceFileTool, SaveMemoryTool, SearchMemoryTool,
+    ShellTool, WriteFileTool,
 };

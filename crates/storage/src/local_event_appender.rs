@@ -31,4 +31,3 @@ impl EventAppender for LocalEventAppender {
         Ok(with_seq)
     }
 }
-

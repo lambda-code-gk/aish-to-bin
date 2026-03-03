@@ -6,7 +6,9 @@ use crate::ports::outbound::SessionHistoryLoader;
 use common::domain::SessionDir;
 use common::error::Error;
 use common::ports::outbound::FileSystem;
-use common::safe_session_path::{is_safe_reviewed_path, is_safe_summary_basename, resolve_under_session_dir, REVIEWED_DIR};
+use common::safe_session_path::{
+    is_safe_reviewed_path, is_safe_summary_basename, resolve_under_session_dir, REVIEWED_DIR,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -36,10 +38,7 @@ impl HistoryViewStrategy for ManifestTailCompactionViewStrategy {
         let tail = session_manifest::tail_message_records(range, load_max);
 
         let mut history = History::new();
-        let oldest_tail_id = tail
-            .first()
-            .and_then(|r| r.message())
-            .map(|m| m.id.clone());
+        let oldest_tail_id = tail.first().and_then(|r| r.message()).map(|m| m.id.clone());
 
         if let Some(oldest_id) = oldest_tail_id {
             if let Some(comp) = latest_compaction_before(&records, &oldest_id) {
@@ -99,13 +98,10 @@ impl HistoryViewStrategy for ReviewedTailViewStrategy {
             .read_dir(&reviewed_dir)?
             .into_iter()
             .filter(|path| {
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|s| {
-                        s.starts_with("reviewed_")
-                            && (s.ends_with("_user.txt") || s.ends_with("_assistant.txt"))
-                    })
-                    && fs.metadata(path).map(|m| m.is_file()).unwrap_or(false)
+                path.file_name().and_then(|n| n.to_str()).is_some_and(|s| {
+                    s.starts_with("reviewed_")
+                        && (s.ends_with("_user.txt") || s.ends_with("_assistant.txt"))
+                }) && fs.metadata(path).map(|m| m.is_file()).unwrap_or(false)
             })
             .collect();
         reviewed_files.sort();
@@ -205,4 +201,3 @@ fn latest_compaction_before<'a>(
         .filter(|c| c.to_id.as_str() < oldest_tail_id)
         .last()
 }
-

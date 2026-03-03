@@ -48,7 +48,10 @@ impl Tool for SearchMemoryTool {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let category = args.get("category").and_then(|v| v.as_str()).map(String::from);
+        let category = args
+            .get("category")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let limit = args
             .get("limit")
             .and_then(|v| v.as_u64())
@@ -84,11 +87,12 @@ impl Tool for SearchMemoryTool {
     }
 }
 
-fn resolve_memory_dirs(ctx: &ToolContext) -> Result<(Option<std::path::PathBuf>, std::path::PathBuf), ToolError> {
-    let global = ctx
-        .memory_dir_global
-        .clone()
-        .ok_or_else(|| ToolError::ExecutionFailed("memory is not configured (memory_dir_global)".to_string()))?;
+fn resolve_memory_dirs(
+    ctx: &ToolContext,
+) -> Result<(Option<std::path::PathBuf>, std::path::PathBuf), ToolError> {
+    let global = ctx.memory_dir_global.clone().ok_or_else(|| {
+        ToolError::ExecutionFailed("memory is not configured (memory_dir_global)".to_string())
+    })?;
     Ok((ctx.memory_dir_project.clone(), global))
 }
 

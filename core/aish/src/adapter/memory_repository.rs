@@ -138,8 +138,8 @@ fn load_metadata(dir: &Path) -> Result<Vec<MemoryMeta>, Error> {
     }
     let s = std::fs::read_to_string(&path)
         .map_err(|e| Error::io_msg(format!("read {}: {}", path.display(), e)))?;
-    let meta: MetadataFile =
-        serde_json::from_str(&s).map_err(|e| Error::io_msg(format!("parse {}: {}", path.display(), e)))?;
+    let meta: MetadataFile = serde_json::from_str(&s)
+        .map_err(|e| Error::io_msg(format!("parse {}: {}", path.display(), e)))?;
     Ok(meta.memories)
 }
 

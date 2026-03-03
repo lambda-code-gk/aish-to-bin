@@ -124,8 +124,14 @@ fn test_sensitive_deny_drops_addon_and_records_decision() {
         .iter()
         .filter(|d| d.stage == "addon.sensitive" && d.action == "deny")
         .collect();
-    assert!(!deny_decisions.is_empty(), "BudgetReport.decisions should contain addon.sensitive deny");
-    assert!(pack.attachments.is_empty(), "denied addon should be dropped");
+    assert!(
+        !deny_decisions.is_empty(),
+        "BudgetReport.decisions should contain addon.sensitive deny"
+    );
+    assert!(
+        pack.attachments.is_empty(),
+        "denied addon should be dropped"
+    );
 }
 
 #[test]
@@ -159,7 +165,10 @@ fn test_sensitive_mask_replaces_msg_and_attachment() {
         .iter()
         .filter(|d| d.stage == "addon.sensitive" && d.action == "mask")
         .collect();
-    assert!(mask_decisions.len() >= 1, "should have addon.sensitive mask decision(s)");
+    assert!(
+        mask_decisions.len() >= 1,
+        "should have addon.sensitive mask decision(s)"
+    );
 
     let has_masked_msg = pack.messages.iter().any(|m| {
         if let Msg::User(s) = m {
@@ -172,8 +181,14 @@ fn test_sensitive_mask_replaces_msg_and_attachment() {
 
     let att = pack.attachments.first().expect("one attachment");
     let content = att.content.as_ref().expect("content present");
-    assert!(content.contains("***"), "attachment content should be masked");
-    assert!(!content.contains("SECRET"), "attachment should not contain SECRET");
+    assert!(
+        content.contains("***"),
+        "attachment content should be masked"
+    );
+    assert!(
+        !content.contains("SECRET"),
+        "attachment should not contain SECRET"
+    );
 }
 
 #[test]
@@ -207,7 +222,10 @@ fn test_sensitive_allow_keeps_addon_and_records_allow_decision() {
         .iter()
         .filter(|d| d.stage == "addon.sensitive" && d.action == "allow")
         .collect();
-    assert!(!allow_decisions.is_empty(), "should have addon.sensitive allow (warn) decision");
+    assert!(
+        !allow_decisions.is_empty(),
+        "should have addon.sensitive allow (warn) decision"
+    );
 
     assert_eq!(pack.attachments.len(), 1, "addon should be kept");
     let has_secret_msg = pack.messages.iter().any(|m| {

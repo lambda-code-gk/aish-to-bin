@@ -5,4 +5,3 @@ use common::error::Error;
 pub trait ConfigExplainProvider: Send + Sync {
     fn explain(&self) -> Result<ConfigExplainInfo, Error>;
 }
-

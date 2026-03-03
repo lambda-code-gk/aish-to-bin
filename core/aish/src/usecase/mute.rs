@@ -162,7 +162,11 @@ mod tests {
             };
 
             let result = usecase.run(&input);
-            assert!(result.is_ok(), "mute run should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "mute run should succeed: {:?}",
+                result.err()
+            );
             assert_eq!(result.unwrap(), 0);
 
             // フラグファイルが作成されていること（part ファイル・SIGUSR1 は送られない）
@@ -204,7 +208,11 @@ mod tests {
             };
 
             let result = usecase.run(&input);
-            assert!(result.is_ok(), "mute run should succeed: {:?}", result.err());
+            assert!(
+                result.is_ok(),
+                "mute run should succeed: {:?}",
+                result.err()
+            );
             assert_eq!(result.unwrap(), 0);
 
             // フラグファイルも作成されない
@@ -219,4 +227,3 @@ mod tests {
         path.to_string_lossy().to_string()
     }
 }
-

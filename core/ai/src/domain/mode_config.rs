@@ -87,7 +87,10 @@ mod tests {
         assert_eq!(c.system.as_deref(), Some("You are a planning assistant."));
         assert_eq!(c.profile.as_deref(), Some("echo"));
         assert!(c.model.is_none());
-        assert_eq!(c.tools.as_ref().map(|v| v.as_slice()), Some(&["read_file".to_string(), "grep".to_string()][..]));
+        assert_eq!(
+            c.tools.as_ref().map(|v| v.as_slice()),
+            Some(&["read_file".to_string(), "grep".to_string()][..])
+        );
         let agent = c.agent.as_ref().expect("agent config");
         assert_eq!(agent.mode, Some(AgentMode::Plan));
         assert_eq!(agent.max_queries, Some(1));

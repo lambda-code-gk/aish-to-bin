@@ -80,4 +80,3 @@ pub(crate) fn tail_message_records(
     out.reverse();
     out
 }
-

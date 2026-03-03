@@ -6,8 +6,8 @@ pub mod dirs;
 pub mod event;
 pub mod event_envelope;
 
-use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 pub use dirs::Dirs;
 pub use event_envelope::{EventEnvelope, EventEnvelopeWithoutSeq};

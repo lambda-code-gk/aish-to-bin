@@ -108,8 +108,10 @@ impl StdConfigProvider {
                                 Resolved::new(m.to_lowercase(), src("policy.tools.run_shell.mode"));
                         }
                         if let Some(list) = &entry.allowlist {
-                            cfg.run_shell_allowlist =
-                                Resolved::new(list.clone(), src("policy.tools.run_shell.allowlist"));
+                            cfg.run_shell_allowlist = Resolved::new(
+                                list.clone(),
+                                src("policy.tools.run_shell.allowlist"),
+                            );
                         }
                     }
                 }

@@ -48,6 +48,9 @@ mod tests {
         let ids: Vec<PartId> = (0..50).map(|_| PartId::generate()).collect();
         let mut sorted = ids.clone();
         sorted.sort_by(|a, b| (**a).cmp(&**b));
-        assert_eq!(ids, sorted, "rapid-fire IDs must be lexicographically monotonic");
+        assert_eq!(
+            ids, sorted,
+            "rapid-fire IDs must be lexicographically monotonic"
+        );
     }
 }

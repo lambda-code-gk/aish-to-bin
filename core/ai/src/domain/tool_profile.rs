@@ -19,4 +19,3 @@ pub enum ToolMode {
     RequireApproval,
     Deny,
 }
-

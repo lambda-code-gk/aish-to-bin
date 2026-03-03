@@ -41,12 +41,8 @@ impl SessionEventStore for NdjsonSessionEventStore {
             return Ok(1);
         }
         let last_line = trimmed.lines().last().unwrap_or(trimmed);
-        let last: EventEnvelope = serde_json::from_str(last_line).map_err(|e| {
-            Error::json(format!(
-                "events.ndjson last line parse failed: {}",
-                e
-            ))
-        })?;
+        let last: EventEnvelope = serde_json::from_str(last_line)
+            .map_err(|e| Error::json(format!("events.ndjson last line parse failed: {}", e)))?;
         Ok(last.seq.saturating_add(1))
     }
 
@@ -71,10 +67,7 @@ impl SessionEventStore for NdjsonSessionEventStore {
     fn read_all(
         &self,
         session_dir: &SessionDir,
-    ) -> Result<
-        Box<dyn Iterator<Item = Result<EventEnvelope, Error>> + Send>,
-        Error,
-    > {
+    ) -> Result<Box<dyn Iterator<Item = Result<EventEnvelope, Error>> + Send>, Error> {
         let path = Self::events_path(session_dir);
         let content = match self.fs.read_to_string(&path) {
             Ok(s) => s,
@@ -84,15 +77,13 @@ impl SessionEventStore for NdjsonSessionEventStore {
             }
         };
         let lines: Vec<String> = content.lines().map(String::from).collect();
-        let iter = lines
-            .into_iter()
-            .map(|line| {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    return Err(Error::json("empty line in events.ndjson"));
-                }
-                serde_json::from_str(trimmed).map_err(|e| Error::json(e.to_string()))
-            });
+        let iter = lines.into_iter().map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                return Err(Error::json("empty line in events.ndjson"));
+            }
+            serde_json::from_str(trimmed).map_err(|e| Error::json(e.to_string()))
+        });
         Ok(Box::new(iter))
     }
 }

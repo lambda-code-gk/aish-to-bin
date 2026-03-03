@@ -3,7 +3,9 @@
 use common::domain::{EventEnvelope, EventEnvelopeWithoutSeq, SessionDir};
 use common::error::Error;
 use common::ports::outbound::EventAppender;
-use daemon_api::{read_frame, write_frame, AppendResult, Request, RequestOp, Response, PROTOCOL_VERSION};
+use daemon_api::{
+    read_frame, write_frame, AppendResult, Request, RequestOp, Response, PROTOCOL_VERSION,
+};
 use std::path::Path;
 use tokio::net::UnixStream;
 
@@ -35,7 +37,13 @@ impl DaemonEventAppender {
     ) -> Result<EventEnvelope, Box<dyn std::error::Error + Send + Sync>> {
         let mut stream = UnixStream::connect(&self.socket_path).await?;
         let session_dir_str = session_dir.as_ref().display().to_string();
-        let id = format!("append-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+        let id = format!(
+            "append-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         let req = Request {
             v: PROTOCOL_VERSION,
             id: id.clone(),

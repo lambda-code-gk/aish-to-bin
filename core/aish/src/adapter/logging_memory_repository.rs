@@ -2,7 +2,7 @@
 
 use crate::domain::{MemoryEntry, MemoryListEntry};
 use crate::ports::outbound::MemoryRepository;
-use common::ports::outbound::{Log, LogLevel, LogRecord, now_iso8601};
+use common::ports::outbound::{now_iso8601, Log, LogLevel, LogRecord};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -18,7 +18,9 @@ impl LoggingMemoryRepository {
 }
 
 impl MemoryRepository for LoggingMemoryRepository {
-    fn resolve(&self) -> Result<(Option<std::path::PathBuf>, std::path::PathBuf), common::error::Error> {
+    fn resolve(
+        &self,
+    ) -> Result<(Option<std::path::PathBuf>, std::path::PathBuf), common::error::Error> {
         self.inner.resolve()
     }
 

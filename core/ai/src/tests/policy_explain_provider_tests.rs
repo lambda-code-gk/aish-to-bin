@@ -10,7 +10,10 @@ fn test_explain_returns_v_resolved_rules_and_examples() {
         "egress": { "hard_cap_chars": 200_000 },
         "tools": { "run_shell": { "mode": "require_approval" } },
     });
-    let egress_rule_names = vec!["egress_budget_hard_cap".to_string(), "egress_sensitive".to_string()];
+    let egress_rule_names = vec![
+        "egress_budget_hard_cap".to_string(),
+        "egress_sensitive".to_string(),
+    ];
     let tool_rule_names = vec!["shell_allowlist".to_string(), "tool_mode".to_string()];
     let examples = vec![
         PolicyExplainExample {
@@ -44,7 +47,10 @@ fn test_explain_returns_v_resolved_rules_and_examples() {
     assert_eq!(info.resolved, resolved);
     assert_eq!(info.egress_rules, egress_rule_names);
     assert_eq!(info.tool_rules, tool_rule_names);
-    assert!(info.examples.len() >= 2, "examples must have at least 2 items");
+    assert!(
+        info.examples.len() >= 2,
+        "examples must have at least 2 items"
+    );
     assert_eq!(info.examples[0].title, "example 1");
     assert_eq!(info.examples[1].title, "example 2");
 }

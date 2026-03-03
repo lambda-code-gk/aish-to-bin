@@ -7,10 +7,7 @@ use crate::adapter::{
     EgressBudgetHardCapRule, EgressSensitiveRule, ShellAllowlistRule, StaticToolProfileProvider,
     StdPolicyEngine, ToolModeRule,
 };
-use crate::domain::{
-    PolicyChain, ToolCapability, ToolMode, ToolProfile,
-    PolicyVerdict,
-};
+use crate::domain::{PolicyChain, PolicyVerdict, ToolCapability, ToolMode, ToolProfile};
 use crate::ports::outbound::{PolicyEngine, ToolProfileProvider};
 use common::tool::ToolContext;
 
@@ -55,7 +52,9 @@ fn test_rule_order_allowlist_match_returns_allow_first() {
     let pe = engine();
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "ls -la"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, false).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, false)
+        .unwrap();
     match &verdict {
         PolicyVerdict::Allow { decision, .. } => {
             assert_eq!(decision.reason, "shell_allowlist");
@@ -70,7 +69,9 @@ fn test_rule_order_allowlist_miss_interactive_returns_require_approval() {
     let pe = engine();
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "rm -rf /"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, false).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, false)
+        .unwrap();
     match &verdict {
         PolicyVerdict::RequireApproval { decision, .. } => {
             assert_eq!(decision.reason, "shell_approval_required");
@@ -85,7 +86,9 @@ fn test_rule_order_allowlist_miss_non_interactive_returns_deny() {
     let pe = engine();
     let ctx = ToolContext::new(None);
     let args = serde_json::json!({"command": "rm -rf /"});
-    let verdict = pe.evaluate_tool_call("run_shell", &args, &ctx, true).unwrap();
+    let verdict = pe
+        .evaluate_tool_call("run_shell", &args, &ctx, true)
+        .unwrap();
     match &verdict {
         PolicyVerdict::Deny { decision } => {
             assert_eq!(decision.reason, "shell_not_allowlisted_non_interactive");

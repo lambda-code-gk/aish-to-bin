@@ -69,10 +69,7 @@ impl PolicyConfig {
                 HashMap::new(),
                 default_source("defaults.policy.tool_mode_by_capability"),
             ),
-            tool_modes: Resolved::new(
-                HashMap::new(),
-                default_source("defaults.policy.tool_modes"),
-            ),
+            tool_modes: Resolved::new(HashMap::new(), default_source("defaults.policy.tool_modes")),
             non_interactive_default: Resolved::new(
                 false,
                 default_source("defaults.policy.non_interactive_default"),

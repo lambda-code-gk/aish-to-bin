@@ -45,7 +45,10 @@ impl IdGenerator for StdIdGenerator {
                 }
                 (prev + 1).min(MAX_VAL)
             };
-            if LAST_ID.compare_exchange(prev, next, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if LAST_ID
+                .compare_exchange(prev, next, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 return PartId::new(to_base62(next));
             }
         }

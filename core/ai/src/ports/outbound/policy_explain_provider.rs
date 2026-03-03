@@ -5,4 +5,3 @@ use common::error::Error;
 pub trait PolicyExplainProvider: Send + Sync {
     fn explain(&self) -> Result<PolicyExplainInfo, Error>;
 }
-

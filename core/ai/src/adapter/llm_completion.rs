@@ -18,27 +18,25 @@ impl StdLlmCompletion {
 }
 
 impl LlmCompletion for StdLlmCompletion {
-    fn complete(&self, system_instruction: Option<&str>, user_message: &str) -> Result<String, Error> {
-        let (stream, _ctx) = self
-            .stream_factory
-            .create_stream(None, None, None, system_instruction)?;
+    fn complete(
+        &self,
+        system_instruction: Option<&str>,
+        user_message: &str,
+    ) -> Result<String, Error> {
+        let (stream, _ctx) =
+            self.stream_factory
+                .create_stream(None, None, None, system_instruction)?;
         let mut out = String::new();
         let mut err_msg: Option<String> = None;
-        stream.stream_events(
-            user_message,
-            system_instruction,
-            &[],
-            None,
-            &mut |ev| {
-                match ev {
-                    LlmEvent::TextDelta(s) | LlmEvent::ReasoningDelta(s) => out.push_str(&s),
-                    LlmEvent::Completed { .. } => {}
-                    LlmEvent::Failed { message } => err_msg = Some(message),
-                    _ => {}
-                }
-                Ok(())
-            },
-        )?;
+        stream.stream_events(user_message, system_instruction, &[], None, &mut |ev| {
+            match ev {
+                LlmEvent::TextDelta(s) | LlmEvent::ReasoningDelta(s) => out.push_str(&s),
+                LlmEvent::Completed { .. } => {}
+                LlmEvent::Failed { message } => err_msg = Some(message),
+                _ => {}
+            }
+            Ok(())
+        })?;
         if let Some(m) = err_msg {
             return Err(Error::invalid_argument(format!("LLM failed: {}", m)));
         }

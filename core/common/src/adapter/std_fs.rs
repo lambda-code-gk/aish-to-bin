@@ -1,7 +1,7 @@
 //! 標準ファイルシステム実装（std::fs を委譲）
 
-use crate::ports::outbound::fs::{FileMetadata, FileSystem};
 use crate::error::Error;
+use crate::ports::outbound::fs::{FileMetadata, FileSystem};
 use std::path::{Path, PathBuf};
 
 /// 標準ライブラリの fs をそのまま委譲する FileSystem 実装
@@ -10,15 +10,13 @@ pub struct StdFileSystem;
 
 impl FileSystem for StdFileSystem {
     fn read_to_string(&self, path: &Path) -> Result<String, Error> {
-        std::fs::read_to_string(path).map_err(|e| {
-            Error::io_msg(format!("Failed to read '{}': {}", path.display(), e))
-        })
+        std::fs::read_to_string(path)
+            .map_err(|e| Error::io_msg(format!("Failed to read '{}': {}", path.display(), e)))
     }
 
     fn write(&self, path: &Path, contents: &str) -> Result<(), Error> {
-        std::fs::write(path, contents).map_err(|e| {
-            Error::io_msg(format!("Failed to write '{}': {}", path.display(), e))
-        })
+        std::fs::write(path, contents)
+            .map_err(|e| Error::io_msg(format!("Failed to write '{}': {}", path.display(), e)))
     }
 
     fn rename(&self, from: &Path, to: &Path) -> Result<(), Error> {
@@ -34,7 +32,11 @@ impl FileSystem for StdFileSystem {
 
     fn create_dir_all(&self, path: &Path) -> Result<(), Error> {
         std::fs::create_dir_all(path).map_err(|e| {
-            Error::io_msg(format!("Failed to create directory '{}': {}", path.display(), e))
+            Error::io_msg(format!(
+                "Failed to create directory '{}': {}",
+                path.display(),
+                e
+            ))
         })
     }
 
@@ -75,9 +77,8 @@ impl FileSystem for StdFileSystem {
         })?;
         let mut paths = Vec::new();
         for entry in entries {
-            let entry = entry.map_err(|e| {
-                Error::io_msg(format!("Failed to read directory entry: {}", e))
-            })?;
+            let entry = entry
+                .map_err(|e| Error::io_msg(format!("Failed to read directory entry: {}", e)))?;
             paths.push(entry.path());
         }
         Ok(paths)
@@ -100,7 +101,11 @@ impl FileSystem for StdFileSystem {
             .append(true)
             .open(path)
             .map_err(|e| {
-                Error::io_msg(format!("Failed to open '{}' for append: {}", path.display(), e))
+                Error::io_msg(format!(
+                    "Failed to open '{}' for append: {}",
+                    path.display(),
+                    e
+                ))
             })?;
         Ok(Box::new(f))
     }

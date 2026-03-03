@@ -40,9 +40,10 @@ impl Default for QueueShellSuggestionTool {
 
 fn shell_quote(arg: &str) -> Result<String, ToolError> {
     // 制御文字チェック（タブ・改行・CR は許可し、ESC 等の危険な制御文字のみ拒否）
-    if arg.chars().any(|c| {
-        ((c as u32) < 0x20 && c != '\t' && c != '\n' && c != '\r') || c == '\x7f'
-    }) {
+    if arg
+        .chars()
+        .any(|c| ((c as u32) < 0x20 && c != '\t' && c != '\n' && c != '\r') || c == '\x7f')
+    {
         return Err(ToolError::InvalidArgs(
             "command contains control characters (newlines in arguments are allowed)".to_string(),
         ));
@@ -57,27 +58,25 @@ fn shell_quote(arg: &str) -> Result<String, ToolError> {
     while let Some(ch) = chars.next() {
         match ch {
             '"' => out.push_str("\\\""),
-            '\\' => {
-                match chars.peek().copied() {
-                    Some('n') => {
-                        chars.next();
-                        out.push('\n');
-                    }
-                    Some('r') => {
-                        chars.next();
-                        out.push('\r');
-                    }
-                    Some('t') => {
-                        chars.next();
-                        out.push('\t');
-                    }
-                    Some('"') | Some('$') | Some('`') | Some('\\') => {
-                        out.push('\\');
-                        out.push(chars.next().unwrap());
-                    }
-                    _ => out.push_str("\\\\"),
+            '\\' => match chars.peek().copied() {
+                Some('n') => {
+                    chars.next();
+                    out.push('\n');
                 }
-            }
+                Some('r') => {
+                    chars.next();
+                    out.push('\r');
+                }
+                Some('t') => {
+                    chars.next();
+                    out.push('\t');
+                }
+                Some('"') | Some('$') | Some('`') | Some('\\') => {
+                    out.push('\\');
+                    out.push(chars.next().unwrap());
+                }
+                _ => out.push_str("\\\\"),
+            },
             '$' => out.push_str("\\$"),
             '`' => out.push_str("\\`"),
             _ => out.push(ch),
@@ -99,7 +98,8 @@ fn sanitize_for_inject(s: &str, max_len: usize) -> Result<String, ToolError> {
         }
         if ch == '\x7f' {
             return Err(ToolError::InvalidArgs(
-                "command contains control characters (DEL). Newlines in arguments are allowed.".to_string(),
+                "command contains control characters (DEL). Newlines in arguments are allowed."
+                    .to_string(),
             ));
         }
         out.push(ch);
@@ -207,11 +207,10 @@ impl Tool for QueueShellSuggestionTool {
                 )
                 .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
             // プロンプト用プレビュー（引用なしのコマンド行の先頭5文字+".."。例: git co..）
-            let display: String =
-                std::iter::once(program.as_str())
-                    .chain(args.iter().map(String::as_str))
-                    .collect::<Vec<_>>()
-                    .join(" ");
+            let display: String = std::iter::once(program.as_str())
+                .chain(args.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" ");
             let preview = display.chars().take(5).collect::<String>() + "..";
             let suggestion_path = session_dir.join("prompt_suggestion.txt");
             let _ = fs.as_ref().write(&suggestion_path, &preview);
@@ -242,7 +241,7 @@ mod tests {
     fn test_shell_quote_double_quote_and_escape() {
         assert_eq!(shell_quote("echo").unwrap(), "\"echo\"");
         assert_eq!(shell_quote("a'b").unwrap(), "\"a'b\""); // ' はダブルクォート内ではそのまま
-        // 入力 a + " + b → 出力は " で囲み、内部の " は \" にエスケープ
+                                                            // 入力 a + " + b → 出力は " で囲み、内部の " は \" にエスケープ
         let q = shell_quote("a\"b").unwrap();
         assert!(q.starts_with('"') && q.ends_with('"'));
         assert!(q.contains("\\\""));
@@ -306,7 +305,10 @@ mod tests {
         let result = tool.call(args, &ctx).unwrap();
         assert_eq!(result["queued"], true);
         assert_eq!(result["policy"], "allowed");
-        assert!(result["text"].as_str().unwrap().starts_with("git \"status\""));
+        assert!(result["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("git \"status\""));
     }
 
     #[test]
@@ -338,4 +340,3 @@ mod tests {
         }
     }
 }
-

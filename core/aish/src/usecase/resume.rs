@@ -34,11 +34,7 @@ impl ResumeUseCase {
     ///
     /// - `id` が Some の場合: その ID のセッションを再開
     /// - `id` が None の場合: 最新のセッション（ID 降順の先頭）を再開
-    pub fn run(
-        &self,
-        path_input: &PathResolverInput,
-        id: Option<&str>,
-    ) -> Result<i32, Error> {
+    pub fn run(&self, path_input: &PathResolverInput, id: Option<&str>) -> Result<i32, Error> {
         let home_dir = self.path_resolver.resolve_home_dir(path_input)?;
 
         // sessions と同様に、resolve_session_dir からルートディレクトリを特定
@@ -101,10 +97,7 @@ impl ResumeUseCase {
 
         // Session を構築して Shell を起動
         let session = Session::new(&target_dir, &home_dir)?;
-        self.shell_runner.run(
-            session.session_dir().as_ref(),
-            session.aish_home().as_ref(),
-        )
+        self.shell_runner
+            .run(session.session_dir().as_ref(), session.aish_home().as_ref())
     }
 }
-

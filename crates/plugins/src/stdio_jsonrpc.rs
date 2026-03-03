@@ -33,12 +33,7 @@ impl StderrCapture {
     }
 
     fn tail_string(&self) -> String {
-        let tail = self
-            .tail
-            .lock()
-            .ok()
-            .map(|g| g.clone())
-            .unwrap_or_default();
+        let tail = self.tail.lock().ok().map(|g| g.clone()).unwrap_or_default();
         String::from_utf8_lossy(&tail).to_string()
     }
 }
@@ -185,7 +180,8 @@ impl StdioJsonRpcClient {
                 match line {
                     Ok(l) => {
                         if l.len() > MAX_RESPONSE_LINE_BYTES {
-                            let _ = tx.send(Err(Error::json("response line too large".to_string())));
+                            let _ =
+                                tx.send(Err(Error::json("response line too large".to_string())));
                         } else {
                             let _ = tx.send(Ok(l));
                         }
@@ -205,7 +201,8 @@ impl StdioJsonRpcClient {
             method: "initialize".to_string(),
             params: Some(serde_json::json!({ "protocolVersion": "0.1" })),
         };
-        let line = serde_json::to_string(&req).map_err(|e| Error::json(format!("serialize: {}", e)))?;
+        let line =
+            serde_json::to_string(&req).map_err(|e| Error::json(format!("serialize: {}", e)))?;
         if let Err(e) = stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
@@ -251,7 +248,12 @@ impl StdioJsonRpcClient {
         })
     }
 
-    fn request(&mut self, method: &str, params: Option<Value>, timeout_ms: Option<u64>) -> Result<Value, Error> {
+    fn request(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+        timeout_ms: Option<u64>,
+    ) -> Result<Value, Error> {
         let call_timeout = timeout_ms.unwrap_or(self.call_timeout_ms);
         let id = self
             .next_id
@@ -262,8 +264,12 @@ impl StdioJsonRpcClient {
             method: method.to_string(),
             params,
         };
-        let line = serde_json::to_string(&req).map_err(|e| Error::json(format!("serialize: {}", e)))?;
-        let mut guard = self.stdin.lock().map_err(|_| Error::system("stdin lock poisoned".to_string()))?;
+        let line =
+            serde_json::to_string(&req).map_err(|e| Error::json(format!("serialize: {}", e)))?;
+        let mut guard = self
+            .stdin
+            .lock()
+            .map_err(|_| Error::system("stdin lock poisoned".to_string()))?;
         let stdin = guard
             .as_mut()
             .ok_or_else(|| Error::system("stdin closed".to_string()))?;
@@ -332,9 +338,7 @@ impl StdioJsonRpcClient {
             .get("content")
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
-        let bytes = serde_json::to_vec(&content)
-            .map(|v| v.len())
-            .unwrap_or(0);
+        let bytes = serde_json::to_vec(&content).map(|v| v.len()).unwrap_or(0);
         if bytes > MAX_TOOL_RESULT_BYTES {
             return Err(Error::system(format!(
                 "tool output too large: {} bytes (cap {})",
@@ -351,4 +355,3 @@ impl StdioJsonRpcClient {
         Ok((content, stderr_tail, elapsed_ms))
     }
 }
-

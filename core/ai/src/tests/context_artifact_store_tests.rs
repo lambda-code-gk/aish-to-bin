@@ -41,20 +41,31 @@ fn test_store_writes_files_and_returns_refs() {
         },
     ];
 
-    let result = store.store(&session_dir, &run_id, &attachments).expect("store should succeed");
+    let result = store
+        .store(&session_dir, &run_id, &attachments)
+        .expect("store should succeed");
 
     assert_eq!(result.len(), 2);
     for att in &result {
         assert!(att.content.is_none(), "content should be None after store");
-        assert!(att.artifact_rel_path.is_some(), "artifact_rel_path should be set");
+        assert!(
+            att.artifact_rel_path.is_some(),
+            "artifact_rel_path should be set"
+        );
         let rel_path = att.artifact_rel_path.as_ref().unwrap();
         assert!(rel_path.starts_with("artifacts/context/test_run_001/"));
         let full_path = tmp.path().join(rel_path);
-        assert!(fs.exists(&full_path), "artifact file should exist: {:?}", full_path);
+        assert!(
+            fs.exists(&full_path),
+            "artifact file should exist: {:?}",
+            full_path
+        );
     }
 
     // Verify written content
-    let first_path = tmp.path().join(result[0].artifact_rel_path.as_ref().unwrap());
+    let first_path = tmp
+        .path()
+        .join(result[0].artifact_rel_path.as_ref().unwrap());
     let content = fs.read_to_string(&first_path).expect("read");
     assert_eq!(content, "fn main() {}");
 }
@@ -79,10 +90,15 @@ fn test_store_skips_none_content() {
         source: None,
     }];
 
-    let result = store.store(&session_dir, &run_id, &attachments).expect("store should succeed");
+    let result = store
+        .store(&session_dir, &run_id, &attachments)
+        .expect("store should succeed");
     assert_eq!(result.len(), 1);
     assert!(result[0].content.is_none());
-    assert_eq!(result[0].artifact_rel_path.as_deref(), Some("existing/path.txt"));
+    assert_eq!(
+        result[0].artifact_rel_path.as_deref(),
+        Some("existing/path.txt")
+    );
 }
 
 #[test]
@@ -105,7 +121,9 @@ fn test_store_sanitizes_title_in_filename() {
         source: None,
     }];
 
-    let result = store.store(&session_dir, &run_id, &attachments).expect("store");
+    let result = store
+        .store(&session_dir, &run_id, &attachments)
+        .expect("store");
     let rel = result[0].artifact_rel_path.as_ref().unwrap();
     assert!(!rel.contains(".."), "path traversal should be sanitized");
     assert!(rel.starts_with("artifacts/context/run_san/"));

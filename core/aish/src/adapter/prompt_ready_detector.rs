@@ -31,7 +31,11 @@ impl PromptReadyDetector {
         if self.buf.len() > MAX_KEEP {
             self.buf.drain(0..self.buf.len() - MAX_KEEP);
         }
-        if self.buf.windows(AISH_PROMPT_READY_MARKER.len()).any(|w| w == AISH_PROMPT_READY_MARKER) {
+        if self
+            .buf
+            .windows(AISH_PROMPT_READY_MARKER.len())
+            .any(|w| w == AISH_PROMPT_READY_MARKER)
+        {
             self.buf.clear();
             return true;
         }

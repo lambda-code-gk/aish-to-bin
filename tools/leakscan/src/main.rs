@@ -61,7 +61,10 @@ fn main() {
     }
 
     if args.len() != 2 {
-        eprintln!("Usage: cat file.txt | {} [-v] [--color] [--mask] <rules.json>", args[0]);
+        eprintln!(
+            "Usage: cat file.txt | {} [-v] [--color] [--mask] <rules.json>",
+            args[0]
+        );
         std::process::exit(1);
     }
 

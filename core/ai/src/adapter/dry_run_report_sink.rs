@@ -48,14 +48,30 @@ impl DryRunReportSink for StdoutDryRunReportSink {
                 common::msg::Msg::System(s) => ("system", s.as_str()),
                 common::msg::Msg::User(s) => ("user", s.as_str()),
                 common::msg::Msg::Assistant(s) => ("assistant", s.as_str()),
-                common::msg::Msg::ToolCall { call_id, name, args, .. } => {
+                common::msg::Msg::ToolCall {
+                    call_id,
+                    name,
+                    args,
+                    ..
+                } => {
                     let args_str = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
-                    println!("  [{}] tool_call id={} name={} args={}", i, call_id, name, args_str);
+                    println!(
+                        "  [{}] tool_call id={} name={} args={}",
+                        i, call_id, name, args_str
+                    );
                     continue;
                 }
-                common::msg::Msg::ToolResult { call_id, name, result } => {
-                    let res_str = serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
-                    println!("  [{}] tool_result id={} name={} result={}", i, call_id, name, res_str);
+                common::msg::Msg::ToolResult {
+                    call_id,
+                    name,
+                    result,
+                } => {
+                    let res_str =
+                        serde_json::to_string(result).unwrap_or_else(|_| "{}".to_string());
+                    println!(
+                        "  [{}] tool_result id={} name={} result={}",
+                        i, call_id, name, res_str
+                    );
                     continue;
                 }
             };
@@ -81,11 +97,26 @@ impl DryRunReportSink for StdoutDryRunReportSink {
                 "output: messages={} chars={}",
                 report.output.message_count, report.output.char_count
             );
-            let addon_keeps = report.decisions.iter().filter(|d| d.stage == "addon.select" && d.action == "keep").count();
-            let addon_drops = report.decisions.iter().filter(|d| d.stage == "addon.select" && d.action == "drop").count();
-            let addon_errors = report.decisions.iter().filter(|d| d.stage == "addon.selector" && d.action == "error").count();
+            let addon_keeps = report
+                .decisions
+                .iter()
+                .filter(|d| d.stage == "addon.select" && d.action == "keep")
+                .count();
+            let addon_drops = report
+                .decisions
+                .iter()
+                .filter(|d| d.stage == "addon.select" && d.action == "drop")
+                .count();
+            let addon_errors = report
+                .decisions
+                .iter()
+                .filter(|d| d.stage == "addon.selector" && d.action == "error")
+                .count();
             if addon_keeps > 0 || addon_drops > 0 || addon_errors > 0 {
-                println!("addons: {} kept, {} dropped, {} selector error(s)", addon_keeps, addon_drops, addon_errors);
+                println!(
+                    "addons: {} kept, {} dropped, {} selector error(s)",
+                    addon_keeps, addon_drops, addon_errors
+                );
             }
             for d in &report.decisions {
                 println!(

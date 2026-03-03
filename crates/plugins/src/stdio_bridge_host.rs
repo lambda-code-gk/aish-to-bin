@@ -2,7 +2,8 @@ use crate::discovery::{discover_plugins, DiscoveredPlugin, PluginToml};
 use crate::stdio_jsonrpc::StdioJsonRpcClient;
 use common::error::Error;
 use common::ports::outbound::{
-    McpCallContext, McpCallResult, McpHost, McpServerDescriptor, McpServerId, McpToolId, ToolDescriptor,
+    McpCallContext, McpCallResult, McpHost, McpServerDescriptor, McpServerId, McpToolId,
+    ToolDescriptor,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -98,7 +99,12 @@ impl ServerRuntime {
         Ok(out)
     }
 
-    fn call(&mut self, tool_id: &McpToolId, args: Value, ctx: McpCallContext) -> Result<McpCallResult, Error> {
+    fn call(
+        &mut self,
+        tool_id: &McpToolId,
+        args: Value,
+        ctx: McpCallContext,
+    ) -> Result<McpCallResult, Error> {
         self.ensure_started()?;
         let cfg = &self.plugin.config;
         let client = self.client.as_mut().expect("client started");
@@ -141,16 +147,25 @@ impl StdioJsonRpcMcpBridgeHost {
 
     fn refresh(&self) -> Result<Vec<DiscoveredPlugin>, Error> {
         let plugins = discover_plugins()?;
-        let mut guard = self.plugins.write().map_err(|_| Error::system("plugins lock poisoned".to_string()))?;
+        let mut guard = self
+            .plugins
+            .write()
+            .map_err(|_| Error::system("plugins lock poisoned".to_string()))?;
         *guard = plugins.clone();
         Ok(plugins)
     }
 
-    fn plugin_by_id<'a>(plugins: &'a [DiscoveredPlugin], id: &McpServerId) -> Option<&'a DiscoveredPlugin> {
+    fn plugin_by_id<'a>(
+        plugins: &'a [DiscoveredPlugin],
+        id: &McpServerId,
+    ) -> Option<&'a DiscoveredPlugin> {
         plugins.iter().find(|p| p.config.id == id.0)
     }
 
-    fn get_or_create_runtime(&self, plugin: DiscoveredPlugin) -> Result<Arc<Mutex<ServerRuntime>>, Error> {
+    fn get_or_create_runtime(
+        &self,
+        plugin: DiscoveredPlugin,
+    ) -> Result<Arc<Mutex<ServerRuntime>>, Error> {
         let id = McpServerId::new(plugin.config.id.clone());
         {
             if let Ok(map) = self.runtimes.read() {
@@ -159,9 +174,15 @@ impl StdioJsonRpcMcpBridgeHost {
                 }
             }
         }
-        let mut map = self.runtimes.write().map_err(|_| Error::system("runtimes lock poisoned".to_string()))?;
+        let mut map = self
+            .runtimes
+            .write()
+            .map_err(|_| Error::system("runtimes lock poisoned".to_string()))?;
         Ok(Arc::clone(map.entry(id).or_insert_with(|| {
-            Arc::new(Mutex::new(ServerRuntime { plugin, client: None }))
+            Arc::new(Mutex::new(ServerRuntime {
+                plugin,
+                client: None,
+            }))
         })))
     }
 
@@ -182,10 +203,7 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
             out.push(McpServerDescriptor {
                 id: McpServerId::new(cfg.id.clone()),
                 namespace: cfg.namespace.clone(),
-                display_name: cfg
-                    .display_name
-                    .clone()
-                    .unwrap_or_else(|| cfg.id.clone()),
+                display_name: cfg.display_name.clone().unwrap_or_else(|| cfg.id.clone()),
                 enabled: cfg.enabled,
                 source: Some(p.source.clone()),
             });
@@ -216,7 +234,9 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
             )));
         }
         let rt = self.get_or_create_runtime(plugin)?;
-        let mut guard = rt.lock().map_err(|_| Error::system("runtime lock poisoned".to_string()))?;
+        let mut guard = rt
+            .lock()
+            .map_err(|_| Error::system("runtime lock poisoned".to_string()))?;
         let tools_and_names = guard.list_tools()?;
         // cache tool -> (server, tool_name)
         // tool_name は stdio 側の list_tools.name を保持する（canonical 化による不整合を避ける）
@@ -238,7 +258,12 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
         Ok(tools)
     }
 
-    fn call(&self, tool_id: &McpToolId, args: Value, ctx: McpCallContext) -> Result<McpCallResult, Error> {
+    fn call(
+        &self,
+        tool_id: &McpToolId,
+        args: Value,
+        ctx: McpCallContext,
+    ) -> Result<McpCallResult, Error> {
         if self
             .plugins
             .read()
@@ -255,12 +280,18 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
                 // fallback: namespace prefix で推測（cache 未作成でも call できるようにする）
                 let ns = tool_id.0.split('.').next()?.to_string();
                 let plugins = self.plugins.read().ok()?.clone();
-                let p = plugins.into_iter().find(|p| p.config.namespace == ns && p.config.enabled)?;
+                let p = plugins
+                    .into_iter()
+                    .find(|p| p.config.namespace == ns && p.config.enabled)?;
                 Some(McpServerId::new(p.config.id))
             })
             .ok_or_else(|| Error::invalid_argument(format!("tool not registered: {}", tool_id)))?;
 
-        let plugins = self.plugins.read().map_err(|_| Error::system("plugins lock poisoned".to_string()))?.clone();
+        let plugins = self
+            .plugins
+            .read()
+            .map_err(|_| Error::system("plugins lock poisoned".to_string()))?
+            .clone();
         let plugin = Self::plugin_by_id(&plugins, &server_id)
             .ok_or_else(|| Error::invalid_argument(format!("plugin not found: {}", server_id)))?
             .clone();
@@ -271,7 +302,9 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
             )));
         }
         let rt = self.get_or_create_runtime(plugin)?;
-        let mut guard = rt.lock().map_err(|_| Error::system("runtime lock poisoned".to_string()))?;
+        let mut guard = rt
+            .lock()
+            .map_err(|_| Error::system("runtime lock poisoned".to_string()))?;
         // binding がある場合は stdio 側の本来の tool_name で呼ぶ
         let effective_tool_id = if let Some(b) = binding {
             McpToolId::new(b.tool_name)
@@ -281,4 +314,3 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
         guard.call(&effective_tool_id, args, ctx)
     }
 }
-

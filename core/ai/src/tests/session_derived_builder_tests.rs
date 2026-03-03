@@ -9,7 +9,11 @@ use common::ports::outbound::{FileSystem, SessionEventStore};
 use std::sync::Arc;
 use storage::{DerivedRebuilder, NdjsonSessionEventStore};
 
-fn event(seq: u64, kind: &str, payload: serde_json::Value) -> Result<EventEnvelope, common::error::Error> {
+fn event(
+    seq: u64,
+    kind: &str,
+    payload: serde_json::Value,
+) -> Result<EventEnvelope, common::error::Error> {
     Ok(EventEnvelope {
         v: 1,
         seq,
@@ -63,7 +67,11 @@ fn test_rebuild_creates_index_sqlite_and_summary_json() {
     builder.rebuild(&session_dir, &mut iter).unwrap();
 
     let index_path = session_dir.as_ref().join("index").join("index.sqlite");
-    assert!(index_path.exists(), "index.sqlite should exist at {:?}", index_path);
+    assert!(
+        index_path.exists(),
+        "index.sqlite should exist at {:?}",
+        index_path
+    );
     let conn = rusqlite::Connection::open(&index_path).unwrap();
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
@@ -130,11 +138,9 @@ fn test_rebuild_resolves_artifact_rel_path() {
 
     let conn = rusqlite::Connection::open(session_path.join("index").join("index.sqlite")).unwrap();
     let (subject, text): (String, String) = conn
-        .query_row(
-            "SELECT subject, text FROM events WHERE seq = 1",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
+        .query_row("SELECT subject, text FROM events WHERE seq = 1", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .unwrap();
     assert!(subject.contains("allowed") && subject.contains("user_approved"));
     assert!(text.contains("curl") || text.contains("example"));

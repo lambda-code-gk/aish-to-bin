@@ -25,4 +25,3 @@ impl<T> Resolved<T> {
         }
     }
 }
-

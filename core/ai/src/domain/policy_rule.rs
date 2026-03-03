@@ -35,4 +35,3 @@ pub trait ToolPolicyRule: Send + Sync {
         non_interactive: bool,
     ) -> Result<RuleVerdict<ToolContext>, Error>;
 }
-

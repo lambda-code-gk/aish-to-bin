@@ -41,9 +41,8 @@ fn find_project_memory_dir(mut current: &Path) -> Result<Option<PathBuf>, Error>
     loop {
         let candidate = current.join(AISH_DIR).join(MEMORY_SUBDIR);
         if candidate.exists() {
-            let meta = std::fs::metadata(&candidate).map_err(|e| {
-                Error::io_msg(format!("metadata {}: {}", candidate.display(), e))
-            })?;
+            let meta = std::fs::metadata(&candidate)
+                .map_err(|e| Error::io_msg(format!("metadata {}: {}", candidate.display(), e)))?;
             if meta.is_dir() {
                 return Ok(Some(candidate));
             }

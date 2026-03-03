@@ -2,9 +2,9 @@
 //!
 //! ビルド: aish-cli（subcommand 統合 + 互換 ai）。成果物: dist/bin/aish, dist/bin/ai。
 
-use std::process::Command;
 use std::fs;
 use std::io;
+use std::process::Command;
 
 fn main() {
     if let Err(e) = run() {
@@ -35,7 +35,16 @@ fn run_dist(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), St
 
     println!("Building aish-cli ({})...", target_name);
     let status = Command::new("cargo")
-        .args(["build", if release { "--release" } else { "" }, "-p", "aish-cli"].iter().filter(|s| !s.is_empty()))
+        .args(
+            [
+                "build",
+                if release { "--release" } else { "" },
+                "-p",
+                "aish-cli",
+            ]
+            .iter()
+            .filter(|s| !s.is_empty()),
+        )
         .current_dir(&root)
         .status()
         .map_err(|e| format!("cargo build: {}", e))?;
@@ -43,7 +52,8 @@ fn run_dist(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), St
         return Err("cargo build -p aish-cli failed".into());
     }
 
-    fs::create_dir_all(&dist_bin).map_err(|e| format!("create_dir_all {}: {}", dist_bin.display(), e))?;
+    fs::create_dir_all(&dist_bin)
+        .map_err(|e| format!("create_dir_all {}: {}", dist_bin.display(), e))?;
 
     let mut copied = 0;
     for (bin, name) in [("aish", "aish"), ("ai", "ai")] {
@@ -53,8 +63,12 @@ fn run_dist(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), St
             // 一時ファイルに書き込んでから rename で置換する。実行中のバイナリは
             // 開いた inode を保持するため、直接上書き(ETXTBSY)を避けられる。
             let tmp = dist_bin.join(format!("{}.new", name));
-            fs::copy(&src, &tmp).map_err(|e: io::Error| format!("copy {} -> {}: {}", src.display(), tmp.display(), e))?;
-            fs::rename(&tmp, &dst).map_err(|e: io::Error| format!("rename {} -> {}: {}", tmp.display(), dst.display(), e))?;
+            fs::copy(&src, &tmp).map_err(|e: io::Error| {
+                format!("copy {} -> {}: {}", src.display(), tmp.display(), e)
+            })?;
+            fs::rename(&tmp, &dst).map_err(|e: io::Error| {
+                format!("rename {} -> {}: {}", tmp.display(), dst.display(), e)
+            })?;
             println!("  {} -> {}", src.display(), dst.display());
             copied += 1;
         } else {
@@ -65,6 +79,10 @@ fn run_dist(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), St
     if copied == 0 {
         return Err("no binaries copied".into());
     }
-    println!("Dist complete: {} binary(ies) in {}/", copied, dist_bin.display());
+    println!(
+        "Dist complete: {} binary(ies) in {}/",
+        copied,
+        dist_bin.display()
+    );
     Ok(())
 }

@@ -138,7 +138,9 @@ impl HistoryGetTool {
                 {
                     if is_safe_summary_basename(&comp.summary_path) {
                         let summary_path = session_dir.join(&comp.summary_path);
-                        if let Some(safe_path) = resolve_under_session_dir(&session_dir, &summary_path) {
+                        if let Some(safe_path) =
+                            resolve_under_session_dir(&session_dir, &summary_path)
+                        {
                             if let Ok(summary) = std::fs::read_to_string(&safe_path) {
                                 out.push(serde_json::json!({
                                     "id": format!("compaction:{}:{}", comp.from_id, comp.to_id),
@@ -161,12 +163,13 @@ impl HistoryGetTool {
                 )));
             }
             let reviewed_path = session_dir.join(&msg.reviewed_path);
-            let safe_path = resolve_under_session_dir(&session_dir, &reviewed_path).ok_or_else(|| {
-                ToolError::ExecutionFailed(format!(
-                    "reviewed_path not under session dir: {}",
-                    msg.reviewed_path
-                ))
-            })?;
+            let safe_path =
+                resolve_under_session_dir(&session_dir, &reviewed_path).ok_or_else(|| {
+                    ToolError::ExecutionFailed(format!(
+                        "reviewed_path not under session dir: {}",
+                        msg.reviewed_path
+                    ))
+                })?;
             let content = std::fs::read_to_string(&safe_path).map_err(|e| {
                 ToolError::ExecutionFailed(format!("{}: {}", safe_path.display(), e))
             })?;
@@ -204,22 +207,23 @@ impl HistoryGetTool {
         let role_filter = parse_role_filter(args.get("role").and_then(|v| v.as_str()))?;
 
         let reviewed_dir = session_dir.join(REVIEWED_DIR);
-        let mut entries: Vec<(String, ManifestRole, String)> = match std::fs::read_dir(&reviewed_dir) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .filter_map(|e| {
-                    let path = e.path();
-                    if !path.is_file() {
-                        return None;
-                    }
-                    let name = path.file_name().and_then(|n| n.to_str())?;
-                    let (id, role) = parse_reviewed_filename(name)?;
-                    let rel_path = format!("{}/{}", REVIEWED_DIR, name);
-                    Some((id, role, rel_path))
-                })
-                .collect(),
-            Err(_) => return Ok(serde_json::json!({ "messages": [] })),
-        };
+        let mut entries: Vec<(String, ManifestRole, String)> =
+            match std::fs::read_dir(&reviewed_dir) {
+                Ok(rd) => rd
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let path = e.path();
+                        if !path.is_file() {
+                            return None;
+                        }
+                        let name = path.file_name().and_then(|n| n.to_str())?;
+                        let (id, role) = parse_reviewed_filename(name)?;
+                        let rel_path = format!("{}/{}", REVIEWED_DIR, name);
+                        Some((id, role, rel_path))
+                    })
+                    .collect(),
+                Err(_) => return Ok(serde_json::json!({ "messages": [] })),
+            };
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut selected: Vec<_> = entries
@@ -345,7 +349,10 @@ mod tests {
     }
 
     fn prepare_session_no_manifest() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("history_get_tool_nomanifest_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "history_get_tool_nomanifest_{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let reviewed_dir = dir.join("reviewed");
@@ -372,7 +379,11 @@ mod tests {
     }
 
     fn prepare_session_four_messages(suffix: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("history_get_tool_4_{}_{}", std::process::id(), suffix));
+        let dir = std::env::temp_dir().join(format!(
+            "history_get_tool_4_{}_{}",
+            std::process::id(),
+            suffix
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let reviewed_dir = dir.join("reviewed");
@@ -401,11 +412,14 @@ mod tests {
         let dir = prepare_session_four_messages("after");
         let ctx = ToolContext::new(Some(dir.clone()));
         let r = tool
-            .call(serde_json::json!({
-                "after_id": "001",
-                "limit": 2,
-                "role": "any"
-            }), &ctx)
+            .call(
+                serde_json::json!({
+                    "after_id": "001",
+                    "limit": 2,
+                    "role": "any"
+                }),
+                &ctx,
+            )
             .unwrap();
         let msgs = r["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 2, "after_id should return first 2 after 001");
@@ -420,11 +434,14 @@ mod tests {
         let dir = prepare_session_four_messages("before");
         let ctx = ToolContext::new(Some(dir.clone()));
         let r = tool
-            .call(serde_json::json!({
-                "before_id": "004",
-                "limit": 2,
-                "role": "any"
-            }), &ctx)
+            .call(
+                serde_json::json!({
+                    "before_id": "004",
+                    "limit": 2,
+                    "role": "any"
+                }),
+                &ctx,
+            )
             .unwrap();
         let msgs = r["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 2, "before_id should return last 2 before 004");
@@ -433,4 +450,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 }
-

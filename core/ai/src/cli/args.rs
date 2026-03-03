@@ -231,10 +231,7 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
         .map(|i| i.cloned().collect())
         .unwrap_or_default();
     let (task, message_args) = match positional.split_first() {
-        Some((first, rest)) => (
-            Some(TaskName::new(first.clone())),
-            rest.to_vec(),
-        ),
+        Some((first, rest)) => (Some(TaskName::new(first.clone())), rest.to_vec()),
         None => (None, vec![]),
     };
 
@@ -297,10 +294,7 @@ pub fn parse_args_from(args: &[String]) -> Result<Config, Error> {
 pub fn parse_args_from_os(
     args: impl IntoIterator<Item = impl AsRef<std::ffi::OsStr>>,
 ) -> Result<ParseOutcome, Error> {
-    let args: Vec<std::ffi::OsString> = args
-        .into_iter()
-        .map(|a| a.as_ref().to_owned())
-        .collect();
+    let args: Vec<std::ffi::OsString> = args.into_iter().map(|a| a.as_ref().to_owned()).collect();
     let cmd = build_clap_command();
     let matches = cmd
         .try_get_matches_from(args)
@@ -658,7 +652,12 @@ mod tests {
 
     #[test]
     fn test_parse_args_mode() {
-        let args = vec!["ai".to_string(), "--mode".to_string(), "plan".to_string(), "hello".to_string()];
+        let args = vec![
+            "ai".to_string(),
+            "--mode".to_string(),
+            "plan".to_string(),
+            "hello".to_string(),
+        ];
         let config = parse_args_from(&args).unwrap();
         assert_eq!(config.mode.as_deref(), Some("plan"));
         assert_eq!(config.task.as_ref().map(|t| t.as_ref()), Some("hello"));
@@ -666,7 +665,12 @@ mod tests {
 
     #[test]
     fn test_parse_args_mode_short() {
-        let args = vec!["ai".to_string(), "-M".to_string(), "agent".to_string(), "run".to_string()];
+        let args = vec![
+            "ai".to_string(),
+            "-M".to_string(),
+            "agent".to_string(),
+            "run".to_string(),
+        ];
         let config = parse_args_from(&args).unwrap();
         assert_eq!(config.mode.as_deref(), Some("agent"));
         assert_eq!(config.task.as_ref().map(|t| t.as_ref()), Some("run"));
@@ -684,7 +688,10 @@ mod tests {
     fn test_parse_args_model_short() {
         let args = vec!["ai".to_string(), "-m".to_string(), "gemini-2.0".to_string()];
         let config = parse_args_from(&args).unwrap();
-        assert_eq!(config.model.as_ref().map(|m| m.as_ref()), Some("gemini-2.0"));
+        assert_eq!(
+            config.model.as_ref().map(|m| m.as_ref()),
+            Some("gemini-2.0")
+        );
     }
 
     #[test]
@@ -746,7 +753,11 @@ mod tests {
 
     #[test]
     fn test_parse_args_no_interactive() {
-        let args = vec!["ai".to_string(), "--no-interactive".to_string(), "hello".to_string()];
+        let args = vec![
+            "ai".to_string(),
+            "--no-interactive".to_string(),
+            "hello".to_string(),
+        ];
         let config = parse_args_from(&args).unwrap();
         assert!(config.non_interactive);
     }
@@ -767,7 +778,11 @@ mod tests {
 
     #[test]
     fn test_parse_args_dry_run() {
-        let args = vec!["ai".to_string(), "--dry-run".to_string(), "hello".to_string()];
+        let args = vec![
+            "ai".to_string(),
+            "--dry-run".to_string(),
+            "hello".to_string(),
+        ];
         let config = parse_args_from(&args).unwrap();
         assert!(config.dry_run);
         // 単一の位置引数はタスク名として解釈される

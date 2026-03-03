@@ -238,5 +238,3 @@ fn test_non_interactive_require_approval_is_denied() {
         panic!("expected ToolResult at index 3");
     }
 }
-
-

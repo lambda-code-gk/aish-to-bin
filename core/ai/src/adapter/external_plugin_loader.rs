@@ -70,28 +70,25 @@ pub fn load_external_plugins(
             });
         }
 
-        let client = match ExternalPluginStdioClient::start(
-            transport,
-            env_map,
-            &entry.manifest.timeouts,
-        ) {
-            Ok(c) => c,
-            Err(e) => {
-                if let Some(ref hub) = event_hub {
-                    hub.emit(Event {
-                        v: 1,
-                        session_id: session_id.clone(),
-                        run_id: run_id.clone(),
-                        kind: "external_plugin.start_failed".to_string(),
-                        payload: serde_json::json!({
-                            "plugin_id": plugin_id.0,
-                            "error": e.to_string(),
-                        }),
-                    });
+        let client =
+            match ExternalPluginStdioClient::start(transport, env_map, &entry.manifest.timeouts) {
+                Ok(c) => c,
+                Err(e) => {
+                    if let Some(ref hub) = event_hub {
+                        hub.emit(Event {
+                            v: 1,
+                            session_id: session_id.clone(),
+                            run_id: run_id.clone(),
+                            kind: "external_plugin.start_failed".to_string(),
+                            payload: serde_json::json!({
+                                "plugin_id": plugin_id.0,
+                                "error": e.to_string(),
+                            }),
+                        });
+                    }
+                    continue;
                 }
-                continue;
-            }
-        };
+            };
 
         if let Some(ref hub) = event_hub {
             hub.emit(Event {
@@ -158,10 +155,8 @@ pub fn load_external_plugins(
                 }
                 continue;
             }
-            let name_static: &'static str =
-                Box::leak(desc.name.clone().into_boxed_str());
-            let desc_static: &'static str =
-                Box::leak(desc.description.clone().into_boxed_str());
+            let name_static: &'static str = Box::leak(desc.name.clone().into_boxed_str());
+            let desc_static: &'static str = Box::leak(desc.description.clone().into_boxed_str());
             let schema = desc
                 .input_schema
                 .as_object()

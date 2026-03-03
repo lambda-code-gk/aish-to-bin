@@ -127,7 +127,6 @@ time.sleep(300)
     write_script("aish_plugin_mock_no_init.py", script)
 }
 
-
 #[test]
 fn stdio_client_initialize_list_tools_call_tool_with_mock() {
     if !have_python3() {

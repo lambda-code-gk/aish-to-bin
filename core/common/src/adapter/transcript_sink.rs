@@ -262,7 +262,10 @@ mod tests {
         let stdout = payload.get("stdout").unwrap();
         let obj = stdout.as_object().expect("large string becomes object");
         assert!(obj.contains_key("preview"));
-        assert_eq!(obj.get("len").and_then(Value::as_u64).unwrap(), (PREVIEW_MAX_LEN + 100) as u64);
+        assert_eq!(
+            obj.get("len").and_then(Value::as_u64).unwrap(),
+            (PREVIEW_MAX_LEN + 100) as u64
+        );
     }
 
     #[test]

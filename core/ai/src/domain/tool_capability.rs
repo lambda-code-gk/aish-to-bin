@@ -15,4 +15,3 @@ pub enum ToolCapability {
     /// LLM などへのデータ送信の絶対上限（文字数）
     DataEgress { max_chars: usize },
 }
-

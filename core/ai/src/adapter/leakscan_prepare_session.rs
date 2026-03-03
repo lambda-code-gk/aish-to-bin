@@ -4,9 +4,9 @@
 //! 通過分は reviewed_<id>_... にコピー、元 part は leakscan_evacuated/ に移動する。
 
 use crate::adapter::session_manifest;
-use crate::ports::outbound::{CompactionStrategy, InterruptChecker, PrepareSessionForSensitiveCheck};
-use crate::domain::{
-    hash64, ManifestDecision, ManifestRecordV1, ManifestRole, MessageRecordV1,
+use crate::domain::{hash64, ManifestDecision, ManifestRecordV1, ManifestRole, MessageRecordV1};
+use crate::ports::outbound::{
+    CompactionStrategy, InterruptChecker, PrepareSessionForSensitiveCheck,
 };
 use common::domain::SessionDir;
 use common::error::Error;
@@ -157,7 +157,9 @@ impl LeakscanPrepareSession {
         eprint!("{}", verbose_output);
         eprintln!("----------------------------------------");
         eprint!("Send to LLM? [y]es / [n]o (deny) / [m]ask: ");
-        std::io::stderr().flush().map_err(|e| Error::io_msg(e.to_string()))?;
+        std::io::stderr()
+            .flush()
+            .map_err(|e| Error::io_msg(e.to_string()))?;
 
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -208,9 +210,8 @@ impl LeakscanPrepareSession {
             .file_name()
             .and_then(|n| n.to_str())
             .ok_or_else(|| Error::io_msg("Invalid part filename"))?;
-        let (id, role) = parse_part_filename(name).ok_or_else(|| {
-            Error::io_msg(format!("Could not parse part filename: {}", name))
-        })?;
+        let (id, role) = parse_part_filename(name)
+            .ok_or_else(|| Error::io_msg(format!("Could not parse part filename: {}", name)))?;
 
         let evacuated_dir = session_dir.join(EVACUATED_DIR);
         let dest_part_in_evacuated = evacuated_dir.join(name);
@@ -268,12 +269,7 @@ impl PrepareSessionForSensitiveCheck for LeakscanPrepareSession {
         if !self.fs.exists(dir) {
             return Ok(());
         }
-        if self
-            .fs
-            .metadata(dir)
-            .map(|m| !m.is_dir())
-            .unwrap_or(true)
-        {
+        if self.fs.metadata(dir).map(|m| !m.is_dir()).unwrap_or(true) {
             return Ok(());
         }
 
@@ -399,7 +395,9 @@ mod tests {
             panic!("prepare failed after retries (ETXTBSY): {}", e);
         }
 
-        let reviewed_path = session_dir.join(REVIEWED_DIR).join("reviewed_ABC12_user.txt");
+        let reviewed_path = session_dir
+            .join(REVIEWED_DIR)
+            .join("reviewed_ABC12_user.txt");
         assert!(fs.exists(&reviewed_path), "reviewed file should exist");
         let reviewed_content = std::fs::read_to_string(&reviewed_path).unwrap();
         assert_eq!(reviewed_content, DENY_PLACEHOLDER_CONTENT);
@@ -411,7 +409,10 @@ mod tests {
         assert!(fs.exists(&manifest_path), "manifest should exist");
         let manifest_body = std::fs::read_to_string(manifest_path).unwrap();
         let records = parse_lines(&manifest_body);
-        assert!(!records.is_empty(), "manifest should contain at least one line");
+        assert!(
+            !records.is_empty(),
+            "manifest should contain at least one line"
+        );
         let first = records.first().and_then(|r| r.message()).unwrap();
         assert_eq!(first.id, "ABC12");
         assert_eq!(first.role, ManifestRole::User);

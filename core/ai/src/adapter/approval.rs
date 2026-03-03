@@ -7,8 +7,8 @@ use crate::domain::{Approval, ToolApproval};
 use crate::ports::outbound::InterruptChecker;
 use common::error::Error;
 use std::io::{self, BufRead, Write};
-use std::sync::Arc;
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// CLI 対話による承認実装
@@ -22,9 +22,7 @@ pub struct CliToolApproval {
 
 impl CliToolApproval {
     pub fn new(interrupt_checker: Option<Arc<dyn InterruptChecker>>) -> Self {
-        Self {
-            interrupt_checker,
-        }
+        Self { interrupt_checker }
     }
 }
 

@@ -77,12 +77,8 @@ impl Tool for SaveMemoryTool {
         let timestamp = common::ports::outbound::now_iso8601();
         let entry = MemoryEntry::new("", content, category, keywords, subject, timestamp);
 
-        let id = memory_storage::save_entry(
-            dir.as_path(),
-            &entry,
-            ctx.log.as_deref(),
-        )
-        .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
+        let id = memory_storage::save_entry(dir.as_path(), &entry, ctx.log.as_deref())
+            .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
         Ok(serde_json::json!({
             "memory_id": id,
             "memory_dir": dir.to_string_lossy()
@@ -149,6 +145,9 @@ mod tests {
         assert!(r.is_ok());
         let out = r.unwrap();
         assert!(out.get("memory_id").and_then(|v| v.as_str()).unwrap().len() >= 8);
-        assert_eq!(out.get("memory_dir").and_then(|v| v.as_str()).unwrap(), dir.to_string_lossy().as_ref());
+        assert_eq!(
+            out.get("memory_dir").and_then(|v| v.as_str()).unwrap(),
+            dir.to_string_lossy().as_ref()
+        );
     }
 }

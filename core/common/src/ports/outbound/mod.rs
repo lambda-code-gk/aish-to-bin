@@ -2,16 +2,16 @@
 
 pub mod clock;
 pub mod env_resolver;
+pub mod event_appender;
 pub mod event_sink;
 pub mod fs;
 pub mod log;
+pub mod mcp_host;
 pub mod path_resolver;
 pub mod process;
 pub mod session_event_store;
 pub mod sink;
 pub mod tool;
-pub mod mcp_host;
-pub mod event_appender;
 
 #[cfg(unix)]
 pub mod pty;
@@ -23,21 +23,21 @@ pub mod llm_provider;
 
 pub use clock::Clock;
 pub use env_resolver::EnvResolver;
+pub use event_appender::EventAppender;
 pub use event_sink::EventRecordSink;
 pub use fs::{FileMetadata, FileSystem};
-pub use log::{Log, LogLevel, LogRecord, now_iso8601};
+pub use id_generator::IdGenerator;
+pub use llm_provider::LlmProvider;
+pub use log::{now_iso8601, Log, LogLevel, LogRecord};
+pub use mcp_host::{
+    McpCallContext, McpCallResult, McpHost, McpServerDescriptor, McpServerId, McpToolId,
+    ToolDescriptor,
+};
 pub use path_resolver::{PathResolver, PathResolverInput};
 pub use process::Process;
 pub use session_event_store::SessionEventStore;
 pub use sink::{AgentEvent, EventSink};
 pub use tool::Tool;
-pub use mcp_host::{
-    McpCallContext, McpCallResult, McpHost, McpServerDescriptor, McpServerId, McpToolId,
-    ToolDescriptor,
-};
-pub use event_appender::EventAppender;
-pub use id_generator::IdGenerator;
-pub use llm_provider::LlmProvider;
 
 #[cfg(unix)]
 pub use pty::{Pty, PtyProcessStatus, PtySpawn, Winsize};

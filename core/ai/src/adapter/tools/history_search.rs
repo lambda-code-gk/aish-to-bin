@@ -78,7 +78,9 @@ impl HistorySearchTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidArgs("missing 'query'".to_string()))?;
         if query.is_empty() {
-            return Err(ToolError::InvalidArgs("query must not be empty".to_string()));
+            return Err(ToolError::InvalidArgs(
+                "query must not be empty".to_string(),
+            ));
         }
         let limit = args
             .get("limit")
@@ -139,7 +141,9 @@ impl HistorySearchTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidArgs("missing 'query'".to_string()))?;
         if query.is_empty() {
-            return Err(ToolError::InvalidArgs("query must not be empty".to_string()));
+            return Err(ToolError::InvalidArgs(
+                "query must not be empty".to_string(),
+            ));
         }
         let limit = args
             .get("limit")
@@ -156,22 +160,23 @@ impl HistorySearchTool {
         let role_filter = parse_role_filter(args.get("role").and_then(|v| v.as_str()))?;
 
         let reviewed_dir = session_dir.join(REVIEWED_DIR);
-        let mut entries: Vec<(String, ManifestRole, String)> = match std::fs::read_dir(&reviewed_dir) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok())
-                .filter_map(|e| {
-                    let path = e.path();
-                    if !path.is_file() {
-                        return None;
-                    }
-                    let name = path.file_name().and_then(|n| n.to_str())?;
-                    let (id, role) = parse_reviewed_filename(name)?;
-                    let rel_path = format!("{}/{}", REVIEWED_DIR, name);
-                    Some((id, role, rel_path))
-                })
-                .collect(),
-            Err(_) => return Ok(serde_json::json!({ "hits": [] })),
-        };
+        let mut entries: Vec<(String, ManifestRole, String)> =
+            match std::fs::read_dir(&reviewed_dir) {
+                Ok(rd) => rd
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| {
+                        let path = e.path();
+                        if !path.is_file() {
+                            return None;
+                        }
+                        let name = path.file_name().and_then(|n| n.to_str())?;
+                        let (id, role) = parse_reviewed_filename(name)?;
+                        let rel_path = format!("{}/{}", REVIEWED_DIR, name);
+                        Some((id, role, rel_path))
+                    })
+                    .collect(),
+                Err(_) => return Ok(serde_json::json!({ "hits": [] })),
+            };
         entries.sort_by(|a, b| b.0.cmp(&a.0)); // rev order (newest first)
 
         let mut hits = Vec::new();
@@ -285,8 +290,16 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let reviewed_dir = dir.join("reviewed");
         std::fs::create_dir_all(&reviewed_dir).unwrap();
-        std::fs::write(reviewed_dir.join("reviewed_001_user.txt"), "The quick brown fox").unwrap();
-        std::fs::write(reviewed_dir.join("reviewed_002_assistant.txt"), "Jumps over lazy dog").unwrap();
+        std::fs::write(
+            reviewed_dir.join("reviewed_001_user.txt"),
+            "The quick brown fox",
+        )
+        .unwrap();
+        std::fs::write(
+            reviewed_dir.join("reviewed_002_assistant.txt"),
+            "Jumps over lazy dog",
+        )
+        .unwrap();
         std::fs::write(dir.join("manifest.jsonl"), "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":19,\"hash64\":\"aa\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":19,\"hash64\":\"bb\"}\n").unwrap();
@@ -316,13 +329,24 @@ mod tests {
     }
 
     fn prepare_session_no_manifest() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("history_search_tool_nomanifest_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "history_search_tool_nomanifest_{}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let reviewed_dir = dir.join("reviewed");
         std::fs::create_dir_all(&reviewed_dir).unwrap();
-        std::fs::write(reviewed_dir.join("reviewed_001_user.txt"), "The quick brown fox").unwrap();
-        std::fs::write(reviewed_dir.join("reviewed_002_assistant.txt"), "Jumps over lazy dog").unwrap();
+        std::fs::write(
+            reviewed_dir.join("reviewed_001_user.txt"),
+            "The quick brown fox",
+        )
+        .unwrap();
+        std::fs::write(
+            reviewed_dir.join("reviewed_002_assistant.txt"),
+            "Jumps over lazy dog",
+        )
+        .unwrap();
         dir
     }
 
@@ -337,8 +361,10 @@ mod tests {
         let hits = r["hits"].as_array().unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0]["id"].as_str(), Some("001"));
-        assert_eq!(hits[0]["path"].as_str(), Some("reviewed/reviewed_001_user.txt"));
+        assert_eq!(
+            hits[0]["path"].as_str(),
+            Some("reviewed/reviewed_001_user.txt")
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 }
-

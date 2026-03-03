@@ -44,7 +44,10 @@ fn test_grep_selector_finds_token_in_file() {
 
     let att = addon.attachment.as_ref().unwrap();
     let content = att.content.as_ref().unwrap();
-    assert!(content.contains("a.txt:2:"), "should contain file:line reference (1-based)");
+    assert!(
+        content.contains("a.txt:2:"),
+        "should contain file:line reference (1-based)"
+    );
 }
 
 #[test]
@@ -60,14 +63,7 @@ fn test_grep_selector_ignores_dirs() {
     .unwrap();
 
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
-    let selector = GrepHitsSelector::new(
-        fs,
-        100,
-        50,
-        100_000,
-        4,
-        vec!["target".to_string()],
-    );
+    let selector = GrepHitsSelector::new(fs, 100, 50, 100_000, 4, vec!["target".to_string()]);
 
     let query = Query::new("findme_token");
     let input = ContextAddonInput {
@@ -76,7 +72,10 @@ fn test_grep_selector_ignores_dirs() {
         project_root: root,
     };
     let addons = selector.select(&input).expect("select should succeed");
-    assert!(addons.is_empty(), "files in ignored dirs should not be searched");
+    assert!(
+        addons.is_empty(),
+        "files in ignored dirs should not be searched"
+    );
 }
 
 #[test]

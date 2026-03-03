@@ -22,4 +22,3 @@ pub struct ConfigKeySource {
     pub value_preview: String,
     pub source: ConfigSource,
 }
-

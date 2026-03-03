@@ -48,7 +48,8 @@ impl ResolveModeConfig for StdResolveModeConfig {
             .fs
             .read_to_string(&path)
             .map_err(|e| Error::io_msg(format!("{}: {}", path.display(), e)))?;
-        ModeConfig::parse_json(&contents).map_err(|e| Error::json(format!("{}: {}", path.display(), e)))
+        ModeConfig::parse_json(&contents)
+            .map_err(|e| Error::json(format!("{}: {}", path.display(), e)))
             .map(Some)
     }
 
@@ -60,7 +61,12 @@ impl ResolveModeConfig for StdResolveModeConfig {
         }
         let mut names = Vec::new();
         for path in self.fs.read_dir(&mode_d)? {
-            if !self.fs.metadata(&path).map(|m| m.is_file()).unwrap_or(false) {
+            if !self
+                .fs
+                .metadata(&path)
+                .map(|m| m.is_file())
+                .unwrap_or(false)
+            {
                 continue;
             }
             if path.extension().and_then(|e| e.to_str()) != Some("json") {

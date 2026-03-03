@@ -28,4 +28,3 @@ impl ToolProfileProvider for StaticToolProfileProvider {
         }
     }
 }
-

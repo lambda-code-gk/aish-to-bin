@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use common::llm::factory::AnyProvider;
 use common::llm::provider::Message as LlmMessage;
-use common::llm::{create_provider, load_profiles_config, resolve_provider, LlmDriver, ResolvedProvider};
+use common::llm::{
+    create_provider, load_profiles_config, resolve_provider, LlmDriver, ResolvedProvider,
+};
 use common::ports::outbound::{EnvResolver, FileSystem};
 
 use crate::ports::outbound::{LlmEventStream, LlmEventStreamFactory, LlmStreamContext};
@@ -20,7 +22,11 @@ fn llm_error_context(resolved: &ResolvedProvider) -> String {
     if extra.is_empty() {
         format!("Provider profile: {}", resolved.profile_name)
     } else {
-        format!("Provider profile: {} ({})", resolved.profile_name, extra.join(", "))
+        format!(
+            "Provider profile: {} ({})",
+            resolved.profile_name,
+            extra.join(", ")
+        )
     }
 }
 
@@ -36,7 +42,8 @@ impl LlmEventStream for DriverLlmStreamAdapter {
         tools: Option<&[common::tool::ToolDef]>,
         callback: &mut dyn FnMut(common::llm::events::LlmEvent) -> Result<(), common::error::Error>,
     ) -> Result<(), common::error::Error> {
-        self.0.query_stream_events(query, system_instruction, history, tools, callback)
+        self.0
+            .query_stream_events(query, system_instruction, history, tools, callback)
     }
 }
 

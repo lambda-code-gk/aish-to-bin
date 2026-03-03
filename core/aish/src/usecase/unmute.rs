@@ -15,14 +15,8 @@ pub struct UnmuteUseCase {
 }
 
 impl UnmuteUseCase {
-    pub fn new(
-        path_resolver: Arc<dyn PathResolver>,
-        fs: Arc<dyn FileSystem>,
-    ) -> Self {
-        Self {
-            path_resolver,
-            fs,
-        }
+    pub fn new(path_resolver: Arc<dyn PathResolver>, fs: Arc<dyn FileSystem>) -> Self {
+        Self { path_resolver, fs }
     }
 
     /// Unmute を実行する
@@ -98,10 +92,7 @@ mod tests {
         let path_resolver: Arc<dyn PathResolver> = Arc::new(TestPathResolver);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
 
-        let usecase = UnmuteUseCase::new(
-            Arc::clone(&path_resolver),
-            Arc::clone(&fs),
-        );
+        let usecase = UnmuteUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
 
         let input = PathResolverInput {
             home_dir: Some(path_to_string(&home_dir)),
@@ -109,7 +100,11 @@ mod tests {
         };
 
         let result = usecase.run(&input);
-        assert!(result.is_ok(), "unmute run should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "unmute run should succeed: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), 0);
 
         assert!(!mute_flag.exists(), "mute flag should be removed");
@@ -133,10 +128,7 @@ mod tests {
         let path_resolver: Arc<dyn PathResolver> = Arc::new(TestPathResolver);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
 
-        let usecase = UnmuteUseCase::new(
-            Arc::clone(&path_resolver),
-            Arc::clone(&fs),
-        );
+        let usecase = UnmuteUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
 
         let input = PathResolverInput {
             home_dir: Some(path_to_string(&home_dir)),
@@ -144,7 +136,11 @@ mod tests {
         };
 
         let result = usecase.run(&input);
-        assert!(result.is_ok(), "unmute run should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "unmute run should succeed: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), 0);
 
         let mute_flag = session_dir.join("console.muted");
@@ -157,4 +153,3 @@ mod tests {
         path.to_string_lossy().to_string()
     }
 }
-

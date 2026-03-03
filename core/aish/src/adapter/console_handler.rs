@@ -5,8 +5,8 @@
 
 use crate::domain::SessionEvent;
 use common::error::Error;
-use common::ports::outbound::FileSystem;
 use common::part_id::IdGenerator;
+use common::ports::outbound::FileSystem;
 use std::io::Write;
 use std::path::Path;
 

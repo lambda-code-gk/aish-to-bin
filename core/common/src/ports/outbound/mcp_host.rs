@@ -100,11 +100,15 @@ pub trait McpHost: Send + Sync {
     fn list_tools(&self, server_id: &McpServerId) -> Result<Vec<ToolDescriptor>, Error>;
 
     /// ツールを呼び出す。disabled / 未発見 / 不正応答等はすべて fail-closed（Err）。
-    fn call(&self, tool_id: &McpToolId, args: Value, ctx: McpCallContext) -> Result<McpCallResult, Error>;
+    fn call(
+        &self,
+        tool_id: &McpToolId,
+        args: Value,
+        ctx: McpCallContext,
+    ) -> Result<McpCallResult, Error>;
 
     /// 任意のヘルスチェック（未実装なら常に Ok）
     fn health(&self, _server_id: &McpServerId) -> Result<(), Error> {
         Ok(())
     }
 }
-
