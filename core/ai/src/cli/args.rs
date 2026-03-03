@@ -1,4 +1,4 @@
-use crate::domain::{AiCommand, Query, TaskName};
+use crate::domain::{AgentMode, AiCommand, Query, TaskName};
 use clap::builder::ArgAction;
 use clap::value_parser;
 use clap_complete::Shell;
@@ -33,6 +33,10 @@ pub struct Config {
     pub mode: Option<String>,
     /// モード解決後に main が設定。config_to_command で AiCommand に渡す
     pub tool_allowlist: Option<Vec<String>>,
+    /// mode.d や将来の CLI オプションから解決された Agent のモード（Act/Plan/Auto）
+    pub agent_mode: Option<AgentMode>,
+    /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
+    pub max_queries: Option<usize>,
     pub task: Option<TaskName>,
     pub message_args: Vec<String>,
 }
@@ -55,6 +59,8 @@ impl Default for Config {
             system: None,
             mode: None,
             tool_allowlist: None,
+            agent_mode: None,
+            max_queries: None,
             task: None,
             message_args: Vec::new(),
         }
@@ -248,6 +254,8 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
         system,
         mode,
         tool_allowlist: None,
+        agent_mode: None,
+        max_queries: None,
         task,
         message_args,
     }
@@ -416,6 +424,8 @@ pub fn config_to_command(config: Config) -> AiCommand {
             model: config.model,
             system: config.system,
             tool_allowlist: config.tool_allowlist,
+            agent_mode: config.agent_mode,
+            max_queries: config.max_queries,
         };
     }
 
@@ -425,6 +435,8 @@ pub fn config_to_command(config: Config) -> AiCommand {
         let model = config.model;
         let system = config.system;
         let tool_allowlist = config.tool_allowlist;
+        let agent_mode = config.agent_mode;
+        let max_queries = config.max_queries;
         return AiCommand::Task {
             name: task,
             args,
@@ -432,6 +444,8 @@ pub fn config_to_command(config: Config) -> AiCommand {
             model,
             system,
             tool_allowlist,
+            agent_mode,
+            max_queries,
         };
     }
 
@@ -442,6 +456,8 @@ pub fn config_to_command(config: Config) -> AiCommand {
         query,
         system: config.system,
         tool_allowlist: config.tool_allowlist,
+        agent_mode: config.agent_mode,
+        max_queries: config.max_queries,
     }
 }
 
@@ -462,6 +478,8 @@ mod tests {
         assert!(config.system.is_none());
         assert!(config.mode.is_none());
         assert!(config.tool_allowlist.is_none());
+        assert!(config.agent_mode.is_none());
+        assert!(config.max_queries.is_none());
         assert!(config.task.is_none());
         assert_eq!(config.message_args.len(), 0);
     }

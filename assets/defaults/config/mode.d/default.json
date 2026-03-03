@@ -1,5 +1,9 @@
 {
   "system": "You are a helpful assistant.",
   "profile": "echo",
-  "tools": ["read_file", "grep"]
+  "tools": ["read_file", "grep"],
+  "agent": {
+    "mode": "act",
+    "max_queries": 2
+  }
 }

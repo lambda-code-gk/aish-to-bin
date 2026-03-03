@@ -2,12 +2,18 @@
 
 use std::sync::{Arc, Mutex};
 
-use common::error::Error;
-use common::msg::Msg;
-use serde_json::json;
-
+use crate::adapter::stub_llm::{StubLlm, ToolAwareStubLlm};
+use crate::domain::{AgentMode, ContextPack, PolicyDecision, PolicyVerdict};
+use crate::ports::outbound::PolicyEngine;
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
-use crate::usecase::query_loop::{QueryLoopOutcome, QueryLoopRunner};
+use crate::usecase::query_loop::{msgs_to_provider, QueryLoopOutcome, QueryLoopRunner, RunState};
+use common::domain::event::{RunId, SessionId};
+use common::error::Error;
+use common::llm::LlmEvent;
+use common::msg::Msg;
+use common::ports::outbound::{AgentEvent, EventSink};
+use common::tool::{Tool, ToolContext, ToolError, ToolRegistry};
+use serde_json::{json, Value};
 
 #[derive(Clone)]
 enum Step {
@@ -73,7 +79,7 @@ fn count_tool_results(msgs: &[Msg]) -> usize {
 fn agent_loop_retries_once_and_executes() {
     let script = Arc::new(Mutex::new(vec![
         Step::Done {
-            text: "以下を実行してください: curl ... | voicevox ...".to_string(),
+            text: "```sh\ncurl ... | voicevox ...\n```".to_string(),
             add_tool_result: false,
         },
         Step::Done {
@@ -94,6 +100,7 @@ fn agent_loop_retries_once_and_executes() {
         &mut make,
         &initial,
         AgentLoopConfig {
+            agent_mode: AgentMode::Act,
             max_queries: 2,
             max_turns: 1,
             max_additional_tool_calls: 0,
@@ -115,9 +122,9 @@ fn agent_loop_retries_once_and_executes() {
 }
 
 #[test]
-fn agent_loop_does_not_retry_when_user_wants_commands_only() {
+fn agent_loop_does_not_retry_in_plan_mode() {
     let script = Arc::new(Mutex::new(vec![Step::Done {
-        text: "curl ... を実行してください".to_string(),
+        text: "```sh\necho only plan\n```".to_string(),
         add_tool_result: false,
     }]));
 
@@ -127,12 +134,13 @@ fn agent_loop_does_not_retry_when_user_wants_commands_only() {
         ScriptedQueryLoop::new(Arc::clone(&script))
     };
 
-    let initial = vec![Msg::user("ニュース取得して読み上げて。コマンドだけ教えて")];
+    let initial = vec![Msg::user("ニュース取得して読み上げて")];
 
     let out = AgentLoop::run(
         &mut make,
         &initial,
         AgentLoopConfig {
+            agent_mode: AgentMode::Plan,
             max_queries: 2,
             max_turns: 1,
             max_additional_tool_calls: 0,
@@ -167,6 +175,7 @@ fn agent_loop_does_not_retry_when_assistant_asks_question() {
         &mut make,
         &initial,
         AgentLoopConfig {
+            agent_mode: AgentMode::Act,
             max_queries: 2,
             max_turns: 1,
             max_additional_tool_calls: 0,

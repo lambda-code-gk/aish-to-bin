@@ -8,6 +8,7 @@ use crate::ports::outbound::{
     SessionHistoryLoader, SessionResponseSaver, ToolApproval,
 };
 use crate::usecase::agent_loop::{AgentLoop, AgentLoopConfig, AgentLoopOutcome};
+use crate::domain::AgentMode;
 use common::ports::outbound::Clock;
 use common::ports::outbound::EnvResolver;
 use common::ports::outbound::{now_iso8601, FileSystem, Log, LogLevel, LogRecord, Process};
@@ -340,6 +341,8 @@ impl AiUseCase {
         max_turns_override: Option<usize>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
+        agent_mode: Option<AgentMode>,
+        max_queries_override: Option<usize>,
     ) -> Result<i32, Error> {
         let session_id = session_dir
             .as_ref()
@@ -713,12 +716,25 @@ impl AiUseCase {
         };
 
         const DEFAULT_MAX_TURNS: usize = 16;
-        const DEFAULT_MAX_QUERIES: usize = 2;
+        const DEFAULT_MAX_QUERIES_ACT: usize = 2;
+        const DEFAULT_MAX_QUERIES_PLAN: usize = 1;
         let max_turns = max_turns_override.unwrap_or(DEFAULT_MAX_TURNS);
         let max_tool_calls = self.deps.policy.env_resolver.ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
-        let max_queries = self.deps.policy.env_resolver.ai_max_queries()
-            .unwrap_or(DEFAULT_MAX_QUERIES);
+        let agent_mode = agent_mode.unwrap_or(AgentMode::Act);
+        let default_max_queries = match agent_mode {
+            AgentMode::Plan => DEFAULT_MAX_QUERIES_PLAN,
+            AgentMode::Act | AgentMode::Auto => DEFAULT_MAX_QUERIES_ACT,
+        };
+        let max_queries = if let Some(override_) = max_queries_override {
+            override_
+        } else {
+            self.deps
+                .policy
+                .env_resolver
+                .ai_max_queries()
+                .unwrap_or(default_max_queries)
+        };
 
         let command_rules_path = match self.deps.policy.env_resolver.resolve_command_rules_path() {
             Ok(p) => p,
@@ -832,6 +848,7 @@ impl AiUseCase {
                 &mut make_query_loop,
                 &messages,
                 AgentLoopConfig {
+                    agent_mode,
                     max_queries,
                     max_turns,
                     max_additional_tool_calls: max_tool_calls,
@@ -1051,6 +1068,8 @@ impl RunQuery for AiUseCase {
         max_turns_override: Option<usize>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
+        agent_mode: Option<AgentMode>,
+        max_queries_override: Option<usize>,
     ) -> Result<i32, Error> {
         self.run_query_impl(
             session_dir,
@@ -1061,6 +1080,8 @@ impl RunQuery for AiUseCase {
             max_turns_override,
             tool_allowlist,
             event_hub,
+            agent_mode,
+            max_queries_override,
         )
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! タスク実行 vs LLM対話の分岐を enum で明示する。
 
-use crate::domain::{Query, TaskName};
+use crate::domain::{AgentMode, Query, TaskName};
 use common::domain::{ModelName, ProviderName};
 
 /// ai の実行モード
@@ -26,6 +26,10 @@ pub enum AiCommand {
         system: Option<String>,
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
+        /// モードで指定された Agent の挙動（Act/Plan/Auto）
+        agent_mode: Option<AgentMode>,
+        /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
+        max_queries: Option<usize>,
     },
     /// config explain: 解決済み設定と source を表示
     ConfigExplain,
@@ -37,6 +41,10 @@ pub enum AiCommand {
         system: Option<String>,
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
+        /// モードで指定された Agent の挙動（Act/Plan/Auto）
+        agent_mode: Option<AgentMode>,
+        /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
+        max_queries: Option<usize>,
     },
     /// LLM クエリ（タスク未指定、またはタスクが見つからなかった場合）
     Query {
@@ -47,6 +55,10 @@ pub enum AiCommand {
         system: Option<String>,
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
+        /// モードで指定された Agent の挙動（Act/Plan/Auto）
+        agent_mode: Option<AgentMode>,
+        /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
+        max_queries: Option<usize>,
     },
     /// policy explain: 解決済みポリシー・ルール順・代表例を表示
     PolicyExplain,

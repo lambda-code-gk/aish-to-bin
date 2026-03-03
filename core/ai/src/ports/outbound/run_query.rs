@@ -1,6 +1,6 @@
 //! クエリ実行の Outbound ポート（タスク未ヒット時の LLM 実行に利用）
 
-use crate::domain::Query;
+use crate::domain::{AgentMode, Query};
 use common::domain::{ModelName, ProviderName, SessionDir};
 use common::error::Error;
 use common::event_hub::EventHubHandle;
@@ -25,5 +25,7 @@ pub trait RunQuery: Send + Sync {
         max_turns_override: Option<usize>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
+        agent_mode: Option<AgentMode>,
+        max_queries_override: Option<usize>,
     ) -> Result<i32, Error>;
 }

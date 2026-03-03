@@ -62,6 +62,8 @@ impl RunQuery for AiRunQuery {
         max_turns_override: Option<usize>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
+        agent_mode: Option<crate::domain::AgentMode>,
+        max_queries_override: Option<usize>,
     ) -> Result<i32, common::error::Error> {
         self.0.run_query(
             session_dir,
@@ -72,6 +74,8 @@ impl RunQuery for AiRunQuery {
             max_turns_override,
             tool_allowlist,
             event_hub,
+            agent_mode,
+            max_queries_override,
         )
     }
 }

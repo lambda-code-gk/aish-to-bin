@@ -48,6 +48,16 @@ mod entry {
                     if config.tool_allowlist.is_none() {
                         config.tool_allowlist = mc.tools.clone();
                     }
+                    if config.agent_mode.is_none() {
+                        if let Some(ref agent) = mc.agent {
+                            config.agent_mode = agent.mode;
+                        }
+                    }
+                    if config.max_queries.is_none() {
+                        if let Some(ref agent) = mc.agent {
+                            config.max_queries = agent.max_queries;
+                        }
+                    }
                 }
             }
             if config.system.is_none() {
@@ -76,6 +86,7 @@ mod entry {
                     model,
                     system,
                     tool_allowlist,
+                    ..
                 } => {
                     let q = crate::domain::Query::new(
                         [name.as_ref().to_string()]
@@ -98,6 +109,7 @@ mod entry {
                     model,
                     system,
                     tool_allowlist,
+                    ..
                 } => (
                     profile.clone(),
                     model.clone(),
@@ -112,6 +124,7 @@ mod entry {
                     query,
                     system,
                     tool_allowlist,
+                    ..
                 } => (
                     profile.clone(),
                     model.clone(),
@@ -218,6 +231,8 @@ mod entry {
             model: Option<ModelName>,
             system: Option<String>,
             tool_allowlist: Option<Vec<String>>,
+            agent_mode: Option<crate::domain::AgentMode>,
+            max_queries: Option<usize>,
             event_hub: EventHubHandle,
         ) -> Result<i32, Error> {
             self.app.task_use_case.run(
@@ -229,6 +244,8 @@ mod entry {
                 system.as_deref(),
                 tool_allowlist.as_deref(),
                 Some(event_hub),
+                agent_mode,
+                max_queries,
             )
         }
 
@@ -239,6 +256,8 @@ mod entry {
             model: Option<ModelName>,
             system: Option<String>,
             tool_allowlist: Option<Vec<String>>,
+            agent_mode: Option<crate::domain::AgentMode>,
+            max_queries: Option<usize>,
             event_hub: EventHubHandle,
         ) -> Result<i32, Error> {
             let max_turns = std::env::var("AI_MAX_TURNS")
@@ -253,6 +272,8 @@ mod entry {
                 max_turns,
                 tool_allowlist.as_deref(),
                 Some(event_hub),
+                agent_mode,
+                max_queries,
             )
         }
 
@@ -264,6 +285,8 @@ mod entry {
             query: &crate::domain::Query,
             system: Option<String>,
             tool_allowlist: Option<Vec<String>>,
+            agent_mode: Option<crate::domain::AgentMode>,
+            max_queries: Option<usize>,
             event_hub: EventHubHandle,
         ) -> Result<i32, Error> {
             if query.trim().is_empty() {
@@ -284,6 +307,8 @@ mod entry {
                 max_turns,
                 tool_allowlist.as_deref(),
                 Some(event_hub),
+                agent_mode,
+                max_queries,
             )
         }
     }
@@ -346,6 +371,8 @@ mod entry {
                     model,
                     system,
                     tool_allowlist,
+                    agent_mode,
+                    max_queries,
                 } => self.run_task(
                     session_dir,
                     &name,
@@ -354,6 +381,8 @@ mod entry {
                     model,
                     system,
                     tool_allowlist,
+                    agent_mode,
+                    max_queries,
                     event_hub,
                 ),
                 AiCommand::Resume {
@@ -361,12 +390,16 @@ mod entry {
                     model,
                     system,
                     tool_allowlist,
+                    agent_mode,
+                    max_queries,
                 } => self.run_resume(
                     session_dir,
                     profile,
                     model,
                     system,
                     tool_allowlist,
+                    agent_mode,
+                    max_queries,
                     event_hub.clone(),
                 ),
                 AiCommand::Query {
@@ -375,6 +408,8 @@ mod entry {
                     query,
                     system,
                     tool_allowlist,
+                    agent_mode,
+                    max_queries,
                 } => self.run_query_cmd(
                     session_dir,
                     profile,
@@ -382,6 +417,8 @@ mod entry {
                     &query,
                     system,
                     tool_allowlist,
+                    agent_mode,
+                    max_queries,
                     event_hub,
                 ),
             };
@@ -548,7 +585,7 @@ mod entry {
         println!("  -p, --profile <profile>         Specify LLM profile (gemini, gpt, echo, etc.). Default: profiles.json default, or gemini if not set.");
         println!("  -m, --model <model>            Specify model name (e.g. gemini-2.0, gpt-4). Default: profile default from profiles.json");
         println!("  -S, --system <instruction>     Set system instruction (e.g. role or constraints) for this query");
-        println!("  -M, --mode <name>             Use preset (system, profile, tools from $AISH_HOME/config/mode.d/<name>.json). CLI -p/-m/-S override mode.");
+        println!("  -M, --mode <name>             Use preset (system, profile, tools, agent.mode/max_queries from $AISH_HOME/config/mode.d/<name>.json). CLI -p/-m/-S override mode.");
         println!("  --generate <shell>             Generate shell completion script (bash, zsh, fish). Source the output to enable tab completion.");
         println!("  --list-tasks                   List available task names (used by shell completion).");
         println!("  --list-modes                   List available mode names (used by shell completion).");

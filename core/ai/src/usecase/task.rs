@@ -39,6 +39,8 @@ impl TaskUseCase {
         system_instruction: Option<&str>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
+        agent_mode: Option<crate::domain::AgentMode>,
+        max_queries_override: Option<usize>,
     ) -> Result<i32, Error> {
         if let Some(code) = self.task_runner.run_if_exists(name.as_ref(), args)? {
             return Ok(code);
@@ -60,6 +62,8 @@ impl TaskUseCase {
             None,
             tool_allowlist,
             event_hub,
+            agent_mode,
+            max_queries_override,
         )
     }
 }

@@ -4,6 +4,8 @@
 
 use serde::Deserialize;
 
+use crate::domain::AgentMode;
+
 /// 1 モード分の設定（JSON からデシリアライズ）
 #[derive(Debug, Clone, Default)]
 pub struct ModeConfig {
@@ -15,6 +17,14 @@ pub struct ModeConfig {
     pub model: Option<String>,
     /// 有効にするツール名のリスト。未指定時は全ツール。指定時はこのリストのみ。
     pub tools: Option<Vec<String>>,
+    /// Agent の挙動設定（任意）。未指定時は既定の挙動（Act, max_queries=2）。
+    pub agent: Option<ModeAgentConfig>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ModeAgentConfig {
+    pub mode: Option<AgentMode>,
+    pub max_queries: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -23,6 +33,13 @@ struct ModeConfigRaw {
     profile: Option<String>,
     model: Option<String>,
     tools: Option<Vec<String>>,
+    agent: Option<ModeAgentConfigRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModeAgentConfigRaw {
+    mode: Option<AgentMode>,
+    max_queries: Option<usize>,
 }
 
 impl ModeConfig {
@@ -33,6 +50,10 @@ impl ModeConfig {
             profile: raw.profile,
             model: raw.model,
             tools: raw.tools,
+            agent: raw.agent.map(|a| ModeAgentConfig {
+                mode: a.mode,
+                max_queries: a.max_queries,
+            }),
         })
     }
 }
@@ -48,6 +69,7 @@ mod tests {
         assert!(c.profile.is_none());
         assert!(c.model.is_none());
         assert!(c.tools.is_none());
+        assert!(c.agent.is_none());
     }
 
     #[test]
@@ -55,13 +77,20 @@ mod tests {
         let json = r#"{
             "system": "You are a planning assistant.",
             "profile": "echo",
-            "tools": ["read_file", "grep"]
+            "tools": ["read_file", "grep"],
+            "agent": {
+                "mode": "plan",
+                "max_queries": 1
+            }
         }"#;
         let c = ModeConfig::parse_json(json).unwrap();
         assert_eq!(c.system.as_deref(), Some("You are a planning assistant."));
         assert_eq!(c.profile.as_deref(), Some("echo"));
         assert!(c.model.is_none());
         assert_eq!(c.tools.as_ref().map(|v| v.as_slice()), Some(&["read_file".to_string(), "grep".to_string()][..]));
+        let agent = c.agent.as_ref().expect("agent config");
+        assert_eq!(agent.mode, Some(AgentMode::Plan));
+        assert_eq!(agent.max_queries, Some(1));
     }
 
     #[test]
@@ -79,5 +108,6 @@ mod tests {
         assert!(tools.contains(&"read_file".to_string()));
         assert!(tools.contains(&"search_memory".to_string()));
         assert!(!tools.contains(&"run_shell".to_string()));
+        assert!(c.agent.is_none());
     }
 }

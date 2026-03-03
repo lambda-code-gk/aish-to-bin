@@ -7,5 +7,9 @@
     "history_search",
     "get_memory_content",
     "search_memory"
-  ]
+  ],
+  "agent": {
+    "mode": "plan",
+    "max_queries": 1
+  }
 }
