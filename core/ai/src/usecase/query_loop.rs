@@ -445,6 +445,16 @@ impl QueryLoop {
             collected_inner.borrow_mut().push(ev);
             Ok(())
         };
+
+        if interrupt_checker
+            .as_ref()
+            .map_or(false, |c| c.is_interrupted())
+        {
+            return Err(Error::System(
+                "Interrupted by user (Ctrl+C). State saved for resume.".to_string(),
+            ));
+        }
+
         self.stream.as_ref().stream_events(
             &query,
             system_instruction,

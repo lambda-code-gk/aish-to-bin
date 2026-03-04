@@ -80,7 +80,18 @@ impl ToolApproval for CliToolApproval {
         let timeout = Duration::from_millis(100);
         loop {
             match rx.recv_timeout(timeout) {
-                Ok(approval) => return Ok(approval),
+                Ok(approval) => {
+                    if self
+                        .interrupt_checker
+                        .as_ref()
+                        .map_or(false, |c| c.is_interrupted())
+                    {
+                        return Err(Error::system(
+                            "Interrupted by user (Ctrl+C) during approval prompt.",
+                        ));
+                    }
+                    return Ok(approval);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if self
                         .interrupt_checker
