@@ -9,7 +9,7 @@
     "search_memory"
   ],
   "agent": {
-    "mode": "plan",
+    "query_retry": "plan",
     "max_queries": 1
   }
 }

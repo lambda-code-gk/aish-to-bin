@@ -1,5 +1,5 @@
-use crate::domain::AgentMode;
 use crate::domain::Query;
+use crate::domain::QueryRetry;
 use crate::domain::{DryRunInfo, EventEnvelope, LifecycleEvent, PolicyVerdict, QueryOutcome};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextArtifactStore,
@@ -377,7 +377,7 @@ impl AiUseCase {
         max_turns_override: Option<usize>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
-        agent_mode: Option<AgentMode>,
+        query_retry: Option<QueryRetry>,
         max_queries_override: Option<usize>,
     ) -> Result<i32, Error> {
         let session_id = session_dir
@@ -808,10 +808,10 @@ impl AiUseCase {
             .env_resolver
             .ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
-        let agent_mode = agent_mode.unwrap_or(AgentMode::Act);
-        let default_max_queries = match agent_mode {
-            AgentMode::Plan => DEFAULT_MAX_QUERIES_PLAN,
-            AgentMode::Act | AgentMode::Auto => DEFAULT_MAX_QUERIES_ACT,
+        let query_retry = query_retry.unwrap_or(QueryRetry::Act);
+        let default_max_queries = match query_retry {
+            QueryRetry::Plan => DEFAULT_MAX_QUERIES_PLAN,
+            QueryRetry::Act | QueryRetry::Auto => DEFAULT_MAX_QUERIES_ACT,
         };
         let max_queries = if let Some(override_) = max_queries_override {
             override_
@@ -827,7 +827,7 @@ impl AiUseCase {
             let mut payload = serde_json::json!({
                 "query_len": query_len,
                 "non_interactive": self.deps.non_interactive,
-                "agent_mode": agent_mode.as_str(),
+                "query_retry": query_retry.as_str(),
                 "max_queries": max_queries,
             });
             if sessionless {
@@ -965,10 +965,10 @@ impl AiUseCase {
                 )
             };
 
-            let judge: Box<dyn AgentJudge> = match agent_mode {
-                AgentMode::Plan => Box::new(PlanJudge),
-                AgentMode::Act => Box::new(HeuristicJudge::new()),
-                AgentMode::Auto => Box::new(CompositeJudge {
+            let judge: Box<dyn AgentJudge> = match query_retry {
+                QueryRetry::Plan => Box::new(PlanJudge),
+                QueryRetry::Act => Box::new(HeuristicJudge::new()),
+                QueryRetry::Auto => Box::new(CompositeJudge {
                     heuristic: HeuristicJudge::new(),
                     llm: LlmJudge::new(Arc::clone(&self.deps.model.llm_completion)),
                 }),
@@ -1233,7 +1233,7 @@ impl RunQuery for AiUseCase {
         max_turns_override: Option<usize>,
         tool_allowlist: Option<&[String]>,
         event_hub: Option<EventHubHandle>,
-        agent_mode: Option<AgentMode>,
+        query_retry: Option<QueryRetry>,
         max_queries_override: Option<usize>,
     ) -> Result<i32, Error> {
         self.run_query_impl(
@@ -1245,7 +1245,7 @@ impl RunQuery for AiUseCase {
             max_turns_override,
             tool_allowlist,
             event_hub,
-            agent_mode,
+            query_retry,
             max_queries_override,
         )
     }

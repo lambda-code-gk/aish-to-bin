@@ -1,6 +1,5 @@
 //! ai 固有のドメイン型（型と不変条件）
 
-pub mod agent_mode;
 pub mod approval;
 pub mod budget_report;
 pub mod command;
@@ -24,12 +23,12 @@ pub mod policy_config;
 pub mod policy_explain;
 pub mod policy_rule;
 pub mod query;
+pub mod query_retry;
 pub mod resolved;
 pub mod sensitive_filter;
 pub mod task_name;
 pub mod tool_capability;
 pub mod tool_profile;
-pub use agent_mode::AgentMode;
 pub use approval::{Approval, ToolApproval};
 pub use budget_report::*;
 pub use command::AiCommand;
@@ -55,6 +54,7 @@ pub use policy_config::*;
 pub use policy_explain::*;
 pub use policy_rule::*;
 pub use query::Query;
+pub use query_retry::QueryRetry;
 pub use resolved::*;
 pub use sensitive_filter::*;
 pub use task_name::TaskName;

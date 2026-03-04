@@ -3,7 +3,7 @@
   "profile": "echo",
   "tools": ["read_file", "grep"],
   "agent": {
-    "mode": "act",
+    "query_retry": "act",
     "max_queries": 2
   }
 }

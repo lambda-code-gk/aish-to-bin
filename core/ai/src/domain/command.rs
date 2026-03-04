@@ -2,7 +2,7 @@
 //!
 //! タスク実行 vs LLM対話の分岐を enum で明示する。
 
-use crate::domain::{AgentMode, Query, TaskName};
+use crate::domain::{Query, QueryRetry, TaskName};
 use common::domain::{ModelName, ProviderName};
 
 /// ai の実行モード
@@ -24,8 +24,8 @@ pub enum AiCommand {
         system: Option<String>,
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
-        /// モードで指定された Agent の挙動（Act/Plan/Auto）
-        agent_mode: Option<AgentMode>,
+        /// モードで指定された Query retry 方針（Act/Plan/Auto）
+        query_retry: Option<QueryRetry>,
         /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
         max_queries: Option<usize>,
     },
@@ -39,8 +39,8 @@ pub enum AiCommand {
         system: Option<String>,
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
-        /// モードで指定された Agent の挙動（Act/Plan/Auto）
-        agent_mode: Option<AgentMode>,
+        /// モードで指定された Query retry 方針（Act/Plan/Auto）
+        query_retry: Option<QueryRetry>,
         /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
         max_queries: Option<usize>,
     },
@@ -53,8 +53,8 @@ pub enum AiCommand {
         system: Option<String>,
         /// モードで指定したツール許可リスト。None のときは全ツール
         tool_allowlist: Option<Vec<String>>,
-        /// モードで指定された Agent の挙動（Act/Plan/Auto）
-        agent_mode: Option<AgentMode>,
+        /// モードで指定された Query retry 方針（Act/Plan/Auto）
+        query_retry: Option<QueryRetry>,
         /// AgentLoop の外側クエリ回数（max_queries）。None のときは既定値と環境変数で決定。
         max_queries: Option<usize>,
     },

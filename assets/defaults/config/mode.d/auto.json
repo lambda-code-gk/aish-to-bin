@@ -1,6 +1,6 @@
 {
   "agent": {
-    "mode": "auto",
+    "query_retry": "auto",
     "max_queries": 2
   }
 }

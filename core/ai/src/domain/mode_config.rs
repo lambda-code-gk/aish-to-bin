@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 
-use crate::domain::AgentMode;
+use crate::domain::QueryRetry;
 
 /// 1 モード分の設定（JSON からデシリアライズ）
 #[derive(Debug, Clone, Default)]
@@ -23,7 +23,7 @@ pub struct ModeConfig {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModeAgentConfig {
-    pub mode: Option<AgentMode>,
+    pub query_retry: Option<QueryRetry>,
     pub max_queries: Option<usize>,
 }
 
@@ -37,8 +37,9 @@ struct ModeConfigRaw {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ModeAgentConfigRaw {
-    mode: Option<AgentMode>,
+    query_retry: Option<QueryRetry>,
     max_queries: Option<usize>,
 }
 
@@ -51,7 +52,7 @@ impl ModeConfig {
             model: raw.model,
             tools: raw.tools,
             agent: raw.agent.map(|a| ModeAgentConfig {
-                mode: a.mode,
+                query_retry: a.query_retry,
                 max_queries: a.max_queries,
             }),
         })
@@ -78,10 +79,7 @@ mod tests {
             "system": "You are a planning assistant.",
             "profile": "echo",
             "tools": ["read_file", "grep"],
-            "agent": {
-                "mode": "plan",
-                "max_queries": 1
-            }
+            "agent": { "query_retry": "plan", "max_queries": 1 }
         }"#;
         let c = ModeConfig::parse_json(json).unwrap();
         assert_eq!(c.system.as_deref(), Some("You are a planning assistant."));
@@ -92,7 +90,7 @@ mod tests {
             Some(&["read_file".to_string(), "grep".to_string()][..])
         );
         let agent = c.agent.as_ref().expect("agent config");
-        assert_eq!(agent.mode, Some(AgentMode::Plan));
+        assert_eq!(agent.query_retry, Some(QueryRetry::Plan));
         assert_eq!(agent.max_queries, Some(1));
     }
 
@@ -112,5 +110,15 @@ mod tests {
         assert!(tools.contains(&"search_memory".to_string()));
         assert!(!tools.contains(&"run_shell".to_string()));
         assert!(c.agent.is_none());
+    }
+
+    #[test]
+    fn test_parse_agent_mode_is_error() {
+        let json = r#"{
+      "agent": { "mode": "act", "max_queries": 2 }
+    }"#;
+        let err = ModeConfig::parse_json(json).unwrap_err().to_string();
+        assert!(err.contains("unknown field"));
+        assert!(err.contains("mode"));
     }
 }
