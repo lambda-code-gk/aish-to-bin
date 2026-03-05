@@ -1,4 +1,4 @@
-//! セッション永続の一次ソース用イベントエンベロープ（events.ndjson スキーマ）
+//! セッション永続の一次ソース用イベントエンベロープ（events.jsonl スキーマ）
 //!
 //! v は破壊的変更で上げる。payload に巨大文字列を入れない（本文は artifacts に逃がす）。
 
@@ -24,7 +24,7 @@ pub struct EventEnvelopeWithoutSeq {
     pub payload: serde_json::Value,
 }
 
-/// 1行1JSON で events.ndjson に追記する安定スキーマ
+/// 1行1JSON で events.jsonl に追記する安定スキーマ
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EventEnvelope {
     /// スキーマバージョン（破壊的変更で増やす）

@@ -7,12 +7,19 @@ use crate::usecase::session_usecase::SessionUseCase;
 use common::adapter::StdFileSystem;
 use common::domain::SessionDir;
 use common::ports::outbound::FileSystem;
+use std::path::Path;
 use std::sync::Arc;
 use storage::{DerivedRebuilder, NdjsonSessionEventStore};
+
+fn write_session_schema_version<P: AsRef<Path>>(session_path: P) {
+    let version_path = session_path.as_ref().join("session_schema_version");
+    std::fs::write(version_path, "2\n").unwrap();
+}
 
 #[test]
 fn test_rebuild_derived_success() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    write_session_schema_version(tmp.path());
     let session_dir = SessionDir::new(tmp.path());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
 

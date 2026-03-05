@@ -1,13 +1,13 @@
-//! events.ndjson 追記ストア（<session_dir>/events/events.ndjson）
+//! events.jsonl 追記ストア（<session_dir>/events.jsonl）
 
 use crate::domain::EventEnvelope;
 use crate::ports::outbound::SessionEventStore;
 use common::domain::SessionDir;
 use common::error::Error;
+use common::session_schema::require_latest;
 use std::sync::Arc;
 
-const EVENTS_DIR: &str = "events";
-const EVENTS_FILE: &str = "events.ndjson";
+const EVENTS_FILE: &str = "events.jsonl";
 
 /// 追記のみ。1行1JSON。seq は next_seq で採番してから append すること。
 pub struct NdjsonSessionEventStore {
@@ -20,16 +20,13 @@ impl NdjsonSessionEventStore {
     }
 
     fn events_path(session_dir: &SessionDir) -> std::path::PathBuf {
-        session_dir.as_ref().join(EVENTS_DIR).join(EVENTS_FILE)
-    }
-
-    fn events_dir_path(session_dir: &SessionDir) -> std::path::PathBuf {
-        session_dir.as_ref().join(EVENTS_DIR)
+        session_dir.as_ref().join(EVENTS_FILE)
     }
 }
 
 impl SessionEventStore for NdjsonSessionEventStore {
     fn next_seq(&self, session_dir: &SessionDir) -> Result<u64, Error> {
+        require_latest(self.fs.as_ref(), session_dir.as_ref())?;
         let path = Self::events_path(session_dir);
         let content = match self.fs.read_to_string(&path) {
             Ok(s) => s,
@@ -42,7 +39,7 @@ impl SessionEventStore for NdjsonSessionEventStore {
         let last_line = trimmed.lines().last().unwrap_or(trimmed);
         let last: EventEnvelope = serde_json::from_str(last_line).map_err(|e| {
             Error::json(format!(
-                "events.ndjson last line parse failed: {}",
+                "events.jsonl last line parse failed: {}",
                 e
             ))
         })?;
@@ -50,13 +47,12 @@ impl SessionEventStore for NdjsonSessionEventStore {
     }
 
     fn append(&self, session_dir: &SessionDir, event: &EventEnvelope) -> Result<(), Error> {
+        require_latest(self.fs.as_ref(), session_dir.as_ref())?;
         if event.seq == 0 {
             return Err(Error::invalid_argument(
                 "EventEnvelope.seq must be assigned (use next_seq before append)",
             ));
         }
-        let dir = Self::events_dir_path(session_dir);
-        self.fs.create_dir_all(&dir)?;
         let path = Self::events_path(session_dir);
         let line = serde_json::to_string(event).map_err(|e| Error::json(e.to_string()))?;
         let mut w = self.fs.open_append(&path)?;
@@ -74,6 +70,7 @@ impl SessionEventStore for NdjsonSessionEventStore {
         Box<dyn Iterator<Item = Result<EventEnvelope, Error>> + Send>,
         Error,
     > {
+        require_latest(self.fs.as_ref(), session_dir.as_ref())?;
         let path = Self::events_path(session_dir);
         let content = match self.fs.read_to_string(&path) {
             Ok(s) => s,
@@ -88,7 +85,7 @@ impl SessionEventStore for NdjsonSessionEventStore {
             .map(|line| {
                 let trimmed = line.trim();
                 if trimmed.is_empty() {
-                    return Err(Error::json("empty line in events.ndjson"));
+                    return Err(Error::json("empty line in events.jsonl"));
                 }
                 serde_json::from_str(trimmed).map_err(|e| Error::json(e.to_string()))
             });

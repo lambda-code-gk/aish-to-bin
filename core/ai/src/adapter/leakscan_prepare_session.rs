@@ -405,7 +405,7 @@ mod tests {
         let evacuated_path = session_dir.join(EVACUATED_DIR).join("part_ABC12_user.txt");
         assert!(fs.exists(&evacuated_path), "part should be in evacuated");
 
-        let manifest_path = session_dir.join("manifest.jsonl");
+        let manifest_path = session_dir.join("reviewed_history.jsonl");
         assert!(fs.exists(&manifest_path), "manifest should exist");
         let manifest_body = std::fs::read_to_string(manifest_path).unwrap();
         let records = parse_lines(&manifest_body);

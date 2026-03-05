@@ -1,4 +1,4 @@
-//! reviewed 履歴の一覧・取得アダプタ（manifest.jsonl + reviewed/ を読む）
+//! reviewed 履歴の一覧・取得アダプタ（reviewed_history.jsonl + reviewed/ を読む）
 
 use crate::domain::{HistoryGetEntry, HistoryListEntry};
 use crate::ports::outbound::ReviewedHistoryReader;
@@ -10,7 +10,7 @@ use common::safe_session_path::{
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-/// manifest.jsonl の message 行の最小パース用（aish は ai に依存しない）
+/// reviewed_history.jsonl の message 行の最小パース用（aish は ai に依存しない）
 #[derive(serde::Deserialize)]
 struct ManifestMessageLine {
     #[serde(default)]
@@ -26,7 +26,7 @@ struct ManifestMessageLine {
 }
 
 fn manifest_path(session_dir: &Path) -> PathBuf {
-    session_dir.join("manifest.jsonl")
+    session_dir.join("reviewed_history.jsonl")
 }
 
 fn send_from_path(session_dir: &Path) -> PathBuf {
@@ -221,7 +221,7 @@ mod tests {
         let temp = std::env::temp_dir().join(format!("aish_hist_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp);
         std::fs::create_dir_all(&temp).unwrap();
-        std::fs::write(temp.join("manifest.jsonl"), "").unwrap();
+        std::fs::write(temp.join("reviewed_history.jsonl"), "").unwrap();
         let reader = StdReviewedHistoryReader::new(Arc::new(StdFileSystem));
         let entries = reader.list_entries(&temp, true, false, false).unwrap();
         assert!(entries.is_empty());
@@ -251,7 +251,7 @@ mod tests {
         let manifest = r#"{"kind":"message","v":1,"ts":"2026-02-22T12:00:00","id":"001","role":"user","part_path":"part_001_user.txt","reviewed_path":"reviewed/reviewed_001_user.txt","decision":"allow","bytes":1,"hash64":"a"}
 {"kind":"message","v":1,"ts":"2026-02-22T12:01:00","id":"002","role":"assistant","part_path":"part_002_assistant.txt","reviewed_path":"reviewed/reviewed_002_assistant.txt","decision":"allow","bytes":1,"hash64":"b"}
 "#;
-        std::fs::write(temp.join("manifest.jsonl"), manifest).unwrap();
+        std::fs::write(temp.join("reviewed_history.jsonl"), manifest).unwrap();
         let session_dir = temp.canonicalize().unwrap();
         let reader = StdReviewedHistoryReader::new(Arc::new(StdFileSystem));
         let entries = reader

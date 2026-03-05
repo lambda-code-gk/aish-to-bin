@@ -1,4 +1,4 @@
-//! 履歴取得ツール（manifest + reviewed）
+//! 履歴取得ツール（reviewed_history.jsonl + reviewed）
 //!
 //! manifest が無い場合は reviewed/ を走査して動作する。
 
@@ -32,7 +32,7 @@ impl Tool for HistoryGetTool {
     }
 
     fn description(&self) -> &'static str {
-        "Get reviewed history messages from manifest.jsonl. Supports pagination by id and role filtering."
+        "Get reviewed history messages from reviewed_history.jsonl. Supports pagination by id and role filtering."
     }
 
     fn parameters_schema(&self) -> Option<Value> {
@@ -53,7 +53,7 @@ impl Tool for HistoryGetTool {
             .session_dir
             .clone()
             .ok_or_else(|| ToolError::ExecutionFailed("session_dir is not set".to_string()))?;
-        let manifest_path = session_dir.join("manifest.jsonl");
+        let manifest_path = session_dir.join("reviewed_history.jsonl");
         match std::fs::read_to_string(&manifest_path) {
             Ok(body) => self.call_with_manifest(&session_dir, &parse_lines(&body), args),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -319,7 +319,7 @@ mod tests {
         std::fs::create_dir_all(&reviewed_dir).unwrap();
         std::fs::write(reviewed_dir.join("reviewed_001_user.txt"), "u1").unwrap();
         std::fs::write(reviewed_dir.join("reviewed_002_assistant.txt"), "a2").unwrap();
-        std::fs::write(dir.join("manifest.jsonl"), "\
+        std::fs::write(dir.join("reviewed_history.jsonl"), "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"bb\"}\n").unwrap();
         dir
@@ -402,7 +402,7 @@ mod tests {
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"b\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t3\",\"id\":\"003\",\"role\":\"user\",\"part_path\":\"part_003_user.txt\",\"reviewed_path\":\"reviewed/reviewed_003_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"c\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t4\",\"id\":\"004\",\"role\":\"assistant\",\"part_path\":\"part_004_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_004_assistant.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"d\"}\n";
-        std::fs::write(dir.join("manifest.jsonl"), manifest).unwrap();
+        std::fs::write(dir.join("reviewed_history.jsonl"), manifest).unwrap();
         dir
     }
 

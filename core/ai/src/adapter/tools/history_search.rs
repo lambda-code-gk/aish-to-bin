@@ -1,4 +1,4 @@
-//! 履歴検索ツール（manifest + reviewed）
+//! 履歴検索ツール（reviewed_history.jsonl + reviewed）
 //!
 //! manifest が無い場合は reviewed/ を走査して動作する。
 
@@ -51,7 +51,7 @@ impl Tool for HistorySearchTool {
             .session_dir
             .clone()
             .ok_or_else(|| ToolError::ExecutionFailed("session_dir is not set".to_string()))?;
-        let manifest_path = session_dir.join("manifest.jsonl");
+        let manifest_path = session_dir.join("reviewed_history.jsonl");
         match std::fs::read_to_string(&manifest_path) {
             Ok(body) => self.call_with_manifest(&session_dir, &parse_lines(&body), args),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
@@ -300,7 +300,7 @@ mod tests {
             "Jumps over lazy dog",
         )
         .unwrap();
-        std::fs::write(dir.join("manifest.jsonl"), "\
+        std::fs::write(dir.join("reviewed_history.jsonl"), "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":19,\"hash64\":\"aa\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":19,\"hash64\":\"bb\"}\n").unwrap();
         dir

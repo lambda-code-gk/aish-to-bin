@@ -5,12 +5,19 @@ use crate::ports::outbound::SessionEventStore;
 use common::adapter::StdFileSystem;
 use common::domain::SessionDir;
 use common::ports::outbound::FileSystem;
+use std::path::Path;
 use std::sync::Arc;
 use storage::NdjsonSessionEventStore;
+
+fn write_session_schema_version<P: AsRef<Path>>(session_path: P) {
+    let version_path = session_path.as_ref().join("session_schema_version");
+    std::fs::write(version_path, "2\n").unwrap();
+}
 
 #[test]
 fn test_append_and_read_all_same_seq_kind() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    write_session_schema_version(tmp.path());
     let session_dir = SessionDir::new(tmp.path());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let store = NdjsonSessionEventStore::new(Arc::clone(&fs));
@@ -64,6 +71,7 @@ fn test_append_and_read_all_same_seq_kind() {
 #[test]
 fn test_next_seq_monotonic() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    write_session_schema_version(tmp.path());
     let session_dir = SessionDir::new(tmp.path());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let store = NdjsonSessionEventStore::new(Arc::clone(&fs));
@@ -104,6 +112,7 @@ fn test_next_seq_monotonic() {
 #[test]
 fn test_append_seq_zero_returns_error() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    write_session_schema_version(tmp.path());
     let session_dir = SessionDir::new(tmp.path());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let store = NdjsonSessionEventStore::new(Arc::clone(&fs));
@@ -128,10 +137,9 @@ fn test_append_seq_zero_returns_error() {
 #[test]
 fn test_read_all_yields_err_on_corrupted_line() {
     let tmp = tempfile::tempdir().expect("tempdir");
+    write_session_schema_version(tmp.path());
     let session_dir = SessionDir::new(tmp.path());
-    let events_dir = tmp.path().join("events");
-    std::fs::create_dir_all(&events_dir).unwrap();
-    let path = events_dir.join("events.ndjson");
+    let path = tmp.path().join("events.jsonl");
     std::fs::write(
         &path,
         r#"{"v":1,"seq":1,"ts_ms":0,"session_id":"s","run_id":null,"kind":"ok","payload":null}

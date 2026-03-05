@@ -4,6 +4,7 @@
 
 use crate::domain::{HomeDir, SessionDir};
 use crate::error::Error;
+use crate::session_schema::{SESSION_SCHEMA_LATEST, SESSION_SCHEMA_VERSION_FILE};
 use std::path::PathBuf;
 
 /// 検証済みパス管理構造体（内部実装）
@@ -63,6 +64,7 @@ impl ValidatedPath {
 /// セッションディレクトリパス管理構造体
 pub struct SessionPath {
     inner: ValidatedPath,
+    created: bool,
 }
 
 impl SessionPath {
@@ -77,6 +79,8 @@ impl SessionPath {
     /// # Errors
     /// ディレクトリの作成や正規化に失敗した場合、エラーを返します。
     pub fn new(path: impl Into<PathBuf>) -> Result<Self, Error> {
+        let path = path.into();
+        let created = !path.exists();
         let inner = ValidatedPath::new(path, "session directory", |path, path_name| {
             std::fs::create_dir_all(path).map_err(|e| {
                 Error::io_msg(format!(
@@ -88,12 +92,17 @@ impl SessionPath {
             })?;
             Ok(())
         })?;
-        Ok(SessionPath { inner })
+        Ok(SessionPath { inner, created })
     }
 
     /// パスを取得
     pub fn path(&self) -> &PathBuf {
         self.inner.path()
+    }
+
+    /// ディレクトリが今回の呼び出しで新規作成されたかどうか
+    pub fn created(&self) -> bool {
+        self.created
     }
 }
 
@@ -156,13 +165,33 @@ impl Session {
     ) -> Result<Self, Error> {
         // セッションディレクトリを作成（存在しない場合は作成）
         let session_path = SessionPath::new(session_dir)?;
+        let created = session_path.created();
         let session_dir = SessionDir::new(session_path.path().clone());
         let home_dir = HomeDir::new(home_dir.into());
 
-        Ok(Session {
+        let session = Session {
             session_dir,
             home_dir,
-        })
+        };
+
+        // 新規セッション作成時のみスキーマバージョンファイルを書き込む。
+        // 既存セッションには自動で作成せず、migrate.sh に委ねる。
+        if created {
+            let version_path = session
+                .session_dir
+                .as_ref()
+                .join(SESSION_SCHEMA_VERSION_FILE);
+            let content = format!("{}\n", SESSION_SCHEMA_LATEST);
+            std::fs::write(&version_path, content).map_err(|e| {
+                Error::io_msg(format!(
+                    "Failed to write session schema version file '{}': {}",
+                    version_path.display(),
+                    e
+                ))
+            })?;
+        }
+
+        Ok(session)
     }
 
     /// セッションディレクトリを取得

@@ -6,8 +6,14 @@ use crate::ports::outbound::SessionDerivedBuilder;
 use common::adapter::StdFileSystem;
 use common::domain::SessionDir;
 use common::ports::outbound::{FileSystem, SessionEventStore};
+use std::path::Path;
 use std::sync::Arc;
 use storage::{DerivedRebuilder, NdjsonSessionEventStore};
+
+fn write_session_schema_version<P: AsRef<Path>>(session_path: P) {
+    let version_path = session_path.as_ref().join("session_schema_version");
+    std::fs::write(version_path, "2\n").unwrap();
+}
 
 fn event(
     seq: u64,
@@ -30,6 +36,7 @@ fn test_rebuild_creates_index_sqlite_and_summary_json() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let session_path = tmp.path().join("test_session");
     std::fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let store = Arc::new(NdjsonSessionEventStore::new(Arc::clone(&fs)));
@@ -96,6 +103,7 @@ fn test_rebuild_resolves_artifact_rel_path() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let session_path = tmp.path().join("session");
     std::fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let store = Arc::new(NdjsonSessionEventStore::new(Arc::clone(&fs)));

@@ -46,7 +46,6 @@ done
 [ -S "$AISH_DAEMON_SOCK" ] || { echo "socket not created"; exit 1; }
 
 SESSION_DIR="$(mktemp -d)/session_1"
-mkdir -p "$SESSION_DIR/events"
 # append 1 件を RPC で送る（length-prefix + JSON）
 python3 << PYEOF
 import socket, struct, json, sys
@@ -65,10 +64,10 @@ sys.exit(0 if r.get("ok") else 1)
 PYEOF
 # daemon は append 成功後に apply_from_seq を試行する
 sleep 0.5
-[ -f "$SESSION_DIR/events/events.ndjson" ] || { echo "events.ndjson not created after append"; kill $DAEMON_PID 2>/dev/null; exit 1; }
+[ -f "$SESSION_DIR/events.jsonl" ] || { echo "events.jsonl not created after append"; kill $DAEMON_PID 2>/dev/null; exit 1; }
 # 1行以上（append したイベント。apply 失敗時は derived.update_failed で2行）
-EVENT_LINES=$(wc -l < "$SESSION_DIR/events/events.ndjson")
-[ "$EVENT_LINES" -ge 1 ] || { echo "expected at least 1 line in events.ndjson"; kill $DAEMON_PID 2>/dev/null; exit 1; }
+EVENT_LINES=$(wc -l < "$SESSION_DIR/events.jsonl")
+[ "$EVENT_LINES" -ge 1 ] || { echo "expected at least 1 line in events.jsonl"; kill $DAEMON_PID 2>/dev/null; exit 1; }
 # apply が成功していれば index ができる
 if [ -f "$SESSION_DIR/index/index.sqlite" ]; then
     EVENT_COUNT=$(sqlite3 "$SESSION_DIR/index/index.sqlite" "SELECT COUNT(*) FROM events;" 2>/dev/null || echo "0")
@@ -84,8 +83,7 @@ echo "=== 2) daemon 不在で rebuild-derived (フォールバック) ==="
 export AISH_DAEMON=off
 export AISH_DAEMON_SOCK="$(mktemp -d)/nonexistent.sock"
 SESSION_DIR2="$(mktemp -d)/session_2"
-mkdir -p "$SESSION_DIR2/events"
-echo '{"v":1,"seq":1,"ts_ms":2000,"session_id":"session_2","run_id":null,"kind":"test","payload":{}}' >> "$SESSION_DIR2/events/events.ndjson"
+echo '{"v":1,"seq":1,"ts_ms":2000,"session_id":"session_2","run_id":null,"kind":"test","payload":{}}' >> "$SESSION_DIR2/events.jsonl"
 $AISH_CMD -s "$SESSION_DIR2" sessions rebuild-derived
 [ -f "$SESSION_DIR2/index/index.sqlite" ] || { echo "index not created by fallback rebuild"; exit 1; }
 echo "OK: fallback rebuild-derived"
@@ -110,7 +108,6 @@ echo "OK: rebuild-derived via daemon"
 # 4) derived 更新失敗 → derived.update_failed が events に残る
 echo "=== 4) derived 更新失敗 → update_failed イベント ==="
 SESSION_DIR4="$(mktemp -d)/session_4"
-mkdir -p "$SESSION_DIR4/events"
 export AISH_DAEMON_SOCK="$(mktemp -d)/aishd4.sock"
 mkdir -p "$(dirname "$AISH_DAEMON_SOCK")"
 $AISH_CMD daemon start &
@@ -137,8 +134,8 @@ s.close()
 sys.exit(0 if r.get("ok") else 1)
 PYEOF
 sleep 0.3
-grep -q 'derived.update_failed' "$SESSION_DIR4/events/events.ndjson" || {
-    echo "derived.update_failed not found in events.ndjson"
+grep -q 'derived.update_failed' "$SESSION_DIR4/events.jsonl" || {
+    echo "derived.update_failed not found in events.jsonl"
     chmod 0755 "$SESSION_DIR4/index" 2>/dev/null || true
     kill $DAEMON_PID4 2>/dev/null || true
     exit 1

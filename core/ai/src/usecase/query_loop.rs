@@ -231,7 +231,7 @@ pub struct QueryLoop {
     event_hub: Option<EventHubHandle>,
     session_id: SessionId,
     run_id: RunId,
-    /// events.ndjson 追記用（session ありのときのみ）
+    /// events.jsonl 追記用（session ありのときのみ）
     session_dir: Option<SessionDir>,
     event_appender: Option<Arc<dyn EventAppender>>,
     clock: Option<Arc<dyn Clock>>,
@@ -677,7 +677,7 @@ impl QueryLoop {
                     }
                 };
 
-                // events.ndjson: tool call started（巨大 args は artifacts 参照）
+                // events.jsonl: tool call started（巨大 args は artifacts 参照）
                 {
                     let mut payload = serde_json::Map::new();
                     payload.insert("call_id".to_string(), serde_json::json!(call_id));
@@ -704,7 +704,7 @@ impl QueryLoop {
                 {
                     Ok(result) => {
                         let elapsed_ms = exec_start.elapsed().as_millis() as u64;
-                        // events.ndjson: tool call completed（巨大 result は artifacts 参照）
+                        // events.jsonl: tool call completed（巨大 result は artifacts 参照）
                         let mut payload = serde_json::Map::new();
                         payload.insert("call_id".to_string(), serde_json::json!(call_id));
                         payload.insert("tool_id".to_string(), serde_json::json!(name));
@@ -737,7 +737,7 @@ impl QueryLoop {
                     Err(e) => {
                         let elapsed_ms = exec_start.elapsed().as_millis() as u64;
                         let msg = e.to_string();
-                        // events.ndjson: tool call failed（巨大 message は preview のみ）
+                        // events.jsonl: tool call failed（巨大 message は preview のみ）
                         let mut payload = serde_json::Map::new();
                         payload.insert("call_id".to_string(), serde_json::json!(call_id));
                         payload.insert("tool_id".to_string(), serde_json::json!(name));

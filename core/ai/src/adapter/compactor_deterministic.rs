@@ -159,7 +159,7 @@ mod tests {
         fs.write(&reviewed_dir.join("reviewed_003_user.txt"), "u3")
             .unwrap();
         fs.write(
-            &dir.join("manifest.jsonl"),
+            &dir.join("reviewed_history.jsonl"),
             "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"bb\"}\n\
@@ -171,7 +171,9 @@ mod tests {
         let strategy = DeterministicCompactionStrategy;
         strategy.maybe_compact(&fs, &dir, &records).unwrap();
 
-        let body = fs.read_to_string(&dir.join("manifest.jsonl")).unwrap();
+        let body = fs
+            .read_to_string(&dir.join("reviewed_history.jsonl"))
+            .unwrap();
         let records = crate::domain::parse_lines(&body);
         let comp = records
             .iter()

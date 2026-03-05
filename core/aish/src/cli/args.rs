@@ -227,7 +227,7 @@ fn build_clap_command() -> clap::Command {
                     .about("List sessions or rebuild derived artifacts")
                     .subcommand(
                         clap::Command::new("rebuild-derived")
-                            .about("Rebuild index.sqlite and snapshots/summary.json from events.ndjson")
+                    .about("Rebuild index.sqlite and snapshots/summary.json from events.jsonl")
                             .arg(
                                 clap::Arg::new("session")
                                     .long("session")

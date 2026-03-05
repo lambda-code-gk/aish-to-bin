@@ -9,9 +9,9 @@ if [[ -z "$SESSION_DIR" ]]; then
     exit 1
 fi
 
-MANIFEST="$SESSION_DIR/manifest.jsonl"
+MANIFEST="$SESSION_DIR/reviewed_history.jsonl"
 if [[ ! -f "$MANIFEST" ]]; then
-    echo >&2 "No session history found at $MANIFEST"
+  echo >&2 "No session history found at $MANIFEST"
     exit 1
 fi
 

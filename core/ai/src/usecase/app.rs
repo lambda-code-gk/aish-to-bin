@@ -53,7 +53,7 @@ pub struct SessionDeps {
     pub prepare_session_for_sensitive_check: Option<Arc<dyn PrepareSessionForSensitiveCheck>>,
     /// leakscan が有効で manifest/reviewed 履歴を使っている場合 true（dry run 表示用）
     pub leakscan_enabled: bool,
-    /// セッションイベント永続（events.ndjson 読み書きのうち読み取りと低レベル append）
+    /// セッションイベント永続（events.jsonl 読み書きのうち読み取りと低レベル append）
     pub session_event_store: Arc<dyn SessionEventStore>,
     /// 派生物再生成（index.sqlite / snapshots/summary.json）
     pub session_derived_builder: Arc<dyn SessionDerivedBuilder>,
@@ -294,7 +294,7 @@ impl AiUseCase {
         }))
     }
 
-    /// 重要イベントを events.ndjson に追記（session_dir があるときのみ。fail-closed）。巨大 payload は正規化する（P8-4）。
+    /// 重要イベントを events.jsonl に追記（session_dir があるときのみ。fail-closed）。巨大 payload は正規化する（P8-4）。
     fn append_event_to_store(
         &self,
         session_dir: &SessionDir,

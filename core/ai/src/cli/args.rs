@@ -16,7 +16,7 @@ pub struct Config {
     pub policy_explain: bool,
     /// --config-explain: 解決済み設定と source を表示
     pub config_explain: bool,
-    /// --sessions-rebuild-derived: events.ndjson から index/summary を再生成（-s または AISH_SESSION 必須）
+    /// --sessions-rebuild-derived: events.jsonl から index/summary を再生成（-s または AISH_SESSION 必須）
     pub sessions_rebuild_derived: bool,
     /// -c / --continue: 保存された会話状態から再開する
     pub continue_flag: bool,
@@ -117,7 +117,7 @@ fn build_clap_command() -> clap::Command {
         .arg(
             clap::Arg::new("sessions-rebuild-derived")
                 .long("sessions-rebuild-derived")
-                .help("Rebuild index.sqlite and snapshots/summary.json from events.ndjson (requires -s or AISH_SESSION)")
+                .help("Rebuild index.sqlite and snapshots/summary.json from events.jsonl (requires -s or AISH_SESSION)")
                 .action(ArgAction::SetTrue),
         )
         .arg(

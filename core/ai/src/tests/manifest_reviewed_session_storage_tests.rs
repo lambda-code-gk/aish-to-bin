@@ -13,6 +13,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+fn write_session_schema_version<P: AsRef<Path>>(session_path: P) {
+    let version_path = session_path.as_ref().join("session_schema_version");
+    fs::write(version_path, "2\n").unwrap();
+}
+
 fn loader(load_max: usize) -> ManifestReviewedSessionStorage {
     ManifestReviewedSessionStorage::new(Arc::new(StdFileSystem), load_max)
 }
@@ -25,6 +30,7 @@ fn test_manifest_loader_with_tail_limit() {
         fs::remove_dir_all(&session_path).unwrap();
     }
     fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let reviewed_dir = session_path.join("reviewed");
     fs::create_dir_all(&reviewed_dir).unwrap();
@@ -32,7 +38,7 @@ fn test_manifest_loader_with_tail_limit() {
     fs::write(reviewed_dir.join("reviewed_002_assistant.txt"), "a2").unwrap();
     fs::write(reviewed_dir.join("reviewed_003_user.txt"), "u3").unwrap();
     fs::write(
-        session_path.join("manifest.jsonl"),
+        session_path.join("reviewed_history.jsonl"),
         "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"bb\"}\n\
@@ -58,6 +64,7 @@ fn test_manifest_loader_fallback_reviewed_tail_limit() {
         fs::remove_dir_all(&session_path).unwrap();
     }
     fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let reviewed_dir = session_path.join("reviewed");
     fs::create_dir_all(&reviewed_dir).unwrap();
@@ -83,6 +90,7 @@ fn test_manifest_loader_inserts_compaction_summary_before_tail() {
         fs::remove_dir_all(&session_path).unwrap();
     }
     fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let reviewed_dir = session_path.join("reviewed");
     fs::create_dir_all(&reviewed_dir).unwrap();
@@ -91,7 +99,7 @@ fn test_manifest_loader_inserts_compaction_summary_before_tail() {
     fs::write(reviewed_dir.join("reviewed_003_user.txt"), "u3").unwrap();
     fs::write(session_path.join("compaction_001_001.txt"), "summary old").unwrap();
     fs::write(
-        session_path.join("manifest.jsonl"),
+        session_path.join("reviewed_history.jsonl"),
         "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n\
 {\"kind\":\"compaction\",\"v\":1,\"ts\":\"tc\",\"from_id\":\"001\",\"to_id\":\"001\",\"summary_path\":\"compaction_001_001.txt\",\"method\":\"deterministic\",\"source_count\":1}\n\
@@ -119,6 +127,7 @@ fn test_manifest_loader_respects_send_from_index() {
         fs::remove_dir_all(&session_path).unwrap();
     }
     fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let reviewed_dir = session_path.join("reviewed");
     fs::create_dir_all(&reviewed_dir).unwrap();
@@ -126,7 +135,7 @@ fn test_manifest_loader_respects_send_from_index() {
     fs::write(reviewed_dir.join("reviewed_002_assistant.txt"), "a2").unwrap();
     fs::write(reviewed_dir.join("reviewed_003_user.txt"), "u3").unwrap();
     fs::write(
-        session_path.join("manifest.jsonl"),
+        session_path.join("reviewed_history.jsonl"),
         "\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n\
 {\"kind\":\"message\",\"v\":1,\"ts\":\"t2\",\"id\":\"002\",\"role\":\"assistant\",\"part_path\":\"part_002_assistant.txt\",\"reviewed_path\":\"reviewed/reviewed_002_assistant.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"bb\"}\n\
@@ -159,12 +168,13 @@ fn test_manifest_loader_send_from_past_end_gives_empty_history() {
         fs::remove_dir_all(&session_path).unwrap();
     }
     fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
     let reviewed_dir = session_path.join("reviewed");
     fs::create_dir_all(&reviewed_dir).unwrap();
     fs::write(reviewed_dir.join("reviewed_001_user.txt"), "u1").unwrap();
     fs::write(
-        session_path.join("manifest.jsonl"),
+        session_path.join("reviewed_history.jsonl"),
         "{\"kind\":\"message\",\"v\":1,\"ts\":\"t1\",\"id\":\"001\",\"role\":\"user\",\"part_path\":\"part_001_user.txt\",\"reviewed_path\":\"reviewed/reviewed_001_user.txt\",\"decision\":\"allow\",\"bytes\":2,\"hash64\":\"aa\"}\n",
     )
     .unwrap();
@@ -203,8 +213,9 @@ fn test_manifest_loader_uses_injected_strategy() {
         fs::remove_dir_all(&session_path).unwrap();
     }
     fs::create_dir_all(&session_path).unwrap();
+    write_session_schema_version(&session_path);
     let session_dir = SessionDir::new(session_path.clone());
-    fs::write(session_path.join("manifest.jsonl"), "{}\n").unwrap();
+    fs::write(session_path.join("reviewed_history.jsonl"), "{}\n").unwrap();
 
     let loader = ManifestReviewedSessionStorage::with_strategies(
         Arc::new(StdFileSystem),

@@ -9,6 +9,7 @@ use common::ports::outbound::FileSystem;
 use common::safe_session_path::{
     is_safe_reviewed_path, is_safe_summary_basename, resolve_under_session_dir, REVIEWED_DIR,
 };
+use common::session_schema::require_latest;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -180,6 +181,8 @@ impl SessionHistoryLoader for ManifestReviewedSessionStorage {
             return Ok(History::new());
         }
         let dir = session_dir.as_ref();
+        // 既存セッションに対しては最新スキーマのみをサポートする。
+        require_latest(self.fs.as_ref(), dir)?;
         let manifest_path = session_manifest::manifest_path(dir);
         if self.fs.exists(&manifest_path) {
             self.manifest_view_strategy

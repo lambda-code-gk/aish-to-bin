@@ -21,7 +21,7 @@ impl SessionUseCase {
         }
     }
 
-    /// events.ndjson から index.sqlite と snapshots/summary.json を再生成する
+    /// events.jsonl から index.sqlite と snapshots/summary.json を再生成する
     pub fn rebuild_derived(&self, session_dir: &SessionDir) -> Result<(), Error> {
         let mut iter = self.session_event_store.read_all(session_dir)?;
         self.session_derived_builder.rebuild(session_dir, &mut iter)

@@ -29,6 +29,9 @@ pub mod ports;
 /// セッション管理
 pub mod session;
 
+/// セッションスキーマバージョン
+pub mod session_schema;
+
 /// イベント Sink（表示・保存の分離；trait は ports に定義）
 pub mod sink;
 

@@ -100,7 +100,7 @@ pub struct App {
     pub policy_use_case: PolicyUseCase,
     /// config explain（解決済み設定と source 一覧）
     pub config_use_case: ConfigUseCase,
-    /// セッション派生物の再生成（events.ndjson → index / summary）
+    /// セッション派生物の再生成（events.jsonl → index / summary）
     pub session_use_case: SessionUseCase,
 }
 

@@ -1,4 +1,4 @@
-//! manifest.jsonl の読み書きユーティリティ
+//! reviewed_history.jsonl の読み書きユーティリティ
 
 use crate::domain::{parse_lines, ManifestRecordV1};
 use common::error::Error;
@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn manifest_path(session_dir: &Path) -> PathBuf {
-    session_dir.join("manifest.jsonl")
+    session_dir.join("reviewed_history.jsonl")
 }
 
 fn send_from_path(session_dir: &Path) -> PathBuf {

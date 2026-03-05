@@ -69,7 +69,7 @@ impl ClearUseCase {
                     self.fs.remove_file(&entry)?;
                 }
             }
-            // reviewed_ / reviewed/ と manifest.jsonl は削除しない（Ctrl+L 時は送信開始位置のみ先頭に戻す）
+            // reviewed_ / reviewed/ と reviewed_history.jsonl は削除しない（Ctrl+L 時は送信開始位置のみ先頭に戻す）
         }
 
         // leakscan 退避用ディレクトリを削除
@@ -78,11 +78,11 @@ impl ClearUseCase {
             self.fs.remove_dir_all(&evacuated_dir)?;
         }
 
-        // 履歴送信開始位置を manifest.jsonl の行数に設定。次回は LLM に送る会話履歴が 0 件になる。
+        // 履歴送信開始位置を reviewed_history.jsonl の行数に設定。次回は LLM に送る会話履歴が 0 件になる。
         let send_from_path = session_dir.join(HISTORY_SEND_FROM_FILENAME);
-        let manifest_path = session_dir.join("manifest.jsonl");
-        let content = if self.fs.exists(&manifest_path) {
-            let s = self.fs.read_to_string(&manifest_path).unwrap_or_default();
+        let history_path = session_dir.join("reviewed_history.jsonl");
+        let content = if self.fs.exists(&history_path) {
+            let s = self.fs.read_to_string(&history_path).unwrap_or_default();
             let line_count = s.lines().filter(|l| !l.trim().is_empty()).count();
             format!("{}\n", line_count)
         } else {
