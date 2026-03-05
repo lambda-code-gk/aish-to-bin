@@ -9,7 +9,7 @@ use common::domain::SessionDir;
 use common::ports::outbound::FileSystem;
 use std::path::Path;
 use std::sync::Arc;
-use storage::{DerivedRebuilder, NdjsonSessionEventStore};
+use storage::{DerivedApplier, NdjsonSessionEventStore};
 
 fn write_session_schema_version<P: AsRef<Path>>(session_path: P) {
     let version_path = session_path.as_ref().join("session_schema_version");
@@ -45,11 +45,11 @@ fn test_rebuild_derived_success() {
         )
         .unwrap();
 
-    let derived_rebuilder = Arc::new(DerivedRebuilder::new(
+    let derived_applier = Arc::new(DerivedApplier::new(
         Arc::clone(&store) as Arc<dyn common::ports::outbound::SessionEventStore>,
         Arc::clone(&fs),
     ));
-    let builder = StdSessionDerivedBuilder::new(derived_rebuilder);
+    let builder = StdSessionDerivedBuilder::new(derived_applier);
     let use_case = SessionUseCase::new(
         store as Arc<dyn SessionEventStore>,
         Arc::new(builder) as Arc<dyn SessionDerivedBuilder>,

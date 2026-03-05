@@ -8,7 +8,7 @@ use common::domain::SessionDir;
 use common::ports::outbound::{FileSystem, SessionEventStore};
 use std::path::Path;
 use std::sync::Arc;
-use storage::{DerivedRebuilder, NdjsonSessionEventStore};
+use storage::{DerivedApplier, NdjsonSessionEventStore};
 
 fn write_session_schema_version<P: AsRef<Path>>(session_path: P) {
     let version_path = session_path.as_ref().join("session_schema_version");
@@ -65,11 +65,11 @@ fn test_rebuild_creates_index_sqlite_and_summary_json() {
         store.append(&session_dir, ev).unwrap();
     }
 
-    let rebuilder = Arc::new(DerivedRebuilder::new(
+    let applier = Arc::new(DerivedApplier::new(
         store as Arc<dyn common::ports::outbound::SessionEventStore>,
         Arc::clone(&fs),
     ));
-    let builder = StdSessionDerivedBuilder::new(rebuilder);
+    let builder = StdSessionDerivedBuilder::new(applier);
     let mut iter = events.into_iter().map(Ok);
     builder.rebuild(&session_dir, &mut iter).unwrap();
 
@@ -136,11 +136,11 @@ fn test_rebuild_resolves_artifact_rel_path() {
     };
     store.append(&session_dir, &ev).unwrap();
 
-    let rebuilder = Arc::new(DerivedRebuilder::new(
+    let applier = Arc::new(DerivedApplier::new(
         store as Arc<dyn common::ports::outbound::SessionEventStore>,
         Arc::clone(&fs),
     ));
-    let builder = StdSessionDerivedBuilder::new(rebuilder);
+    let builder = StdSessionDerivedBuilder::new(applier);
     let mut iter = std::iter::once(Ok(ev));
     builder.rebuild(&session_dir, &mut iter).unwrap();
 

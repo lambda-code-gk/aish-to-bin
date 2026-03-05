@@ -49,7 +49,7 @@ use crate::usecase::policy_usecase::PolicyUseCase;
 use crate::usecase::session_usecase::SessionUseCase;
 use crate::usecase::task::TaskUseCase;
 use daemon_api;
-use storage::{DerivedRebuilder, LocalEventAppender, NdjsonSessionEventStore};
+use storage::{DerivedApplier, LocalEventAppender, NdjsonSessionEventStore};
 
 /// Arc<AiUseCase> を RunQuery として渡すための薄いラッパ
 struct AiRunQuery(Arc<AiUseCase>);
@@ -446,12 +446,12 @@ fn build_session_deps(
     let clock: Arc<dyn Clock> = Arc::new(StdClock);
     let session_event_store: Arc<dyn SessionEventStore> =
         Arc::new(NdjsonSessionEventStore::new(Arc::clone(&fs)));
-    let derived_rebuilder: Arc<DerivedRebuilder> = Arc::new(storage::DerivedRebuilder::new(
+    let derived_applier: Arc<DerivedApplier> = Arc::new(storage::DerivedApplier::new(
         Arc::clone(&session_event_store),
         Arc::clone(&fs),
     ));
     let session_derived_builder: Arc<dyn SessionDerivedBuilder> =
-        Arc::new(StdSessionDerivedBuilder::new(derived_rebuilder));
+        Arc::new(StdSessionDerivedBuilder::new(derived_applier));
     let local_appender: Arc<dyn EventAppender> =
         Arc::new(LocalEventAppender::new(Arc::clone(&session_event_store)));
     let event_appender: Arc<dyn EventAppender> = {
