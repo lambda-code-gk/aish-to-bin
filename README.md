@@ -112,15 +112,16 @@ AISH は統合バイナリ `aish` を通じて利用します。また、`ai` �
 
 ```text
 aish/
-├── crates/aish            # 統合バイナリ（ai / aish）のエントリポイント
-├── core/                  # コアロジック (Library)
-│   ├── ai                 # LLM 連携・エージェント・ポリシー制御
-│   ├── aish               # ターミナル記録・セッション管理
-│   └── common             # 共通ドメイン・抽象ポート・ドライバ
-├── tools/                 # 補助ツール (leakscan, md-fmt 等)
-├── assets/defaults/       # 設定テンプレート
-├── dist/bin/              # ビルド成果物
-└── tests/                 # テストスクリプト
+├── bins/aish-cli         # 統合バイナリ（ai / aish）のエントリポイント
+├── apps/                 # 現役アプリ (Library)
+│   ├── ai                # LLM 連携・エージェント・ポリシー制御
+│   └── aish              # ターミナル記録・セッション管理
+├── libs/                 # 現役共有ライブラリ
+│   └── common            # 共通ドメイン・抽象ポート・ドライバ
+├── tools/                # 補助ツール (leakscan, md-fmt 等)
+├── assets/defaults/      # 設定テンプレート
+├── dist/bin/             # ビルド成果物
+└── tests/                # テストスクリプト
 ```
 
 ## 📄 License

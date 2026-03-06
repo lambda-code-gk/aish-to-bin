@@ -6,10 +6,11 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-USECASE_DIRS="core/ai/src/usecase core/aish/src/usecase"
-MAIN_FILES="core/ai/src/main.rs core/aish/src/main.rs"
-PORTS_DIRS="core/ai/src/ports core/aish/src/ports"
-DOMAIN_DIRS="core/ai/src/domain core/aish/src/domain"
+USECASE_DIRS="apps/ai/src/usecase apps/aish/src/usecase"
+# バイナリエントリは bins/aish-cli（apps/ai, apps/aish は lib のみ）
+MAIN_FILES="bins/aish-cli/src/ai.rs bins/aish-cli/src/aish_bin.rs bins/aish-cli/src/lib.rs"
+PORTS_DIRS="apps/ai/src/ports apps/aish/src/ports"
+DOMAIN_DIRS="apps/ai/src/domain apps/aish/src/domain"
 
 fail() { echo "Architecture violation: $1"; exit 1; }
 
@@ -37,7 +38,7 @@ rg "UseCase::new\s*\(" $MAIN_FILES 2>/dev/null && fail "main must not construct 
 rg "crate::adapter|use .*adapter::" $MAIN_FILES 2>/dev/null && fail "main must not depend on adapter (use wiring only)" || true
 
 # common に usecase を置かない（ai 専用・aish 専用は各 crate に）
-[ -d core/common/src/usecase ] && fail "common must not have usecase directory" || true
+[ -d libs/common/src/usecase ] && fail "common must not have usecase directory" || true
 
 # ports は adapter に依存しない
 rg "crate::adapter" $PORTS_DIRS 2>/dev/null && fail "ports must not depend on adapter" || true

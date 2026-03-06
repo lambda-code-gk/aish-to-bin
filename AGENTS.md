@@ -34,7 +34,7 @@
 
 ### 2. usecase 層の禁止事項（明文化）
 
-usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）では以下を**禁止**する。
+usecase モジュール（`apps/ai/src/usecase/`, `apps/aish/src/usecase/`）では以下を**禁止**する。
 
 - **adapter を import しない**  
   `use crate::adapter::*` や `use crate::adapter::StdTaskRunner` 等は書かない。必要なのは port（trait）だけ。
@@ -67,7 +67,7 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 
 コードを書いたら、以下を確認する。
 
-- [ ] このコードは **usecase から adapter を参照していないか？**（`grep -r "crate::adapter" core/ai/src/usecase core/aish/src/usecase` が空であること）
+- [ ] このコードは **usecase から adapter を参照していないか？**（`grep -r "crate::adapter" apps/ai/src/usecase apps/aish/src/usecase` が空であること）
 - [ ] **stdout / stderr を usecase で触っていないか？**（`println!` / `eprintln!` / `std::io::stdout` 等が usecase に無いこと）
 - [ ] **env を usecase で直接読んでいないか？**（`std::env::var` / `std::env::current_dir` 等が usecase に無いこと）
 - [ ] **usecase が cli や wiring に依存していないか？**（`use crate::cli` / `use crate::wiring` が usecase に無いこと）
@@ -79,12 +79,12 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 ## プロジェクト概要・構造
 
 - **AISH**: CUI 自動化フレームワーク（LLM 連携）。シェルスクリプトから Rust への刷新中。
-- **core/common**: `ai` / `aish` 共通。エラー型、session、LLM ドライバ・プロバイダ、Part ID、Port trait（FileSystem, Process, Clock 等）と標準実装、Tool trait / ToolRegistry。**ai 専用・aish 専用のユースケースは置かない。**  
+- **libs/common**: `ai` / `aish` 共通。エラー型、session、LLM ドライバ・プロバイダ、Part ID、Port trait（FileSystem, Process, Clock 等）と標準実装、Tool trait / ToolRegistry。**ai 専用・aish 専用のユースケースは置かない。**  
   - Outbound の trait のうち **Tool** と **LlmProvider** は、ドメイン型（ToolContext, Message 等）との循環参照を避けるため、それぞれ `common::tool` と `common::llm::provider` に定義し、`common::ports::outbound` から re-export している。その他の outbound trait は `ports/outbound` に定義。
-- **core/ai**: `ai` コマンド。main → cli → wiring → UseCaseRunner。usecase: `app.rs`（AiUseCase）, `task.rs`（TaskUseCase）, `query_loop.rs`（QueryLoop）, `agent_loop.rs`（AgentLoop 外側）。adapter: sinks, task, part_session_storage, approval, tools, resolve_system_prompt_from_hooks 等。CLI 層では、`-S/--system` 未指定時に hooks ベースでシステムプロンプトを解決して `Config` を補完する（解決順: `$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）。
-- **core/aish**: `aish` コマンド。main → cli → wiring → UseCaseRunner。usecase: shell, truncate_console_log, clear 等。adapter: shell, terminal, platform, logfmt 等。
+- **apps/ai**: `ai` コマンド。main → cli → wiring → UseCaseRunner。usecase: `app.rs`（AiUseCase）, `task.rs`（TaskUseCase）, `query_loop.rs`（QueryLoop）, `agent_loop.rs`（AgentLoop 外側）。adapter: sinks, task, part_session_storage, approval, tools, resolve_system_prompt_from_hooks 等。CLI 層では、`-S/--system` 未指定時に hooks ベースでシステムプロンプトを解決して `Config` を補完する（解決順: `$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）。
+- **apps/aish**: `aish` コマンド。main → cli → wiring → UseCaseRunner。usecase: shell, truncate_console_log, clear 等。adapter: shell, terminal, platform, logfmt 等。
 
-ビルド・テストはプロジェクトルートで `./build.sh`, `./tests/units.sh`, `./tests/integration.sh`。個別は `cd core/ai && cargo test` 等。
+ビルド・テストはプロジェクトルートで `./build.sh`, `./tests/units.sh`, `./tests/integration.sh`。個別は `cd apps/ai && cargo test` 等。
 
 ---
 
@@ -92,13 +92,13 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 
 - **TDD**: 失敗するテストを先に書く → 通す最小実装 → リファクタ。テスト省略禁止。
 - **エラー**: usecase 内は `Result<T, common::error::Error>`。CLI 境界で `exit_code()` / `is_usage()` により終了コード・用法表示を決定。
-- **common 肥大化防止**: 2 crate 以上で共有され安定したものだけ common に置く。ai 専用・aish 専用は各 crate の adapter / usecase に置く。OS 副作用のある具象ツール実装は `core/*/adapter/` に置く。システムプロンプトの注入は hooks ベースのアダプタ（`ResolveSystemPromptFromHooks`）で行い、usecase からは直接扱わない。
+- **common 肥大化防止**: 2 crate 以上で共有され安定したものだけ common に置く。ai 専用・aish 専用は各 crate の adapter / usecase に置く。OS 副作用のある具象ツール実装は `apps/*/adapter/` に置く。システムプロンプトの注入は hooks ベースのアダプタ（`ResolveSystemPromptFromHooks`）で行い、usecase からは直接扱わない。
 - **文字列の切り詰め（UTF-8）**: `&str` をバイト長で切り詰める場合、**必ず文字境界で切る**こと。`&s[..n]` のようにバイト位置 `n` でそのままスライスすると、UTF-8 の多バイト文字（日本語の「コ」等）の途中で切り、`byte index N is not a char boundary` でパニックになる。切り詰め位置を `n` にしたあと、`str::is_char_boundary(n)` が真になるまで `n` を減らすか、`char_indices()` で文字境界だけを扱うこと。
 
 ### セッションディレクトリ構造と migrations 運用
 
 - **スキーマバージョンの定義場所**  
-  - 共通モジュール `core/common/src/session_schema.rs` で `SESSION_SCHEMA_LATEST` と `SESSION_SCHEMA_VERSION_FILE`（`session_schema_version`）を定義し、`require_latest()` でバージョンチェックを行う。
+  - 共通モジュール `libs/common/src/session_schema.rs` で `SESSION_SCHEMA_LATEST` と `SESSION_SCHEMA_VERSION_FILE`（`session_schema_version`）を定義し、`require_latest()` でバージョンチェックを行う。
   - 新規セッション作成時のみ、`Session::new()` が `<session_dir>/session_schema_version` に最新バージョン（例: `2\n`）を書き込む。既存セッションには**自動では書かない**。
 
 - **セッションディレクトリ構造を変更するときの手順**  
@@ -138,7 +138,7 @@ usecase モジュール（`core/ai/src/usecase/`, `core/aish/src/usecase/`）で
 - 結合テスト: `./tests/integration.sh`（作業前後に必須）
 - 単体テスト: `./tests/units.sh`
 - 既知のバグ: `BUGS.md`
-- サブプロジェクト: `tools/aish-capture/AGENTS.md` 等
+- サブプロジェクト: `legacy/old_impl/tools/aish-capture/AGENTS.md` 等
 
 ## 更新履歴
 

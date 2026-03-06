@@ -23,6 +23,7 @@ out/
 # Dev sandbox (runtime data isolated for development)
 .sandbox/
 .aish
+.cursor
 
 # Runtime artifacts (legacy dev layout)
 home/bin/

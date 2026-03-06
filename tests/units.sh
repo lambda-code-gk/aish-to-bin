@@ -63,11 +63,11 @@ main() {
     # Rustプロジェクトのテストを実行
     log_info "Running Rust project tests..."
     
-    # core/ai (workspace package name: ai)
-    run_rust_test "core/ai" "ai" || true
+    # apps/ai (workspace package name: ai)
+    run_rust_test "apps/ai" "ai" || true
     
-    # core/aish (workspace package name: aish)
-    run_rust_test "core/aish" "aish" || true
+    # apps/aish (workspace package name: aish)
+    run_rust_test "apps/aish" "aish" || true
     
     # 結果サマリー
     echo ""

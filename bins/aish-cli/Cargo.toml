@@ -1,0 +1,20 @@
+[package]
+name = "aish-cli"
+version = "0.1.0"
+edition = "2021"
+description = "Single-binary CLI (wiring only); subcommands: ai, shell, sessions, policy, config"
+
+# 同一 main.rs を複数 bin で参照すると Cargo が警告するため、エントリを分離（ai / aish は同じ run() に委譲）
+[[bin]]
+name = "aish"
+path = "src/aish_bin.rs"
+
+[[bin]]
+name = "ai"
+path = "src/ai.rs"
+
+[dependencies]
+ai = { path = "../../apps/ai" }
+aish = { path = "../../apps/aish" }
+clap = { version = "4", features = ["derive"] }
+common = { path = "../../libs/common" }

@@ -1,0 +1,29 @@
+[package]
+name = "ai"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+common = { path = "../../libs/common" }
+daemon_api = { path = "../../libs/daemon_api" }
+storage = { path = "../../libs/storage" }
+plugins = { path = "../../libs/plugins" }
+rusqlite = { version = "0.31", features = ["bundled"] }
+ctrlc = "3.4"
+serde_json = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+regex = "1.10"
+thiserror = "1.0"
+tokio = { version = "1", features = ["net", "io-util", "rt-multi-thread", "sync"] }
+toml = "1.0"
+
+[dev-dependencies]
+anyhow = "1"
+tempfile = "3.8"
+
