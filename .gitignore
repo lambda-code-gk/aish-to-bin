@@ -24,6 +24,7 @@ out/
 .sandbox/
 .aish
 .cursor
+tmp
 
 # Runtime artifacts (legacy dev layout)
 home/bin/

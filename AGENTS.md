@@ -137,6 +137,7 @@ usecase モジュール（`apps/ai/src/usecase/`, `apps/aish/src/usecase/`）で
 
 - 結合テスト: `./tests/integration.sh`（作業前後に必須）
 - 単体テスト: `./tests/units.sh`
+- **aish の実行テスト**: 以下のディレクトリを使用する。`aish -d <PROJ_ROOT>/tmp/home`
 - 既知のバグ: `BUGS.md`
 - サブプロジェクト: `legacy/old_impl/tools/aish-capture/AGENTS.md` 等
 
