@@ -2,7 +2,7 @@
 //! 外部プラグイン対応用（将来有効化予定）。
 #![allow(dead_code)]
 
-use crate::adapter::external_plugin_stdio_client::ExternalPluginStdioClient;
+use super::external_plugin_stdio_client::ExternalPluginStdioClient;
 use crate::domain::external_plugin::{ExternalPluginError, ExternalPluginId};
 use crate::ports::outbound::ExternalToolExecutor;
 use std::collections::HashMap;

@@ -5,9 +5,9 @@
 //! 外部プラグイン対応は将来有効化予定のため、現状は dead_code を許容。
 #![allow(dead_code)]
 
-use crate::adapter::external_plugin_manifest_loader::discover_manifests;
-use crate::adapter::external_plugin_stdio_client::ExternalPluginStdioClient;
-use crate::adapter::external_tool_executor_impl::ExternalToolExecutorImpl;
+use super::external_plugin_manifest_loader::discover_manifests;
+use super::external_plugin_stdio_client::ExternalPluginStdioClient;
+use super::external_tool_executor_impl::ExternalToolExecutorImpl;
 use crate::adapter::tools::ExternalToolProxy;
 use crate::domain::external_plugin::{ExternalPluginId, PluginTransport};
 use common::domain::event::{Event, RunId, SessionId};

@@ -1,6 +1,6 @@
 //! StdPolicyExplainProvider の explain() が resolved / ルール名 / examples を返すことを検証
 
-use crate::adapter::policy_explain_provider::StdPolicyExplainProvider;
+use crate::adapter::StdPolicyExplainProvider;
 use crate::domain::{PolicyDecision, PolicyExplainExample};
 use crate::ports::outbound::PolicyExplainProvider;
 

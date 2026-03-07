@@ -3,7 +3,7 @@
 //! セッション dir 内の part_* を leakscan し、ヒット時はユーザーに問い合わせ、
 //! 通過分は reviewed_<id>_... にコピー、元 part は leakscan_evacuated/ に移動する。
 
-use crate::adapter::session_manifest;
+use crate::adapter::session::session_manifest;
 use crate::domain::{hash64, ManifestDecision, ManifestRecordV1, ManifestRole, MessageRecordV1};
 use crate::ports::outbound::{
     CompactionStrategy, InterruptChecker, PrepareSessionForSensitiveCheck,

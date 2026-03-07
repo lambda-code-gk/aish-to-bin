@@ -1,6 +1,6 @@
 //! manifest 優先の reviewed 履歴ローダ
 
-use crate::adapter::session_manifest;
+use super::session_manifest;
 use crate::domain::{CompactionRecord, History, ManifestRecordV1, ManifestRole};
 use crate::ports::outbound::SessionHistoryLoader;
 use common::domain::SessionDir;

@@ -2,7 +2,7 @@
 //!
 //! モックは Python で実装。python3 が無い環境ではスキップする。
 
-use crate::adapter::external_plugin_stdio_client::ExternalPluginStdioClient;
+use crate::adapter::plugin::external_plugin_stdio_client::ExternalPluginStdioClient;
 use crate::domain::external_plugin::{ExternalPluginError, PluginTimeouts, StdioTransport};
 use std::collections::HashMap;
 use std::io::Write;

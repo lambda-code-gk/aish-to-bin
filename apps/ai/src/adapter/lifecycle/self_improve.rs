@@ -1,7 +1,7 @@
 //! クエリ終了時にセッション履歴から知見を抽出しメモリに保存するハンドラ
 
-use crate::adapter::lifecycle::LifecycleHandler;
-use crate::adapter::memory_storage;
+use super::LifecycleHandler;
+use crate::adapter::context::memory_storage;
 use crate::domain::{LifecycleEvent, MemoryEntry};
 use common::error::Error;
 use common::msg::Msg;

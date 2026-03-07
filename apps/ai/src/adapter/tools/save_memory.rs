@@ -1,6 +1,6 @@
 //! save_memory ツール: 永続メモリに 1 件保存
 
-use crate::adapter::memory_storage;
+use crate::adapter::context::memory_storage;
 use crate::domain::MemoryEntry;
 use common::tool::{Tool, ToolContext, ToolError};
 use serde_json::Value;

@@ -1,7 +1,7 @@
 //! MemorySelector のテスト
 
-use crate::adapter::context_addon_selectors_memory::MemorySelector;
-use crate::adapter::memory_storage;
+use crate::adapter::context::memory_storage;
+use crate::adapter::MemorySelector;
 use crate::domain::{MemoryEntry, Query};
 use crate::ports::outbound::{ContextAddonInput, ContextAddonSelector, ResolveMemoryDir};
 use common::error::Error;

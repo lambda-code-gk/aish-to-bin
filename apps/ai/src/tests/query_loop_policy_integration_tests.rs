@@ -10,7 +10,7 @@ use common::sink::{AgentEvent, EventSink};
 use common::tool::{Tool, ToolContext, ToolError, ToolRegistry};
 use serde_json::Value;
 
-use crate::adapter::stub_llm::StubLlm;
+use crate::adapter::llm::stub_llm::StubLlm;
 use crate::domain::approval::StubApproval;
 use crate::domain::{ContextPack, PolicyDecision, PolicyVerdict};
 use crate::ports::outbound::PolicyEngine;

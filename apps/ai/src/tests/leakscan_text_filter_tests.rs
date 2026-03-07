@@ -1,6 +1,6 @@
 //! LeakscanTextFilter のテスト
 
-use crate::adapter::leakscan_text_filter::LeakscanTextFilter;
+use crate::adapter::LeakscanTextFilter;
 use crate::domain::SensitiveAction;
 use crate::domain::SensitiveFilterOutcome;
 use crate::ports::outbound::SensitiveTextFilter;

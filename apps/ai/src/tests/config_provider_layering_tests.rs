@@ -1,4 +1,4 @@
-use crate::adapter::config_loader::{CliPolicyOverrides, StdConfigProvider};
+use crate::adapter::{CliPolicyOverrides, StdConfigProvider};
 use crate::domain::{ConfigSourceKind, PolicyConfig};
 use crate::ports::outbound::ConfigProvider;
 use common::adapter::{StdEnvResolver, StdFileSystem};

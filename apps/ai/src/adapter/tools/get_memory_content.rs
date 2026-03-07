@@ -1,6 +1,6 @@
 //! get_memory_content ツール: ID で永続メモリ 1 件を取得
 
-use crate::adapter::memory_storage;
+use crate::adapter::context::memory_storage;
 use common::tool::{Tool, ToolContext, ToolError};
 use serde_json::Value;
 

@@ -1,6 +1,6 @@
 //! GrepHitsSelector のテスト
 
-use crate::adapter::context_addon_selectors_grep::GrepHitsSelector;
+use crate::adapter::GrepHitsSelector;
 use crate::domain::Query;
 use crate::ports::outbound::{ContextAddonInput, ContextAddonSelector};
 use common::adapter::StdFileSystem;

@@ -1,6 +1,6 @@
 //! search_memory ツール: 永続メモリを検索
 
-use crate::adapter::memory_storage;
+use crate::adapter::context::memory_storage;
 use common::tool::{Tool, ToolContext, ToolError};
 use serde_json::Value;
 

@@ -1,6 +1,7 @@
 //! テスト用: 固定の LlmEvent 列を返す LlmEventStream 実装
 
 #[cfg(test)]
+#[allow(dead_code)] // text_only, ToolAwareStubLlm 等はテストで必要に応じて使用
 mod stub {
     use common::error::Error;
     use common::llm::events::{FinishReason, LlmEvent};

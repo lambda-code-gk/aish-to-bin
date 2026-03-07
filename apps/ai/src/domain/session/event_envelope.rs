@@ -1,6 +1,11 @@
 //! セッション永続の一次ソース用イベントエンベロープ（events.jsonl スキーマ）
 //!
 //! v は破壊的変更で上げる。payload に巨大文字列を入れない（本文は artifacts に逃がす）。
+//!
+//! 注: crate では common::domain::EventEnvelope を re-export しており、本ファイルの型は未使用。
+//! 将来 ai 固有スキーマに切り替える場合用に残している。
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 

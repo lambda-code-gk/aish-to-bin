@@ -1,4 +1,4 @@
-use crate::adapter::config_toml::{parse_policy_toml, ParsedPolicyToml};
+use super::config_toml::{parse_policy_toml, ParsedPolicyToml};
 use crate::domain::{ConfigSource, ConfigSourceKind, PolicyConfig, Resolved};
 use crate::ports::outbound::ConfigProvider;
 use common::error::Error;

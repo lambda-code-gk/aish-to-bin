@@ -1,6 +1,6 @@
 //! 永続メモリ検索結果を ContextAddon 化するセレクタ
 
-use crate::adapter::memory_storage;
+use super::memory_storage;
 use crate::domain::{hash64, ContextAddon, ContextAttachment, ContextSource};
 use crate::ports::outbound::{ContextAddonInput, ContextAddonSelector, ResolveMemoryDir};
 use common::error::Error;

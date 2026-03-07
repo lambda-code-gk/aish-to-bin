@@ -1,6 +1,6 @@
 //! ManifestReviewedSessionStorage のテスト
 
-use crate::adapter::manifest_reviewed_session_storage::HistoryViewStrategy;
+use crate::adapter::session::manifest_reviewed_session_storage::HistoryViewStrategy;
 use crate::adapter::ManifestReviewedSessionStorage;
 use crate::domain::History;
 use crate::ports::outbound::SessionHistoryLoader;

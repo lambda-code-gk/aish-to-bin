@@ -1,6 +1,6 @@
 //! 外部プラグイン loader の結合テスト（plugin_id 重複・list_tools 失敗時の register 防止）
 
-use crate::adapter::external_plugin_loader::load_external_plugins;
+use crate::adapter::plugin::external_plugin_loader::load_external_plugins;
 use common::adapter::{StdEnvResolver, StdFileSystem};
 use common::domain::event::EventRecord;
 use common::event_hub::{EventHub, EventHubHandle};

@@ -1,6 +1,6 @@
 //! 履歴を予算内に縮約する抽象
 
-use super::ContextBudget;
+use crate::domain::ContextBudget;
 use common::llm::provider::Message as LlmMessage;
 
 /// 履歴を予算内に縮約する

@@ -1,6 +1,6 @@
 //! deterministic compaction（正しさ非依存の最適化）
 
-use crate::adapter::session_manifest;
+use super::session_manifest;
 use crate::domain::manifest::CompactionRecordV1;
 use crate::domain::{ManifestRecordV1, ManifestRole};
 use crate::ports::outbound::CompactionStrategy;

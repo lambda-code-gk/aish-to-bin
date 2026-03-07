@@ -4,7 +4,7 @@
 //! - SessionDir 配下の pending_input.json に PendingInput を保存（aish が Alt+S で注入）
 //! - プロンプト表示用に prompt_suggestion.txt に先頭5文字+".." を書き出す
 
-use crate::adapter::agent_state_storage::FileAgentStateStorage;
+use crate::adapter::session::FileAgentStateStorage;
 use common::adapter::StdFileSystem;
 use common::domain::{PendingInput, PolicyStatus, StructuredCommand};
 use common::ports::outbound::FileSystem;

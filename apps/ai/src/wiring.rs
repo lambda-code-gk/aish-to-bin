@@ -12,7 +12,7 @@ use common::tool::EchoTool;
 use plugins::StdioJsonRpcMcpBridgeHost;
 
 use crate::adapter::lifecycle::LifecycleHandler;
-use crate::adapter::policy_explain_provider::StdPolicyExplainProvider;
+use crate::adapter::StdPolicyExplainProvider;
 use crate::adapter::{
     ChangedFilesSnippetSelector, CliContinuePrompt, CliPolicyOverrides, CliToolApproval,
     CompositeLifecycleHooks, ConfigurableToolProfileProvider, DeterministicCompactionStrategy,

@@ -1,22 +1,16 @@
 //! QueryLoop の単体テスト（StubLlm は adapter のテスト用実装を使用）
 
-use std::sync::Arc;
+#![allow(unused_imports, dead_code)] // 将来のテスト用に Stub/Engine 等を残している
 
-use common::domain::event::{RunId, SessionId};
 use common::error::Error;
-use common::llm::events::{FinishReason, LlmEvent};
 use common::msg::Msg;
 use common::sink::{AgentEvent, EventSink};
-use common::tool::{Tool, ToolContext, ToolError, ToolRegistry};
+use common::tool::{Tool, ToolContext, ToolError};
 use serde_json::Value;
 
-use crate::adapter::stub_llm::{StubLlm, ToolAwareStubLlm};
-use crate::domain::approval::StubApproval;
 use crate::domain::{ContextPack, PolicyDecision, PolicyVerdict};
-use crate::ports::outbound::{LlmEventStream, PolicyEngine};
-use crate::usecase::query_loop::{
-    count_tool_results, msgs_to_provider, QueryLoop, QueryLoopOutcome, RunState,
-};
+use crate::ports::outbound::PolicyEngine;
+use crate::usecase::query_loop::msgs_to_provider;
 
 /// 以降のテストは元の agent_loop_tests.rs から移植されたものです。
 /// 実装は QueryLoop に移ったため、型名のみ変更しています。

@@ -1,5 +1,5 @@
-use crate::adapter::config_explain_provider::StdConfigExplainProvider;
-use crate::adapter::config_loader::{CliPolicyOverrides, StdConfigProvider};
+use crate::adapter::config::StdConfigExplainProvider;
+use crate::adapter::{CliPolicyOverrides, StdConfigProvider};
 use crate::ports::outbound::ConfigExplainProvider;
 use common::adapter::{StdEnvResolver, StdFileSystem};
 
