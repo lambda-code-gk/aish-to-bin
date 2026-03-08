@@ -1,0 +1,48 @@
+#!/bin/bash
+# AISH (AI Shell) の使い方
+
+cat << 'EOF'
+# AISH (AI Shell) の使い方
+
+AISH は、コマンドラインから AI を手軽に利用するためのツールです。
+
+## 基本的な呼び出し
+
+```bash
+ai "あなたの質問や依頼"
+```
+
+## 主要なオプション
+
+- `-p <profile>`: 使用するプロファイル（gpt, gemini, etc.）を指定
+- `-m <model>`: 使用するモデル（gpt-4o, gemini-3.1-pro, etc.）を指定
+- `-M <mode>`: 特定の振る舞い（モード）を指定
+- `-H <count>`: 直前の履歴を読み込む（履歴数）
+- `--dry-run`: 実際に LLM を呼び出さずに、送信内容を確認
+
+## 設定の確認
+
+- `ai --list-profiles`: 利用可能なプロファイル一覧を表示
+- `ai --list-models`: 利用可能なモデル一覧を表示
+- `ai --list-modes`: 利用可能なモード一覧を表示
+- `ai --list-tasks`: 利用可能なタスク一覧を表示
+
+## タスク（Task）の利用
+
+特定の用途に特化した「タスク」を実行できます。
+
+```bash
+ai <task_name> [args...]
+```
+
+例: `ai fixit "このコードのバグを直して"`
+※ `ai --list-tasks` で確認できるものが全て利用可能です。
+
+## 設定ファイルの場所
+
+AISH の設定は通常以下の場所にあります:
+- `~/.config/aish/` (Profiles, Hooks, Tasks, etc.)
+- `.aish/` (プロジェクトごとの設定や履歴)
+
+詳細は AISH リポジトリのドキュメントを参照してください。
+EOF

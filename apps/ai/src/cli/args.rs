@@ -86,7 +86,7 @@ fn build_clap_command() -> clap::Command {
             clap::Arg::new("help")
                 .short('h')
                 .long("help")
-                .help("Show this help message")
+                .help("Show basic help (use 'ai help' for detailed usage)")
                 .action(ArgAction::SetTrue),
         )
         .arg(
@@ -143,7 +143,7 @@ fn build_clap_command() -> clap::Command {
         .arg(
             clap::Arg::new("dry-run")
                 .long("dry-run")
-                .help("Show resolved profile, model, system prompt and messages that would be sent (no LLM call)")
+                .help("Show resolved profile, model, system prompt and messages that would be sent (no LLM call). Usage: ai --dry-run \"your question\"")
                 .action(ArgAction::SetTrue),
         )
         .arg(
