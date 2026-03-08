@@ -94,6 +94,7 @@ usecase モジュール（`apps/ai/src/usecase/`, `apps/aish/src/usecase/`）で
 - **エラー**: usecase 内は `Result<T, common::error::Error>`。CLI 境界で `exit_code()` / `is_usage()` により終了コード・用法表示を決定。
 - **common 肥大化防止**: 2 crate 以上で共有され安定したものだけ common に置く。ai 専用・aish 専用は各 crate の adapter / usecase に置く。OS 副作用のある具象ツール実装は `apps/*/adapter/` に置く。システムプロンプトの注入は hooks ベースのアダプタ（`ResolveSystemPromptFromHooks`）で行い、usecase からは直接扱わない。
 - **文字列の切り詰め（UTF-8）**: `&str` をバイト長で切り詰める場合、**必ず文字境界で切る**こと。`&s[..n]` のようにバイト位置 `n` でそのままスライスすると、UTF-8 の多バイト文字（日本語の「コ」等）の途中で切り、`byte index N is not a char boundary` でパニックになる。切り詰め位置を `n` にしたあと、`str::is_char_boundary(n)` が真になるまで `n` を減らすか、`char_indices()` で文字境界だけを扱うこと。
+- **タスク内で `ai` をネスト呼び出しする場合**: 下位 `ai` コマンドが非ゼロ終了したら、その stderr/stdout を LLM 正常応答として後続パースしないこと。`tee` やパイプを挟む場合でも元コマンドの終了コードを保持し、失敗時はマーカー抽出や JSON パースに進まず即座に明示的なエラーで終了すること。
 
 ### セッションディレクトリ構造と migrations 運用
 
@@ -144,6 +145,7 @@ usecase モジュール（`apps/ai/src/usecase/`, `apps/aish/src/usecase/`）で
 ## 更新履歴
 
 - **2026年3月**: 文字列切り詰めの UTF-8 文字境界ルールを追加（`truncate_str` 等でバイトスライスが多バイト文字の途中で切れてパニックになる事象を踏まえ）。エラー修正時は AGENTS.md を更新して同様の失敗を防ぐことを必須確認に追加。セッションディレクトリ構造変更時の migrations 運用ルールと、互換性は shell migrations で担保し Rust 側は最新スキーマのみを扱う方針を明文化。
+- **2026年3月**: `evolve` のように task から `ai` をネスト実行する場合は、下位 `ai` の失敗ログを正常な LLM 応答としてパースしないルールを追加。`tee` 使用時も元コマンドの終了コードを保持し、失敗時は即時エラーにする。
 - **2026年2月**: common の port & adapter 整理。adapter から port の re-export を削除し、usecase は `common::ports::outbound` から trait を参照。StdIdGenerator を adapter に移動。Tool / LlmProvider が ports 外に定義されている理由を明記。
 - **2026年2月**: 旧 sysq（システムプロンプトの専用サブコマンド/UseCase/Adapter）を廃止。代わりに hooks ベースのシステムプロンプト解決（`ResolveSystemPromptFromHooks`）を導入し、`-S` 未指定時は hooks（`$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）からの解決を試行する仕様に統一。
 - **2026年2月**: アーキテクチャを「逆流防止」の判断基準として整理。依存方向・usecase 禁止事項・wiring 責務・inbound/outbound・実装時チェックリストを明文化。長さを抑え実務で参照しやすい形に変更。

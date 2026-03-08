@@ -1,0 +1,41 @@
+# AISH policy 設定のサンプル
+#
+# 配置場所（優先順）:
+#   - プロジェクト: <project_root>/.aish/config.toml
+#   - ユーザー:     $AISH_HOME/config/config.toml または $XDG_CONFIG_HOME/aish/config.toml
+#
+# このファイルを config.toml にコピーして編集してください。
+
+schema_version = 1
+
+[policy]
+# 機密テキストの egrees（LLM 送信）時の扱い: deny | mask | allow
+egress_sensitive_action = "mask"
+# コンテキスト送信の文字数ハード上限
+egress_hard_cap_chars = 200_000
+# アドオン（メモリ等）由来の機密テキスト扱い: deny | mask | allow
+addons_sensitive_action = "mask"
+
+# ツール承認まわり（未指定時は require_approval = 確認あり）
+# ツール未登録時のデフォルト: allow | require_approval | deny
+tool_default_mode = "require_approval"
+
+# capability 種別ごとのデフォルト（ツール名を書かずに一括指定）
+# キー: fs_read, fs_write, exec, network, data_egress
+[policy.tool_mode_by_capability]
+fs_read = "allow"
+fs_write = "require_approval"
+exec = "require_approval"
+
+# ツールごとの上書き（run_shell は allowlist も指定可能）
+[policy.tools.run_shell]
+mode = "require_approval"
+allowlist = ["git", "ls", "cat", "rg", "fd", "cargo"]
+
+# 例: read_file を常に確認なしにする
+# [policy.tools.read_file]
+# mode = "allow"
+
+# 例: 追加した MCP ツールを確認なしにする
+# [policy.tools.my_plugin_tool]
+# mode = "allow"
