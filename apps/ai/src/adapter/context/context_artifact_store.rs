@@ -26,7 +26,11 @@ fn sanitize_filename(s: &str) -> String {
     if trimmed.is_empty() {
         "unnamed".to_string()
     } else if trimmed.len() > 60 {
-        trimmed[..60].to_string()
+        let mut end = 60;
+        while end > 0 && !trimmed.is_char_boundary(end) {
+            end -= 1;
+        }
+        trimmed[..end].to_string()
     } else {
         trimmed.to_string()
     }

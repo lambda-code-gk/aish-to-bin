@@ -51,14 +51,7 @@ impl PolicyConfig {
                 default_source("defaults.policy.run_shell_mode"),
             ),
             run_shell_allowlist: Resolved::new(
-                vec![
-                    "git".to_string(),
-                    "ls".to_string(),
-                    "cat".to_string(),
-                    "rg".to_string(),
-                    "fd".to_string(),
-                    "cargo".to_string(),
-                ],
+                vec!["ls".to_string(), "cat".to_string(), "rg".to_string()],
                 default_source("defaults.policy.run_shell_allowlist"),
             ),
             tool_default_mode: Resolved::new(

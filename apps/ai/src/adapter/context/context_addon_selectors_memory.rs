@@ -27,10 +27,15 @@ impl MemorySelector {
     }
 
     fn truncate_content(&self, s: &str) -> String {
-        if s.len() <= self.max_chars_per_entry {
+        let n = self.max_chars_per_entry;
+        if s.len() <= n {
             s.to_string()
         } else {
-            s[..self.max_chars_per_entry].to_string()
+            let mut end = n;
+            while end > 0 && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            s[..end].to_string()
         }
     }
 }
