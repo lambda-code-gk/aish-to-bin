@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# --- usage ---
+usage() {
+  echo "Usage: ai evolve \"<improvement request>\"   # propose" >&2
+  echo "       ai evolve apply                      # apply saved proposal" >&2
+  echo "       ai evolve revise \"<supplement>\"     # revise saved proposal" >&2
+  echo "       ai evolve status                     # show pending proposal" >&2
+  echo "       ai evolve cancel                     # discard pending" >&2
+  exit 2
+}
+
+# --- state path ---
+state_dir() {
+  if [[ -n "${AISH_SESSION:-}" ]]; then
+    echo "${AISH_SESSION}/evolve"
+  else
+    echo ".aish/state/evolve"
+  fi
+}
+
+proposal_json_path() {
+  echo "$(state_dir)/proposal.json"
+}
+
+proposal_txt_path() {
+  echo "$(state_dir)/proposal.txt"
+}
+
+request_txt_path() {
+  echo "$(state_dir)/request.txt"
+}
+
+raw_txt_path() {
+  echo "$(state_dir)/raw.txt"
+}
+
+last_result_txt_path() {
+  echo "$(state_dir)/last_result.txt"
+}
+
+# --- script dir for prompts ---
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROMPT_PROPOSE="${SCRIPT_DIR}/prompts/propose.md"
+PROMPT_APPLY="${SCRIPT_DIR}/prompts/apply.md"
+
+# --- extract blocks from LLM output (python3) ---
+# Uses last occurrence of each block so tool-call lines and earlier turns don't hide the final response.
+extract_blocks() {
+  local raw="$1"
+  local out_json="$2"
+  local out_txt="$3"
+  python3 - "$raw" "$out_json" "$out_txt" << 'PY'
+import sys
+import re
+import json
+
+raw_path = sys.argv[1]
+out_json_path = sys.argv[2]
+out_txt_path = sys.argv[3]
+
+try:
+  with open(raw_path, "r", encoding="utf-8") as f:
+    text = f.read()
+except Exception as e:
+  print(f"failed to read raw output: {e}", file=sys.stderr)
+  sys.exit(1)
+
+# Use findall and take last match so we get the final assistant turn (after any tool calls)
+json_pat = re.compile(
+  r"<<<EVOLVE_PLAN_JSON_BEGIN>>>\s*(.*?)\s*<<<EVOLVE_PLAN_JSON_END>>>",
+  re.DOTALL,
+)
+msg_pat = re.compile(
+  r"<<<EVOLVE_MESSAGE_BEGIN>>>\s*(.*?)\s*<<<EVOLVE_MESSAGE_END>>>",
+  re.DOTALL,
+)
+json_matches = json_pat.findall(text)
+msg_matches = msg_pat.findall(text)
+if not json_matches or not msg_matches:
+  print("failed to parse evolve output: markers not found (ensure LLM outputs EVOLVE_PLAN_JSON and EVOLVE_MESSAGE blocks)", file=sys.stderr)
+  sys.exit(1)
+json_str = json_matches[-1].strip()
+msg_str = msg_matches[-1].strip()
+
+# Strip markdown code fences if present (e.g. ```json ... ```)
+def strip_code_fence(s):
+  s = s.strip()
+  if s.startswith("```"):
+    first = s.find("\n")
+    if first != -1:
+      s = s[first + 1:]
+    if s.endswith("```"):
+      s = s[:-3].rstrip()
+  return s.strip()
+
+json_str = strip_code_fence(json_str)
+if not json_str:
+  print("failed to parse evolve output: JSON block is empty (LLM did not output valid JSON between markers)", file=sys.stderr)
+  sys.exit(1)
+
+try:
+  json.loads(json_str)
+except json.JSONDecodeError as e:
+  print(f"failed to parse evolve output: invalid JSON: {e}", file=sys.stderr)
+  sys.exit(1)
+
+with open(out_json_path, "w", encoding="utf-8") as f:
+  f.write(json_str)
+with open(out_txt_path, "w", encoding="utf-8") as f:
+  f.write(msg_str)
+PY
+}
+
+run_ai_capture() {
+  local raw="$1"
+  shift
+  set +e
+  "$@" 2>&1 | tee "$raw"
+  local status=${PIPESTATUS[0]}
+  set -e
+  return "$status"
+}
+
+# --- propose: save request, run evolve-plan, extract and save proposal ---
+propose() {
+  local request="$1"
+  local dir
+  dir="$(state_dir)"
+  mkdir -p "$dir"
+  echo "$request" > "$(request_txt_path)"
+  local raw
+  raw="$(raw_txt_path)"
+  local tmp_json
+  tmp_json="$(mktemp)"
+  local tmp_txt
+  tmp_txt="$(mktemp)"
+  trap 'rm -f "$tmp_json" "$tmp_txt"' RETURN
+  local prompt_content
+  prompt_content="$(cat "$PROMPT_PROPOSE")"
+  local message
+  message="${prompt_content}"$'\n\n---\nUser request: '"$request"
+  if ! run_ai_capture "$raw" ai -M evolve-plan "$message"; then
+    echo "evolve proposal failed while running ai -M evolve-plan" >&2
+    exit 1
+  fi
+  if ! extract_blocks "$raw" "$tmp_json" "$tmp_txt"; then
+    echo "failed to parse evolve output" >&2
+    exit 1
+  fi
+  cp "$tmp_json" "$(proposal_json_path)"
+  cp "$tmp_txt" "$(proposal_txt_path)"
+  cat "$(proposal_txt_path)"
+}
+
+# --- apply: require proposal.json, run evolve-apply, then clear pending on success ---
+apply_plan() {
+  local pjson
+  pjson="$(proposal_json_path)"
+  if [[ ! -f "$pjson" ]]; then
+    echo "no pending proposal" >&2
+    exit 1
+  fi
+  local dir
+  dir="$(state_dir)"
+  local apply_content
+  apply_content="$(cat "$PROMPT_APPLY")"
+  local plan_content
+  plan_content="$(cat "$pjson")"
+  local message
+  message="${apply_content}"$'\n\n---\nPlan (JSON):\n'"$plan_content"
+  local result_file
+  result_file="$(last_result_txt_path)"
+  if ai -M evolve-apply "$message" 2>&1 | tee "$result_file"; then
+    rm -f "$pjson" "$(proposal_txt_path)" "$(request_txt_path)" "$(raw_txt_path)"
+  else
+    exit 1
+  fi
+}
+
+# --- revise: require request + proposal, re-run evolve-plan with request + current proposal + note, overwrite ---
+revise_plan() {
+  local note="$1"
+  local req_path
+  req_path="$(request_txt_path)"
+  local pjson
+  pjson="$(proposal_json_path)"
+  if [[ ! -f "$pjson" ]] || [[ ! -f "$req_path" ]]; then
+    echo "no pending proposal" >&2
+    exit 1
+  fi
+  local dir
+  dir="$(state_dir)"
+  local raw
+  raw="$(raw_txt_path)"
+  local tmp_json
+  tmp_json="$(mktemp)"
+  local tmp_txt
+  tmp_txt="$(mktemp)"
+  trap 'rm -f "$tmp_json" "$tmp_txt"' RETURN
+  local prompt_content
+  prompt_content="$(cat "$PROMPT_PROPOSE")"
+  local request_content
+  request_content="$(cat "$req_path")"
+  local proposal_content
+  proposal_content="$(cat "$pjson")"
+  local message
+  message="${prompt_content}"$'\n\n---\nOriginal request: '"$request_content"$'\n\nCurrent proposal (JSON):\n'"$proposal_content"$'\n\nRevise with this supplement: '"$note"
+  if ! run_ai_capture "$raw" ai -M evolve-plan "$message"; then
+    echo "evolve revision failed while running ai -M evolve-plan" >&2
+    exit 1
+  fi
+  if ! extract_blocks "$raw" "$tmp_json" "$tmp_txt"; then
+    echo "failed to parse evolve output" >&2
+    exit 1
+  fi
+  cp "$tmp_json" "$pjson"
+  cp "$tmp_txt" "$(proposal_txt_path)"
+  cat "$(proposal_txt_path)"
+}
+
+# --- cancel: remove state dir contents / dir ---
+cancel_plan() {
+  local dir
+  dir="$(state_dir)"
+  if [[ -d "$dir" ]]; then
+    rm -rf "$dir"
+  fi
+  echo "cancelled"
+}
+
+# --- status: print proposal.txt or "no pending proposal" ---
+show_status() {
+  local ptxt
+  ptxt="$(proposal_txt_path)"
+  if [[ -f "$ptxt" ]]; then
+    cat "$ptxt"
+  else
+    echo "no pending proposal"
+  fi
+}
+
+# --- main ---
+if [[ $# -eq 0 ]]; then
+  usage
+fi
+
+sub="${1:-}"
+shift || true
+
+case "$sub" in
+  apply)
+    apply_plan
+    ;;
+  revise)
+    if [[ $# -eq 0 ]] || [[ -z "${*// /}" ]]; then
+      echo "revise note is required" >&2
+      exit 2
+    fi
+    revise_plan "$*"
+    ;;
+  cancel)
+    cancel_plan
+    ;;
+  status)
+    show_status
+    ;;
+  *)
+    # default: propose (request = entire args if we didn't match above, else first arg was the request)
+    if [[ $# -eq 0 ]] && [[ -z "${sub// /}" ]]; then
+      echo "request is required" >&2
+      exit 2
+    fi
+    request="$sub"
+    if [[ $# -gt 0 ]]; then
+      request="$sub $*"
+    fi
+    propose "$request"
+    ;;
+esac

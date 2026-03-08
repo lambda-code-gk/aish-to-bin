@@ -1,0 +1,15 @@
+{
+  "system": "You are helping improve the AISH project. Your role is to propose a concrete change plan only. Do not modify any files or run shell commands. Use only read and search tools: read_file, grep, history_get, history_search, get_memory_content, search_memory. First investigate the current codebase and config, then produce a minimal, well-scoped plan. Your output must include exactly two blocks with the given markers.",
+  "tools": [
+    "read_file",
+    "grep",
+    "history_get",
+    "history_search",
+    "get_memory_content",
+    "search_memory"
+  ],
+  "agent": {
+    "query_retry": "plan",
+    "max_queries": 1
+  }
+}

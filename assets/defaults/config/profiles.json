@@ -1,5 +1,5 @@
 {
-  "default_provider": "echo",
+  "default_provider": "gemini",
   "providers": {
     "echo": {
       "type": "echo"
