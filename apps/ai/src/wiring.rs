@@ -3,11 +3,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::adapter::{FileJsonLog, NoopLog, StdClock, StdEnvResolver, StdFileSystem, StdProcess};
+use common::adapter::{
+    FileJsonLog, NoopLog, StdClock, StdEnvResolver, StdFileSystem, StdProcess, StdRuntimeCatalog,
+};
 use common::event_hub::EventHubHandle;
 use common::part_id::StdIdGenerator;
 use common::ports::outbound::Clock;
-use common::ports::outbound::{EnvResolver, FileSystem, Log, McpHost, Process};
+use common::ports::outbound::{EnvResolver, FileSystem, Log, McpHost, Process, RuntimeCatalog};
 use common::tool::EchoTool;
 use plugins::StdioJsonRpcMcpBridgeHost;
 
@@ -25,21 +27,25 @@ use crate::adapter::{
     SelfImproveHandler, ShellAllowlistRule, ShellTool, SigintChecker, StdCommandAllowRulesLoader,
     StdConfigExplainProvider, StdConfigProvider, StdContextArtifactStore,
     StdContextPackBuilderWithAddons, StdEventSinkFactory, StdLlmCompletion,
-    StdLlmEventStreamFactory, StdPolicyEngine, StdProfileLister, StdResolveMemoryDir,
-    StdResolveModeConfig, StdResolveProfileAndModel, StdResolveSystemPromptFromHooks,
-    StdSessionDerivedBuilder, StdTaskRunner, StdoutDryRunReportSink, TailWindowReducer,
-    ToolModeRule, WriteFileTool,
+    StdLlmEventStreamFactory, StdMemoryContextResolver, StdPolicyEngine, StdProfileLister,
+    StdPromptSourceResolver, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel,
+    StdResolveSystemPromptFromHooks, StdSessionDerivedBuilder, StdSkillSpecLoader,
+    StdStructuredMemoryRepository, StdTaskRunner, StdTaskSpecLoader, StdoutDryRunReportSink,
+    TailWindowReducer, ToolModeRule, WriteFileTool,
 };
 use crate::adapter::{DaemonEventAppender, FallbackEventAppender};
-use crate::domain::{ContextBudget, PolicyConfig, Query};
+use crate::domain::{
+    ContextBudget, ExternalToolPolicyHint, ExternalToolPolicyIndex, PolicyConfig, Query,
+};
 use crate::domain::{PolicyChain, SensitiveAction};
 use crate::domain::{PolicyDecision, PolicyExplainExample};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, ConfigExplainProvider, ConfigProvider, ContextAddonSelector,
     ContextArtifactStore, ContextPackBuilder, DryRunReportSink, EventAppender, LifecycleHooks,
-    LlmCompletion, PolicyEngine, PolicyExplainProvider, PrepareSessionForSensitiveCheck,
-    ResolveModeConfig, ResolveSystemPromptFromHooks, RunQuery, SessionDerivedBuilder,
-    SessionEventStore, SessionHistoryLoader, SessionResponseSaver, TaskRunner, ToolProfileProvider,
+    LlmCompletion, MemoryContextResolver, PolicyEngine, PolicyExplainProvider,
+    PrepareSessionForSensitiveCheck, PromptSourceResolver, ResolveModeConfig,
+    ResolveSystemPromptFromHooks, RunQuery, SessionDerivedBuilder, SessionEventStore,
+    SessionHistoryLoader, SessionResponseSaver, TaskRunner, ToolProfileProvider,
 };
 use crate::usecase::app::{
     AiDeps, AiUseCase, ModelDeps, ObsDeps, PolicyDeps, SessionDeps, SystemDeps, ToolingDeps,
@@ -91,6 +97,10 @@ pub struct App {
     pub resolve_mode_config: Arc<dyn ResolveModeConfig>,
     /// -S 未指定時にフックからシステムプロンプトを解決する
     pub resolve_system_prompt_from_hooks: Arc<dyn ResolveSystemPromptFromHooks>,
+    /// タスク / skill / hooks からプロンプト素材を解決する
+    pub prompt_source_resolver: Arc<dyn PromptSourceResolver>,
+    /// task / skill の memory_topics からメモリコンテキストを解決する
+    pub memory_context_resolver: Arc<dyn MemoryContextResolver>,
     /// 構造化ログ（ファイルへ JSONL）。エラー時のコンソール表示とは別。
     pub logger: Arc<dyn Log>,
     /// テスト用に露出（Query 実行・session/history の単体テストで利用）
@@ -177,10 +187,12 @@ fn resolve_leakscan_paths(
 fn build_session_deps(
     fs: &Arc<dyn FileSystem>,
     env_resolver: &Arc<dyn EnvResolver>,
+    runtime_catalog: &Arc<dyn RuntimeCatalog>,
     interrupt_checker: &Arc<dyn crate::ports::outbound::InterruptChecker>,
     non_interactive: bool,
     config_provider: &Arc<dyn ConfigProvider>,
     project_root: PathBuf,
+    external_tool_index: Arc<ExternalToolPolicyIndex>,
 ) -> (
     SessionDeps,
     Arc<dyn PolicyExplainProvider>,
@@ -230,7 +242,10 @@ fn build_session_deps(
     let agent_state_loader: Arc<dyn AgentStateLoader> =
         Arc::clone(&agent_state_storage) as Arc<dyn AgentStateLoader>;
 
-    let resolve_memory_dir = Arc::new(StdResolveMemoryDir::new(Arc::clone(env_resolver)));
+    let resolve_memory_dir = Arc::new(StdResolveMemoryDir::new(
+        Arc::clone(env_resolver),
+        Arc::clone(runtime_catalog),
+    ));
 
     // v0.3: addons = 変更ファイル + memory + grep（env で enable/disable）
     let mut selectors: Vec<Arc<dyn ContextAddonSelector>> = vec![Arc::new(
@@ -354,9 +369,12 @@ fn build_session_deps(
     let hard_cap_chars = policy_cfg.egress_hard_cap_chars.value;
     let policy_cfg = Arc::new(policy_cfg);
     let shell_allowlist = policy_cfg.run_shell_allowlist.value.clone();
-    let tool_profiles: Arc<dyn ToolProfileProvider> = Arc::new(
-        ConfigurableToolProfileProvider::new(Arc::clone(&policy_cfg), shell_allowlist),
-    );
+    let tool_profiles: Arc<dyn ToolProfileProvider> =
+        Arc::new(ConfigurableToolProfileProvider::new(
+            Arc::clone(&policy_cfg),
+            shell_allowlist,
+            Some(Arc::clone(&external_tool_index)),
+        ));
 
     // PolicyChain: egress 1) hard_cap 2) sensitive, tool 1) shell_allowlist 2) tool_mode
     let egress_rules: Vec<Arc<dyn crate::domain::EgressPolicyRule>> = vec![
@@ -492,6 +510,7 @@ fn build_session_deps(
 
 fn build_policy_deps(
     env_resolver: &Arc<dyn EnvResolver>,
+    runtime_catalog: &Arc<dyn RuntimeCatalog>,
     interrupt_checker: &Arc<dyn crate::ports::outbound::InterruptChecker>,
     non_interactive: bool,
     run_shell_allowlist: Vec<String>,
@@ -512,7 +531,10 @@ fn build_policy_deps(
     PolicyDeps {
         continue_prompt,
         env_resolver: Arc::clone(env_resolver),
-        resolve_memory_dir: Arc::new(StdResolveMemoryDir::new(Arc::clone(env_resolver))),
+        resolve_memory_dir: Arc::new(StdResolveMemoryDir::new(
+            Arc::clone(env_resolver),
+            Arc::clone(runtime_catalog),
+        )),
         command_allow_rules_loader,
         run_shell_allowlist,
         approver,
@@ -561,12 +583,13 @@ fn build_tooling_deps(
     // Phase9: 外部拡張の唯一の入口を McpHost に集約（stdio JSON-RPC ブリッジ）
     // OpenAI の tools[].function.name は ^[a-zA-Z0-9_-]+$ のみ許可。canonical id (例: namespace.tool) をサニタイズする。
     let host: Arc<dyn McpHost> = Arc::new(StdioJsonRpcMcpBridgeHost::new());
+    let mut external_hints = std::collections::HashMap::new();
     if let Ok(servers) = host.discover() {
         for s in servers.into_iter().filter(|s| s.enabled) {
             if let Ok(tool_descs) = host.list_tools(&s.id) {
                 for td in tool_descs {
                     let sanitized = sanitize_openai_tool_name(&td.id.0);
-                    let name_static: &'static str = Box::leak(sanitized.into_boxed_str());
+                    let name_static: &'static str = Box::leak(sanitized.clone().into_boxed_str());
                     let desc_static: &'static str =
                         Box::leak(format!("[external] {}", td.display_name).into_boxed_str());
                     let proxy = crate::adapter::McpToolProxy::new(
@@ -577,14 +600,28 @@ fn build_tooling_deps(
                         Arc::clone(&host),
                     );
                     tools.push(Arc::new(proxy));
+                    external_hints.entry(sanitized.clone()).or_insert_with(|| {
+                        ExternalToolPolicyHint {
+                            tool_name: sanitized.clone(),
+                            canonical_tool_id: td.id.0.clone(),
+                            server_id: s.id.0.clone(),
+                            source: s.source.clone(),
+                            default_tool_mode_hint: s.default_tool_mode_hint.clone(),
+                            capabilities_hint: td.capabilities_hint.clone(),
+                            notes: s.notes.clone(),
+                        }
+                    });
                 }
             }
         }
     }
 
+    let external_tool_policy_index = Arc::new(ExternalToolPolicyIndex::new(external_hints));
+
     ToolingDeps {
         sink_factory,
         tools,
+        external_tool_policy_index,
     }
 }
 
@@ -618,9 +655,7 @@ fn build_system_deps(process: &Arc<dyn Process>) -> SystemDeps {
     }
 }
 
-fn build_task_runner(fs: &Arc<dyn FileSystem>, process: &Arc<dyn Process>) -> Arc<dyn TaskRunner> {
-    Arc::new(StdTaskRunner::new(Arc::clone(fs), Arc::clone(process)))
-}
+// build_task_runner は現在未使用（RuntimeCatalog 導入後は wire_ai 内で直接組み立てる）
 
 fn build_obs_deps(logger: &Arc<dyn Log>) -> ObsDeps {
     ObsDeps {
@@ -666,6 +701,10 @@ fn build_resolve_mode_config(
 pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let env_resolver: Arc<dyn EnvResolver> = Arc::new(StdEnvResolver);
+    let runtime_catalog: Arc<dyn RuntimeCatalog> = Arc::new(StdRuntimeCatalog::new(
+        Arc::clone(&env_resolver),
+        Arc::clone(&fs),
+    ));
     let logger: Arc<dyn Log> = env_resolver
         .resolve_log_file_path()
         .map(|path| Arc::new(FileJsonLog::new(Arc::clone(&fs), path)) as Arc<dyn Log>)
@@ -686,24 +725,39 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         cli_overrides,
     );
     let config_provider: Arc<dyn ConfigProvider> = Arc::new(raw_config_provider);
+    let resolve_memory_dir_adapter: Arc<dyn crate::ports::outbound::ResolveMemoryDir> =
+        Arc::new(StdResolveMemoryDir::new(
+            Arc::clone(&env_resolver),
+            Arc::clone(&runtime_catalog),
+        ));
+    let structured_memory_repo: Arc<
+        dyn crate::adapter::context::structured_memory_repository::StructuredMemoryRepository,
+    > = Arc::new(StdStructuredMemoryRepository::new(Arc::clone(
+        &resolve_memory_dir_adapter,
+    )));
+    let memory_context_resolver: Arc<dyn MemoryContextResolver> =
+        Arc::new(StdMemoryContextResolver::new(structured_memory_repo, 8));
+    let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None);
     let (session, policy_explain_provider, config_explain_provider, run_shell_allowlist) =
         build_session_deps(
             &fs,
             &env_resolver,
+            &runtime_catalog,
             &interrupt_checker,
             non_interactive,
             &config_provider,
             project_root,
+            Arc::clone(&tooling.external_tool_policy_index),
         );
     let session_event_store = session.session_event_store.clone();
     let session_derived_builder = session.session_derived_builder.clone();
     let policy = build_policy_deps(
         &env_resolver,
+        &runtime_catalog,
         &interrupt_checker,
         non_interactive,
         run_shell_allowlist,
     );
-    let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None);
     let model = build_model_deps(&fs, &env_resolver);
     let system = build_system_deps(&process);
     let obs = build_obs_deps(&logger);
@@ -722,11 +776,37 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         non_interactive,
     }));
     let run_query: Arc<dyn RunQuery> = Arc::new(AiRunQuery(Arc::clone(&ai_use_case)));
-    let task_runner: Arc<dyn TaskRunner> = build_task_runner(&fs, &process);
+
+    // package loader / resolver
+    let package_spec_loader: Arc<dyn crate::ports::outbound::PackageSpecLoader> =
+        Arc::new(crate::adapter::StdPackageSpecLoaderAdapter::new());
+    let package_resolver: Arc<dyn crate::ports::outbound::PackageResolver> =
+        Arc::new(crate::adapter::StdPackageResolver::new(
+            Arc::clone(&runtime_catalog),
+            Arc::clone(&package_spec_loader),
+        ));
+
+    let task_runner: Arc<dyn TaskRunner> = Arc::new(StdTaskRunner::new(
+        Arc::clone(&fs),
+        Arc::clone(&process),
+        Arc::clone(&runtime_catalog),
+        Arc::clone(&package_resolver),
+    ));
     let resolve_mode_config = build_resolve_mode_config(&env_resolver, &fs);
     let resolve_system_prompt_from_hooks: Arc<dyn ResolveSystemPromptFromHooks> = Arc::new(
-        StdResolveSystemPromptFromHooks::new(Arc::clone(&env_resolver), Arc::clone(&fs)),
+        StdResolveSystemPromptFromHooks::new(Arc::clone(&fs), Arc::clone(&runtime_catalog)),
     );
+    let task_spec_loader = Arc::new(StdTaskSpecLoader::new());
+    let skill_spec_loader = Arc::new(StdSkillSpecLoader::new());
+    let prompt_source_resolver: Arc<dyn PromptSourceResolver> =
+        Arc::new(StdPromptSourceResolver::new(
+            Arc::clone(&fs),
+            Arc::clone(&runtime_catalog),
+            Arc::clone(&resolve_system_prompt_from_hooks),
+            task_spec_loader,
+            skill_spec_loader,
+            Arc::clone(&package_resolver),
+        ));
     let task_use_case = TaskUseCase::new(task_runner, Arc::clone(&run_query));
     let policy_use_case = PolicyUseCase::new(policy_explain_provider);
     let config_use_case = ConfigUseCase::new(config_explain_provider);
@@ -738,7 +818,9 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         run_query,
         resolve_mode_config,
         resolve_system_prompt_from_hooks,
+        prompt_source_resolver,
         logger,
+        memory_context_resolver,
         ai_use_case,
         policy_use_case,
         config_use_case,

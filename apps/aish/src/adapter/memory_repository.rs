@@ -5,7 +5,7 @@
 use crate::domain::{MemoryEntry, MemoryListEntry};
 use crate::ports::outbound::MemoryRepository;
 use common::error::Error;
-use common::ports::outbound::EnvResolver;
+use common::ports::outbound::{EnvResolver, RuntimeCatalog};
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -18,11 +18,12 @@ const ENTRIES_DIR: &str = "entries";
 
 pub struct StdMemoryRepository {
     env: Arc<dyn EnvResolver>,
+    catalog: Arc<dyn RuntimeCatalog>,
 }
 
 impl StdMemoryRepository {
-    pub fn new(env: Arc<dyn EnvResolver>) -> Self {
-        Self { env }
+    pub fn new(env: Arc<dyn EnvResolver>, catalog: Arc<dyn RuntimeCatalog>) -> Self {
+        Self { env, catalog }
     }
 }
 
@@ -31,7 +32,24 @@ impl MemoryRepository for StdMemoryRepository {
         // ディレクトリ解決は EnvResolver::resolve_dirs() に集約し、home を data/config の「root」として扱わない
         let dirs = self.env.resolve_dirs()?;
         let global = dirs.data_dir.join(MEMORY_SUBDIR);
-        let project = find_project_memory_dir(self.env.current_dir()?.as_path())?;
+        let project = match self.catalog.project_root()? {
+            Some(root) => {
+                let candidate = root.join(AISH_DIR).join(MEMORY_SUBDIR);
+                if candidate.exists() {
+                    let meta = std::fs::metadata(&candidate).map_err(|e| {
+                        Error::io_msg(format!("metadata {}: {}", candidate.display(), e))
+                    })?;
+                    if meta.is_dir() {
+                        Some(candidate)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            None => None,
+        };
         Ok((project, global))
     }
 
@@ -112,23 +130,6 @@ struct MemoryMeta {
     keywords: Vec<String>,
     subject: String,
     timestamp: String,
-}
-
-fn find_project_memory_dir(mut current: &Path) -> Result<Option<PathBuf>, Error> {
-    loop {
-        let candidate = current.join(AISH_DIR).join(MEMORY_SUBDIR);
-        if candidate.exists() {
-            let meta = std::fs::metadata(&candidate)
-                .map_err(|e| Error::io_msg(format!("metadata {}: {}", candidate.display(), e)))?;
-            if meta.is_dir() {
-                return Ok(Some(candidate));
-            }
-        }
-        match current.parent() {
-            Some(p) => current = p,
-            None => return Ok(None),
-        }
-    }
 }
 
 fn load_metadata(dir: &Path) -> Result<Vec<MemoryMeta>, Error> {

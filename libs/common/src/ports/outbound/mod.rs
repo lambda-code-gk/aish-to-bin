@@ -9,6 +9,7 @@ pub mod log;
 pub mod mcp_host;
 pub mod path_resolver;
 pub mod process;
+pub mod runtime_catalog;
 pub mod session_event_store;
 pub mod sink;
 pub mod tool;
@@ -35,6 +36,7 @@ pub use mcp_host::{
 };
 pub use path_resolver::{PathResolver, PathResolverInput};
 pub use process::Process;
+pub use runtime_catalog::RuntimeCatalog;
 pub use session_event_store::SessionEventStore;
 pub use sink::{AgentEvent, EventSink};
 pub use tool::Tool;

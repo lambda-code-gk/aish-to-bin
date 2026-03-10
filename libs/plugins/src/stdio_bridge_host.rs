@@ -48,6 +48,38 @@ struct ServerRuntime {
     client: Option<StdioJsonRpcClient>,
 }
 
+fn server_descriptor_from_plugin(p: &DiscoveredPlugin) -> McpServerDescriptor {
+    let cfg: &PluginToml = &p.config;
+    McpServerDescriptor {
+        id: McpServerId::new(cfg.id.clone()),
+        namespace: cfg.namespace.clone(),
+        display_name: cfg.display_name.clone().unwrap_or_else(|| cfg.id.clone()),
+        enabled: cfg.enabled,
+        source: Some(p.source.clone()),
+        default_tool_mode_hint: cfg.policy.default_tool_mode.clone(),
+        notes: cfg.policy.notes.clone(),
+    }
+}
+
+fn tool_descriptor_from_item(cfg: &PluginToml, item: ListToolsItem) -> ToolDescriptor {
+    let id = canonical_tool_id(&cfg.namespace, &item.name);
+    let schema = if item.input_schema.is_object() {
+        item.input_schema
+    } else {
+        serde_json::json!({ "type": "object", "properties": {} })
+    };
+    ToolDescriptor {
+        id,
+        display_name: if item.description.trim().is_empty() {
+            item.name.clone()
+        } else {
+            item.description
+        },
+        schema,
+        capabilities_hint: cfg.policy.capabilities_hint.clone(),
+    }
+}
+
 impl ServerRuntime {
     fn ensure_started(&mut self) -> Result<(), Error> {
         if self.client.is_some() {
@@ -78,23 +110,9 @@ impl ServerRuntime {
         for v in items {
             let item: ListToolsItem = serde_json::from_value(v)
                 .map_err(|e| Error::json(format!("tool descriptor: {}", e)))?;
-            let id = canonical_tool_id(&cfg.namespace, &item.name);
-            let schema = if item.input_schema.is_object() {
-                item.input_schema
-            } else {
-                serde_json::json!({ "type": "object", "properties": {} })
-            };
-            let desc = ToolDescriptor {
-                id,
-                display_name: if item.description.trim().is_empty() {
-                    item.name.clone()
-                } else {
-                    item.description
-                },
-                schema,
-                capabilities_hint: Vec::new(),
-            };
-            out.push((desc, item.name));
+            let name = item.name.clone();
+            let desc = tool_descriptor_from_item(cfg, item);
+            out.push((desc, name));
         }
         Ok(out)
     }
@@ -199,14 +217,8 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
         let plugins = self.refresh()?;
         let mut out = Vec::new();
         for p in plugins {
-            let cfg: &PluginToml = &p.config;
-            out.push(McpServerDescriptor {
-                id: McpServerId::new(cfg.id.clone()),
-                namespace: cfg.namespace.clone(),
-                display_name: cfg.display_name.clone().unwrap_or_else(|| cfg.id.clone()),
-                enabled: cfg.enabled,
-                source: Some(p.source.clone()),
-            });
+            let desc = server_descriptor_from_plugin(&p);
+            out.push(desc);
         }
         Ok(out)
     }
@@ -312,5 +324,81 @@ impl McpHost for StdioJsonRpcMcpBridgeHost {
             tool_id.clone()
         };
         guard.call(&effective_tool_id, args, ctx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_descriptor_includes_policy_hints() {
+        let plugin = DiscoveredPlugin {
+            config: PluginToml {
+                id: "acme-docs".to_string(),
+                namespace: "acme".to_string(),
+                display_name: Some("Acme Docs".to_string()),
+                command: "python".to_string(),
+                args: vec!["server.py".to_string()],
+                cwd: None,
+                env_allowlist: Vec::new(),
+                enabled: true,
+                timeout_ms: Some(10_000),
+                policy: crate::discovery::PluginPolicyToml {
+                    default_tool_mode: Some("require_approval".to_string()),
+                    capabilities_hint: vec!["network".to_string()],
+                    notes: Some("Calls internal docs/search API".to_string()),
+                },
+            },
+            source: "/tmp/plugin.toml".to_string(),
+        };
+
+        let desc = server_descriptor_from_plugin(&plugin);
+        assert_eq!(desc.id.0, "acme-docs".to_string());
+        assert_eq!(desc.namespace, "acme".to_string());
+        assert_eq!(desc.display_name, "Acme Docs".to_string());
+        assert_eq!(desc.enabled, true);
+        assert_eq!(desc.source.as_deref(), Some("/tmp/plugin.toml"));
+        assert_eq!(
+            desc.default_tool_mode_hint.as_deref(),
+            Some("require_approval")
+        );
+        assert_eq!(
+            desc.notes.as_deref(),
+            Some("Calls internal docs/search API")
+        );
+    }
+
+    #[test]
+    fn tool_descriptor_includes_capabilities_hint_from_policy() {
+        let cfg = PluginToml {
+            id: "acme-docs".to_string(),
+            namespace: "acme".to_string(),
+            display_name: Some("Acme Docs".to_string()),
+            command: "python".to_string(),
+            args: vec!["server.py".to_string()],
+            cwd: None,
+            env_allowlist: Vec::new(),
+            enabled: true,
+            timeout_ms: Some(10_000),
+            policy: crate::discovery::PluginPolicyToml {
+                default_tool_mode: Some("require_approval".to_string()),
+                capabilities_hint: vec!["network".to_string(), "fs_read".to_string()],
+                notes: Some("Calls internal docs/search API".to_string()),
+            },
+        };
+        let item = ListToolsItem {
+            name: "search".to_string(),
+            description: "Search docs".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+        };
+
+        let desc = tool_descriptor_from_item(&cfg, item);
+        assert_eq!(desc.id.0, "acme.search".to_string());
+        assert_eq!(desc.display_name, "Search docs".to_string());
+        assert_eq!(
+            desc.capabilities_hint,
+            vec!["network".to_string(), "fs_read".to_string()]
+        );
     }
 }

@@ -4,9 +4,12 @@ use std::sync::Arc;
 
 use common::adapter::{
     FileJsonLog, NoopLog, StdClock, StdEnvResolver, StdFileSystem, StdPathResolver,
+    StdRuntimeCatalog,
 };
 use common::part_id::{IdGenerator, StdIdGenerator};
-use common::ports::outbound::{EnvResolver, FileSystem, Log, McpHost, PathResolver, Signal};
+use common::ports::outbound::{
+    EnvResolver, FileSystem, Log, McpHost, PathResolver, RuntimeCatalog, Signal,
+};
 use plugins::StdioJsonRpcMcpBridgeHost;
 
 use crate::adapter::{
@@ -55,6 +58,10 @@ pub struct App {
 pub fn wire_aish() -> App {
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let env_resolver: Arc<dyn EnvResolver> = Arc::new(StdEnvResolver);
+    let runtime_catalog: Arc<dyn RuntimeCatalog> = Arc::new(StdRuntimeCatalog::new(
+        Arc::clone(&env_resolver),
+        Arc::clone(&fs),
+    ));
     let logger: Arc<dyn Log> = env_resolver
         .resolve_log_file_path()
         .map(|path| Arc::new(FileJsonLog::new(Arc::clone(&fs), path)) as Arc<dyn Log>)
@@ -72,7 +79,10 @@ pub fn wire_aish() -> App {
         pty_spawn,
     ));
     let memory_repository: Arc<dyn MemoryRepository> = Arc::new(LoggingMemoryRepository::new(
-        Arc::new(StdMemoryRepository::new(Arc::clone(&env_resolver))),
+        Arc::new(StdMemoryRepository::new(
+            Arc::clone(&env_resolver),
+            Arc::clone(&runtime_catalog),
+        )),
         Arc::clone(&logger),
     ));
     let memory_use_case = MemoryUseCase::new(memory_repository);

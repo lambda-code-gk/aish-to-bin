@@ -60,13 +60,70 @@ mod entry {
                     }
                 }
             }
+
             if config.system.is_none() {
-                if let Some(s) = self
-                    .app
-                    .resolve_system_prompt_from_hooks
-                    .resolve_system_prompt_from_hooks()?
-                {
-                    config.system = Some(s);
+                // コマンド種別に応じて system prompt を補完する。
+                let cmd = config_to_command(config.clone());
+                match cmd {
+                    AiCommand::Task { name, .. } => {
+                        // タスク実行時: hooks / task prompt / skills を合成し、memory_topics からメモリ要約を付与する。
+                        let sources = self
+                            .app
+                            .prompt_source_resolver
+                            .resolve_for_task(&name, None)?;
+                        if !sources.is_empty() {
+                            let combined = sources
+                                .iter()
+                                .map(|s| s.content.as_str())
+                                .collect::<Vec<_>>()
+                                .join("\n\n");
+                            let base_trimmed = combined.trim();
+                            if !base_trimmed.is_empty() {
+                                let mut project_topics = Vec::new();
+                                for s in &sources {
+                                    for t in &s.memory_topics {
+                                        let trimmed = t.trim();
+                                        if !trimmed.is_empty() {
+                                            project_topics.push(trimmed.to_string());
+                                        }
+                                    }
+                                }
+                                let global_topics: Vec<String> = Vec::new();
+                                let memory_summary = if project_topics.is_empty() {
+                                    String::new()
+                                } else {
+                                    match self
+                                        .app
+                                        .memory_context_resolver
+                                        .resolve(&project_topics, &global_topics)
+                                    {
+                                        Ok(ctx) => ctx.rendered_summary,
+                                        Err(_) => String::new(),
+                                    }
+                                };
+
+                                let final_system = if memory_summary.trim().is_empty() {
+                                    base_trimmed.to_string()
+                                } else {
+                                    format!("{base}\n\n{memory}",
+                                        base = base_trimmed,
+                                        memory = memory_summary.trim()
+                                    )
+                                };
+                                config.system = Some(final_system);
+                            }
+                        }
+                    }
+                    _ => {
+                        // 従来どおり hooks/system_prompt のみを使用。
+                        if let Some(s) = self
+                            .app
+                            .resolve_system_prompt_from_hooks
+                            .resolve_system_prompt_from_hooks()?
+                        {
+                            config.system = Some(s);
+                        }
+                    }
                 }
             }
             Ok(())

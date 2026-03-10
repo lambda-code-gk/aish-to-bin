@@ -50,6 +50,12 @@ pub struct McpServerDescriptor {
     /// 任意: 設定ファイルの相対/絶対パス（CLI 表示用）
     #[serde(default)]
     pub source: Option<String>,
+    /// 任意: このサーバ配下ツールの既定モード hint（policy 側の補助情報）
+    #[serde(default)]
+    pub default_tool_mode_hint: Option<String>,
+    /// 任意: サーバ全体に関する補足説明（policy explain / debug 用）
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 /// ツールの最小定義（LLM に渡す schema 用）

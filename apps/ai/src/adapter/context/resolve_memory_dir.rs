@@ -4,8 +4,8 @@
 
 use crate::ports::outbound::ResolveMemoryDir;
 use common::error::Error;
-use common::ports::outbound::EnvResolver;
-use std::path::{Path, PathBuf};
+use common::ports::outbound::{EnvResolver, RuntimeCatalog};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 const MEMORY_SUBDIR: &str = "memory";
@@ -13,11 +13,12 @@ const AISH_DIR: &str = ".aish";
 
 pub struct StdResolveMemoryDir {
     env: Arc<dyn EnvResolver>,
+    catalog: Arc<dyn RuntimeCatalog>,
 }
 
 impl StdResolveMemoryDir {
-    pub fn new(env: Arc<dyn EnvResolver>) -> Self {
-        Self { env }
+    pub fn new(env: Arc<dyn EnvResolver>, catalog: Arc<dyn RuntimeCatalog>) -> Self {
+        Self { env, catalog }
     }
 }
 
@@ -27,53 +28,24 @@ impl ResolveMemoryDir for StdResolveMemoryDir {
         let dirs = self.env.resolve_dirs()?;
         let global = dirs.data_dir.join(MEMORY_SUBDIR);
 
-        // current_dir が取得できない環境（削除済み cwd 等）では project は None 扱いにする。
-        let project = match self.env.current_dir() {
-            Ok(cwd) => find_project_memory_dir(cwd.as_path())?,
-            Err(_) => None,
+        let project = match self.catalog.project_root()? {
+            Some(root) => {
+                let candidate = root.join(AISH_DIR).join(MEMORY_SUBDIR);
+                if candidate.exists() {
+                    let meta = std::fs::metadata(&candidate).map_err(|e| {
+                        Error::io_msg(format!("metadata {}: {}", candidate.display(), e))
+                    })?;
+                    if meta.is_dir() {
+                        Some(candidate)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            None => None,
         };
         Ok((project, global))
-    }
-}
-
-/// カレントから上に遡り、.aish/memory が存在するディレクトリを返す。無ければ None。
-fn find_project_memory_dir(mut current: &Path) -> Result<Option<PathBuf>, Error> {
-    loop {
-        let candidate = current.join(AISH_DIR).join(MEMORY_SUBDIR);
-        if candidate.exists() {
-            let meta = std::fs::metadata(&candidate)
-                .map_err(|e| Error::io_msg(format!("metadata {}: {}", candidate.display(), e)))?;
-            if meta.is_dir() {
-                return Ok(Some(candidate));
-            }
-        }
-        match current.parent() {
-            Some(p) => current = p,
-            None => return Ok(None),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_find_project_memory_dir_no_aish_returns_none() {
-        let tmp = std::env::temp_dir().join("memory_dir_test_none");
-        let _ = std::fs::create_dir_all(&tmp);
-        let r = find_project_memory_dir(tmp.as_path()).unwrap();
-        assert!(r.is_none());
-        let _ = std::fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn test_find_project_memory_dir_finds_aish_memory() {
-        let tmp = std::env::temp_dir().join("memory_dir_test_find");
-        let _ = std::fs::create_dir_all(tmp.join(".aish").join("memory"));
-        let r = find_project_memory_dir(tmp.as_path()).unwrap();
-        assert!(r.is_some());
-        assert!(r.unwrap().ends_with(".aish/memory"));
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

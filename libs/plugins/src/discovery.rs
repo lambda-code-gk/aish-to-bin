@@ -1,7 +1,31 @@
+//! Plugin discovery (canonical source of truth for plugins).
+//!
+//! Responsibilities:
+//! - Define how `RuntimeCatalog` locations for `CatalogKind::Plugins` are
+//!   interpreted.
+//! - Load `plugin.toml` manifests (canonical format).
+//! - Maintain minimal compatibility with legacy YAML manifests documented in
+//!   `docs/external-tools.md`.
+//! - Apply `enabled` flags (deny-by-default for legacy YAML).
+//! - Apply duplicate id handling (first match wins, later entries skipped).
+
+use common::adapter::{StdEnvResolver, StdFileSystem, StdRuntimeCatalog};
+use common::domain::{CatalogKind, CatalogLocation};
 use common::error::Error;
+use common::ports::outbound::{EnvResolver, RuntimeCatalog};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PluginPolicyToml {
+    #[serde(default)]
+    pub default_tool_mode: Option<String>,
+    #[serde(default)]
+    pub capabilities_hint: Vec<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PluginToml {
@@ -22,6 +46,9 @@ pub struct PluginToml {
     pub enabled: bool,
     #[serde(default)]
     pub timeout_ms: Option<u64>,
+    /// policy / capability hint（external tool policy 用の補助情報）
+    #[serde(default)]
+    pub policy: PluginPolicyToml,
 }
 
 #[derive(Debug, Clone)]
@@ -30,38 +57,8 @@ pub struct DiscoveredPlugin {
     pub source: String,
 }
 
-fn find_project_root(mut current: &Path) -> Option<PathBuf> {
-    loop {
-        if current.join(".aish").is_dir() {
-            return Some(current.to_path_buf());
-        }
-        current = current.parent()?;
-    }
-}
-
-fn project_plugins_dir() -> Option<PathBuf> {
-    let cwd = std::env::current_dir().ok()?;
-    let root = find_project_root(cwd.as_path())?;
-    Some(root.join(".aish").join("plugins"))
-}
-
-fn xdg_config_plugins_dir() -> Option<PathBuf> {
-    // XDG_CONFIG_HOME/aish/plugins or $HOME/.config/aish/plugins
-    if let Ok(v) = std::env::var("XDG_CONFIG_HOME") {
-        if !v.trim().is_empty() {
-            return Some(PathBuf::from(v).join("aish").join("plugins"));
-        }
-    }
-    let home = std::env::var("HOME").ok()?;
-    if home.trim().is_empty() {
-        return None;
-    }
-    Some(
-        PathBuf::from(home)
-            .join(".config")
-            .join("aish")
-            .join("plugins"),
-    )
+fn locations_for_plugins(catalog: &dyn RuntimeCatalog) -> Result<Vec<CatalogLocation>, Error> {
+    catalog.locations(CatalogKind::Plugins)
 }
 
 fn read_toml_file(path: &Path) -> Result<PluginToml, Error> {
@@ -125,6 +122,34 @@ fn read_legacy_yaml_manifest(path: &Path) -> Result<PluginToml, Error> {
         .get("timeouts")
         .and_then(|t| t.get("call_ms"))
         .and_then(|v| v.as_u64());
+    // legacy YAML では policy セクションはオプション扱いにする
+    let policy = if let Some(p) = map.get("policy").and_then(|v| v.as_mapping()) {
+        let default_tool_mode = p
+            .get("default_tool_mode")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let capabilities_hint = p
+            .get("capabilities_hint")
+            .and_then(|v| v.as_sequence())
+            .map(|seq| {
+                seq.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let notes = p
+            .get("notes")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        PluginPolicyToml {
+            default_tool_mode,
+            capabilities_hint,
+            notes,
+        }
+    } else {
+        PluginPolicyToml::default()
+    };
+
     Ok(PluginToml {
         id: id.clone(),
         namespace: namespace.clone(),
@@ -135,6 +160,7 @@ fn read_legacy_yaml_manifest(path: &Path) -> Result<PluginToml, Error> {
         env_allowlist: Vec::new(),
         enabled,
         timeout_ms,
+        policy,
     })
 }
 
@@ -169,29 +195,12 @@ fn collect_from_dir(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-pub fn discover_plugins() -> Result<Vec<DiscoveredPlugin>, Error> {
+pub fn discover_plugins_with_catalog(
+    catalog: &dyn RuntimeCatalog,
+) -> Result<Vec<DiscoveredPlugin>, Error> {
     let mut files = Vec::new();
-    if let Some(p) = project_plugins_dir() {
-        files.extend(collect_from_dir(&p));
-    }
-    if let Some(p) = xdg_config_plugins_dir() {
-        files.extend(collect_from_dir(&p));
-    }
-    // legacy trusted dirs: ~/.config/aish/plugins.d, ~/.aish/plugins.d
-    if let Some(p) =
-        xdg_config_plugins_dir().map(|d| d.parent().unwrap().to_path_buf().join("plugins.d"))
-    {
-        files.extend(collect_from_dir(&p));
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.trim().is_empty() {
-            files.extend(collect_from_dir(
-                PathBuf::from(home)
-                    .join(".aish")
-                    .join("plugins.d")
-                    .as_path(),
-            ));
-        }
+    for loc in locations_for_plugins(catalog)? {
+        files.extend(collect_from_dir(&loc.path));
     }
 
     let mut seen: HashMap<String, String> = HashMap::new();
@@ -216,4 +225,218 @@ pub fn discover_plugins() -> Result<Vec<DiscoveredPlugin>, Error> {
         });
     }
     Ok(out)
+}
+
+pub fn discover_plugins() -> Result<Vec<DiscoveredPlugin>, Error> {
+    let env: std::sync::Arc<dyn EnvResolver> = std::sync::Arc::new(StdEnvResolver);
+    let fs = StdFileSystem;
+    let fs_arc: std::sync::Arc<dyn common::ports::outbound::FileSystem> = std::sync::Arc::new(fs);
+    let catalog =
+        StdRuntimeCatalog::new(std::sync::Arc::clone(&env), std::sync::Arc::clone(&fs_arc));
+    discover_plugins_with_catalog(&catalog)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::domain::{CatalogKind, CatalogLocation, CatalogScope};
+    use common::ports::outbound::RuntimeCatalog;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    struct TestCatalog {
+        dirs: Vec<PathBuf>,
+    }
+
+    impl RuntimeCatalog for TestCatalog {
+        fn locations(&self, kind: CatalogKind) -> Result<Vec<CatalogLocation>, Error> {
+            if kind != CatalogKind::Plugins {
+                return Ok(Vec::new());
+            }
+            Ok(self
+                .dirs
+                .iter()
+                .cloned()
+                .map(|path| CatalogLocation {
+                    kind: CatalogKind::Plugins,
+                    scope: CatalogScope::UserConfig,
+                    path,
+                })
+                .collect())
+        }
+
+        fn project_root(&self) -> Result<Option<PathBuf>, Error> {
+            let _ = self;
+            Ok(None)
+        }
+    }
+
+    fn tempdir(name: &str) -> PathBuf {
+        let base = std::env::temp_dir();
+        let dir = base.join(format!("plugins_discovery_{name}_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn legacy_yaml_is_parsed_with_deny_by_default_enabled() {
+        let tmp = tempdir("legacy_yaml_basic");
+        let yaml = r#"
+id: yaml-plugin
+transport:
+  type: stdio
+  command: /bin/echo
+  args: ["hello"]
+timeouts:
+  call_ms: 1234
+"#;
+        let path = tmp.join("legacy.yaml");
+        fs::write(&path, yaml).unwrap();
+
+        let catalog = TestCatalog { dirs: vec![tmp] };
+        let discovered = discover_plugins_with_catalog(&catalog).unwrap();
+        assert_eq!(discovered.len(), 1);
+        let p = &discovered[0].config;
+        assert_eq!(p.id, "yaml-plugin");
+        assert_eq!(p.namespace, "yaml-plugin");
+        assert_eq!(p.command, "/bin/echo");
+        assert_eq!(p.args, vec!["hello"]);
+        // legacy YAML は deny-by-default なので enabled が欠けていれば false
+        assert_eq!(p.enabled, false);
+        assert_eq!(p.timeout_ms, Some(1234));
+        // legacy YAML では policy セクション未指定時はデフォルト値
+        assert!(p.policy.default_tool_mode.is_none());
+        assert!(p.policy.capabilities_hint.is_empty());
+        assert!(p.policy.notes.is_none());
+    }
+
+    #[test]
+    fn duplicate_ids_prefer_first_and_skip_later() {
+        let tmp = tempdir("duplicate_ids");
+
+        let first = r#"
+id: same-id
+transport:
+  type: stdio
+  command: cmd-first
+"#;
+        let second = r#"
+id: same-id
+transport:
+  type: stdio
+  command: cmd-second
+"#;
+        fs::write(tmp.join("01_first.yaml"), first).unwrap();
+        fs::write(tmp.join("02_second.yaml"), second).unwrap();
+
+        let catalog = TestCatalog { dirs: vec![tmp] };
+        let discovered = discover_plugins_with_catalog(&catalog).unwrap();
+        assert_eq!(discovered.len(), 1);
+        let p = &discovered[0].config;
+        assert_eq!(p.id, "same-id");
+        assert_eq!(p.command, "cmd-first");
+    }
+
+    #[test]
+    fn enabled_flag_is_parsed_from_manifests() {
+        let tmp = tempdir("disabled");
+        let enabled = r#"
+id: enabled
+enabled: true
+transport:
+  type: stdio
+  command: cmd-enabled
+"#;
+        let disabled = r#"
+id: disabled
+enabled: false
+transport:
+  type: stdio
+  command: cmd-disabled
+"#;
+        fs::write(tmp.join("a_enabled.yaml"), enabled).unwrap();
+        fs::write(tmp.join("b_disabled.yaml"), disabled).unwrap();
+
+        let catalog = TestCatalog { dirs: vec![tmp] };
+        let discovered = discover_plugins_with_catalog(&catalog).unwrap();
+        assert_eq!(discovered.len(), 2);
+        let mut ids: Vec<(String, bool)> = discovered
+            .into_iter()
+            .map(|d| (d.config.id, d.config.enabled))
+            .collect();
+        ids.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            ids,
+            vec![
+                ("disabled".to_string(), false),
+                ("enabled".to_string(), true)
+            ]
+        );
+    }
+
+    #[test]
+    fn toml_policy_section_is_parsed() {
+        let tmp = tempdir("toml_policy");
+        let toml = r#"
+id = "acme-docs"
+namespace = "acme"
+command = "python"
+args = ["server.py"]
+enabled = true
+
+[policy]
+default_tool_mode = "require_approval"
+capabilities_hint = ["network"]
+notes = "Calls internal docs/search API"
+"#;
+        let path = tmp.join("plugin.toml");
+        fs::write(&path, toml).unwrap();
+
+        let catalog = TestCatalog { dirs: vec![tmp] };
+        let discovered = discover_plugins_with_catalog(&catalog).unwrap();
+        assert_eq!(discovered.len(), 1);
+        let p = &discovered[0].config;
+        assert_eq!(
+            p.policy.default_tool_mode.as_deref(),
+            Some("require_approval")
+        );
+        assert_eq!(p.policy.capabilities_hint, vec!["network".to_string()]);
+        assert_eq!(
+            p.policy.notes.as_deref(),
+            Some("Calls internal docs/search API")
+        );
+    }
+
+    #[test]
+    fn legacy_yaml_policy_section_is_parsed_if_present() {
+        let tmp = tempdir("legacy_yaml_policy");
+        let yaml = r#"
+id: yaml-plugin-policy
+enabled: true
+transport:
+  type: stdio
+  command: /bin/echo
+policy:
+  default_tool_mode: deny
+  capabilities_hint:
+    - fs_read
+    - network
+  notes: Sensitive internal plugin
+"#;
+        let path = tmp.join("legacy_policy.yaml");
+        fs::write(&path, yaml).unwrap();
+
+        let catalog = TestCatalog { dirs: vec![tmp] };
+        let discovered = discover_plugins_with_catalog(&catalog).unwrap();
+        assert_eq!(discovered.len(), 1);
+        let p = &discovered[0].config;
+        assert_eq!(p.id, "yaml-plugin-policy");
+        assert_eq!(p.policy.default_tool_mode.as_deref(), Some("deny"));
+        assert_eq!(
+            p.policy.capabilities_hint,
+            vec!["fs_read".to_string(), "network".to_string()]
+        );
+        assert_eq!(p.policy.notes.as_deref(), Some("Sensitive internal plugin"));
+    }
 }

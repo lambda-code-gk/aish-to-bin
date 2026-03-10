@@ -8,10 +8,15 @@ pub(crate) mod lifecycle;
 pub(crate) mod llm;
 pub(crate) mod plugin;
 pub(crate) mod policy;
+pub(crate) mod prompt_source_resolver;
 pub(crate) mod session;
 pub(crate) mod sigint_checker;
 pub(crate) mod sinks;
+pub(crate) mod package_spec_loader;
+pub(crate) mod package_resolver;
+pub(crate) mod skill_spec_loader;
 pub(crate) mod task;
+pub(crate) mod task_spec_loader;
 pub(crate) mod tools;
 
 // Re-exports: 旧フラット構造に合わせて crate 内参照を維持
@@ -26,7 +31,8 @@ pub(crate) use config::{
 pub(crate) use context::{
     ChangedFilesSnippetSelector, GrepHitsSelector, MemorySelector, PassThroughReducer,
     StdContextArtifactStore, StdContextMessageBuilder, StdContextPackBuilder,
-    StdContextPackBuilderWithAddons, StdResolveMemoryDir, TailWindowReducer,
+    StdContextPackBuilderWithAddons, StdMemoryContextResolver, StdResolveMemoryDir,
+    StdStructuredMemoryRepository, TailWindowReducer,
 };
 pub(crate) use dry_run_report_sink::StdoutDryRunReportSink;
 pub(crate) use lifecycle::{
@@ -37,6 +43,7 @@ pub(crate) use policy::{
     EgressBudgetHardCapRule, EgressSensitiveRule, LeakscanPrepareSession, LeakscanTextFilter,
     ShellAllowlistRule, StdPolicyEngine, StdPolicyExplainProvider, ToolModeRule,
 };
+pub(crate) use prompt_source_resolver::StdPromptSourceResolver;
 pub(crate) use session::{
     DaemonEventAppender, DeterministicCompactionStrategy, FallbackEventAppender,
     FileAgentStateStorage, ManifestReviewedSessionStorage, ManifestTailCompactionViewStrategy,
@@ -44,7 +51,11 @@ pub(crate) use session::{
 };
 pub(crate) use sigint_checker::{NoopInterruptChecker, SigintChecker};
 pub(crate) use sinks::StdEventSinkFactory;
+pub(crate) use skill_spec_loader::StdSkillSpecLoader;
 pub(crate) use task::StdTaskRunner;
+pub(crate) use task_spec_loader::StdTaskSpecLoader;
+pub(crate) use package_resolver::StdPackageResolver;
+pub(crate) use package_spec_loader::StdPackageSpecLoader as StdPackageSpecLoaderAdapter;
 pub(crate) use tools::{
     GetMemoryContentTool, GrepTool, HistoryGetTool, HistorySearchTool, McpToolProxy,
     QueueShellSuggestionTool, ReadFileTool, ReplaceFileTool, SaveMemoryTool, SearchMemoryTool,

@@ -1,7 +1,6 @@
-//! 外部プラグイン loader の結合テスト（plugin_id 重複・list_tools 失敗時の register 防止）
+//! 外部プラグイン loader の結合テスト（Tool 名重複・list_tools 失敗時の register 防止）
 
 use crate::adapter::plugin::external_plugin_loader::load_external_plugins;
-use common::adapter::{StdEnvResolver, StdFileSystem};
 use common::domain::event::EventRecord;
 use common::event_hub::{EventHub, EventHubHandle};
 use common::ports::outbound::EventRecordSink;
@@ -78,7 +77,7 @@ for line in sys.stdin:
     path
 }
 
-/// Test A: plugin_id 重複時は先勝ち、後続はスキップされ誤配送されない
+/// Test A: 同一 Tool 名が複数プラグインから返ってきた場合は先勝ち、後続は登録されない
 #[test]
 fn duplicate_plugin_id_skips_second_and_emits_event() {
     if !have_python3() {
@@ -90,29 +89,32 @@ fn duplicate_plugin_id_skips_second_and_emits_event() {
     let script_path = write_working_mock_plugin(&temp);
     let script_str = script_path.to_string_lossy().into_owned();
 
-    let yaml1 = format!(
-        r#"id: same-id
-version: "0.1.0"
-transport:
-  type: stdio
-  command: python3
-  args: ["-u", "{}"]
+    // 2 つの plugin.toml を用意し、どちらも list_tools で "only_tool" を返す。
+    // loader は Tool 名重複を検出し、最初のプラグインの Tool だけを登録する。
+    // StdRuntimeCatalog の plugins 探索では config/plugins を UserConfig スコープとして参照するため、
+    // そこに配置する。
+    let plugin_dir = temp.join("config").join("plugins");
+    let _ = std::fs::create_dir_all(&plugin_dir);
+    let toml1 = format!(
+        r#"id = "p1"
+namespace = "p1"
+command = "python3"
+args = ["-u", "{}"]
+enabled = true
 "#,
         script_str
     );
-    let yaml2 = format!(
-        r#"id: same-id
-version: "0.1.0"
-transport:
-  type: stdio
-  command: python3
-  args: ["-u", "{}"]
+    let toml2 = format!(
+        r#"id = "p2"
+namespace = "p2"
+command = "python3"
+args = ["-u", "{}"]
+enabled = true
 "#,
         script_str
     );
-    let plugins_d = temp.join(".aish").join("plugins.d");
-    std::fs::write(plugins_d.join("01_first.yaml"), &yaml1).unwrap();
-    std::fs::write(plugins_d.join("02_second.yaml"), &yaml2).unwrap();
+    std::fs::write(plugin_dir.join("01_p1.toml"), &toml1).unwrap();
+    std::fs::write(plugin_dir.join("02_p2.toml"), &toml2).unwrap();
 
     let collected = Arc::new(Mutex::new(Vec::<EventRecord>::new()));
     let hub = EventHub::new(vec![Box::new(CollectingSink(Arc::clone(&collected)))]);
@@ -122,16 +124,10 @@ transport:
     let old_aish_home = std::env::var("AISH_HOME").ok();
     std::env::set_var("HOME", temp.as_os_str());
     std::env::set_var("AISH_HOME", temp.as_os_str());
-    let config_plugins_d = temp.join("config").join("plugins.d");
-    let _ = std::fs::create_dir_all(&config_plugins_d);
-    std::fs::write(config_plugins_d.join("01_first.yaml"), &yaml1).unwrap();
-    std::fs::write(config_plugins_d.join("02_second.yaml"), &yaml2).unwrap();
+    // XDG_CONFIG_HOME は未設定として扱い、StdRuntimeCatalog の plugins 探索順は
+    // project (.aish/plugins) のみになる。
 
-    let tools = load_external_plugins(
-        Arc::new(StdFileSystem),
-        Arc::new(StdEnvResolver),
-        Some(handle),
-    );
+    let tools = load_external_plugins(Some(handle));
 
     if let Some(h) = old_aish_home {
         std::env::set_var("AISH_HOME", h);
@@ -144,7 +140,11 @@ transport:
         std::env::remove_var("HOME");
     }
 
-    assert_eq!(tools.len(), 1, "duplicate id: only first plugin's tool");
+    assert_eq!(
+        tools.len(),
+        1,
+        "duplicate tool name: only first plugin's tool is registered"
+    );
     let kinds: Vec<String> = collected
         .lock()
         .unwrap()
@@ -154,8 +154,8 @@ transport:
     assert!(
         kinds
             .iter()
-            .any(|k| k == "external_plugin.skipped_id_conflict"),
-        "expected skipped_id_conflict event, got: {:?}",
+            .any(|k| k == "external_plugin.tool_name_conflict"),
+        "expected tool_name_conflict event, got: {:?}",
         kinds
     );
 
@@ -198,7 +198,7 @@ transport:
     let isolated_home = temp.join("home");
     let _ = std::fs::create_dir_all(&isolated_home);
     std::env::set_var("HOME", isolated_home.as_os_str());
-    let tools = load_external_plugins(Arc::new(StdFileSystem), Arc::new(StdEnvResolver), None);
+    let tools = load_external_plugins(None);
     if let Some(h) = old_aish_home {
         std::env::set_var("AISH_HOME", h);
     } else {

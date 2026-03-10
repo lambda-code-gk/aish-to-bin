@@ -11,6 +11,7 @@ pub mod std_fs;
 pub mod std_id_generator;
 pub mod std_path_resolver;
 pub mod std_process;
+pub mod std_runtime_catalog;
 pub mod transcript_sink;
 
 pub use file_json_log::{FileJsonLog, NoopLog};
@@ -21,4 +22,5 @@ pub use std_fs::StdFileSystem;
 pub use std_id_generator::StdIdGenerator;
 pub use std_path_resolver::StdPathResolver;
 pub use std_process::StdProcess;
+pub use std_runtime_catalog::StdRuntimeCatalog;
 pub use transcript_sink::TranscriptSink;

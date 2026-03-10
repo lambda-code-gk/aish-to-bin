@@ -1,60 +1,58 @@
-//! 信頼ディレクトリからプラグインを発見・起動し、list_tools で取得したツールを Tool として返す。
+//! プラグインを発見・起動し、list_tools で取得したツールを Tool として返す。
 //!
-//! fail-closed: 起動失敗・list_tools 失敗したプラグインはスキップし、他は継続。
-//! plugin_id は一意必須。重複時は先勝ち（最初に処理した manifest のみ有効化、後続は skipped_id_conflict でスキップ）。
-//! 外部プラグイン対応は将来有効化予定のため、現状は dead_code を許容。
+//! - discovery の正本は `libs/plugins`（`plugins::discovery`）にある。
+//! - このモジュールは「発見済みプラグインを起動し、list_tools 結果を Tool に変換する」
+//!   実行責務のみに絞る。
+//! - fail-closed: 起動失敗・list_tools 失敗したプラグインはスキップし、他は継続。
+//! - plugin_id の重複は discovery 層で先勝ちとなる（ここでは Tool 名の衝突のみ検出）。
 #![allow(dead_code)]
 
-use super::external_plugin_manifest_loader::discover_manifests;
 use super::external_plugin_stdio_client::ExternalPluginStdioClient;
 use super::external_tool_executor_impl::ExternalToolExecutorImpl;
 use crate::adapter::tools::ExternalToolProxy;
-use crate::domain::external_plugin::{ExternalPluginId, PluginTransport};
+use crate::domain::external_plugin::{ExternalPluginId, PluginTimeouts, StdioTransport};
 use common::domain::event::{Event, RunId, SessionId};
 use common::event_hub::EventHubHandle;
-use common::ports::outbound::{EnvResolver, FileSystem};
+use plugins::discovery::{discover_plugins, DiscoveredPlugin};
 use std::collections::HashSet;
 use std::sync::Arc;
 
 /// プラグインを発見・起動し、外部ツールの Tool 一覧を返す。Executor は各 Proxy が共有する。
 pub fn load_external_plugins(
-    fs: Arc<dyn FileSystem>,
-    env: Arc<dyn EnvResolver>,
     event_hub: Option<EventHubHandle>,
 ) -> Vec<Arc<dyn common::tool::Tool>> {
     let session_id = SessionId::new("bootstrap");
     let run_id = RunId::new("plugins");
 
-    let entries = match discover_manifests(fs.clone(), env.clone(), event_hub.as_ref()) {
-        Ok(e) => e,
+    let discovered = match discover_plugins() {
+        Ok(p) => p,
         Err(_) => return Vec::new(),
     };
 
     let executor = Arc::new(ExternalToolExecutorImpl::new());
     let mut tools: Vec<Arc<dyn common::tool::Tool>> = Vec::new();
     let mut registered_names: HashSet<String> = HashSet::new();
-    // plugin_id 重複時は先勝ち。後続はスキップして誤配送を防ぐ。
-    let mut seen_plugin_ids: HashSet<String> = HashSet::new();
-
-    for entry in entries {
-        let plugin_id = ExternalPluginId::new(entry.manifest.id.clone());
-        if !seen_plugin_ids.insert(entry.manifest.id.clone()) {
-            if let Some(ref hub) = event_hub {
-                hub.emit(Event {
-                    v: 1,
-                    session_id: session_id.clone(),
-                    run_id: run_id.clone(),
-                    kind: "external_plugin.skipped_id_conflict".to_string(),
-                    payload: serde_json::json!({
-                        "plugin_id": plugin_id.0,
-                        "manifest_path": entry.manifest_path.to_string_lossy(),
-                    }),
-                });
-            }
+    for DiscoveredPlugin { config, .. } in discovered {
+        // discovery 層では enabled フラグをそのまま返す。実行側では enabled=false の
+        // プラグインは起動しない（fail-closed）。
+        if !config.enabled {
             continue;
         }
-        let (transport, env_map) = match &entry.manifest.transport {
-            PluginTransport::Stdio(t) => (t, &entry.manifest.env),
+
+        let plugin_id = ExternalPluginId::new(config.id.clone());
+        let transport = StdioTransport {
+            command: config.command.clone(),
+            args: config.args.clone(),
+        };
+        // env_allowlist された環境変数だけを子プロセスに渡す。
+        let env_map: std::collections::HashMap<String, String> = config
+            .env_allowlist
+            .iter()
+            .filter_map(|k| std::env::var(k).ok().map(|v| (k.clone(), v)))
+            .collect();
+        let timeouts = PluginTimeouts {
+            startup_ms: Some(10_000),
+            call_ms: config.timeout_ms.or(Some(30_000)),
         };
 
         if let Some(ref hub) = event_hub {
@@ -70,25 +68,24 @@ pub fn load_external_plugins(
             });
         }
 
-        let client =
-            match ExternalPluginStdioClient::start(transport, env_map, &entry.manifest.timeouts) {
-                Ok(c) => c,
-                Err(e) => {
-                    if let Some(ref hub) = event_hub {
-                        hub.emit(Event {
-                            v: 1,
-                            session_id: session_id.clone(),
-                            run_id: run_id.clone(),
-                            kind: "external_plugin.start_failed".to_string(),
-                            payload: serde_json::json!({
-                                "plugin_id": plugin_id.0,
-                                "error": e.to_string(),
-                            }),
-                        });
-                    }
-                    continue;
+        let client = match ExternalPluginStdioClient::start(&transport, &env_map, &timeouts) {
+            Ok(c) => c,
+            Err(e) => {
+                if let Some(ref hub) = event_hub {
+                    hub.emit(Event {
+                        v: 1,
+                        session_id: session_id.clone(),
+                        run_id: run_id.clone(),
+                        kind: "external_plugin.start_failed".to_string(),
+                        payload: serde_json::json!({
+                            "plugin_id": plugin_id.0,
+                            "error": e.to_string(),
+                        }),
+                    });
                 }
-            };
+                continue;
+            }
+        };
 
         if let Some(ref hub) = event_hub {
             hub.emit(Event {

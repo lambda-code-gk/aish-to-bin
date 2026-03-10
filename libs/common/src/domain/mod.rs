@@ -5,12 +5,14 @@
 pub mod dirs;
 pub mod event;
 pub mod event_envelope;
+pub mod runtime_catalog;
 
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub use dirs::Dirs;
 pub use event_envelope::{EventEnvelope, EventEnvelopeWithoutSeq};
+pub use runtime_catalog::{CatalogKind, CatalogLocation, CatalogScope};
 
 /// セッションディレクトリのパス
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -1,6 +1,8 @@
 use crate::domain::Query;
 use crate::domain::QueryRetry;
-use crate::domain::{DryRunInfo, EventEnvelope, LifecycleEvent, PolicyVerdict, QueryOutcome};
+use crate::domain::{
+    DryRunInfo, EventEnvelope, ExternalToolPolicyIndex, LifecycleEvent, PolicyVerdict, QueryOutcome,
+};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, CommandAllowRulesLoader, ContextArtifactStore,
     ContextPackBuilder, ContinueAfterLimitPrompt, DryRunReportSink, EventSinkFactory,
@@ -77,6 +79,8 @@ pub struct PolicyDeps {
 pub struct ToolingDeps {
     pub sink_factory: Arc<dyn EventSinkFactory>,
     pub tools: Vec<Arc<dyn Tool>>,
+    /// external tool の policy hint index（sanitized tool name → metadata）
+    pub external_tool_policy_index: Arc<ExternalToolPolicyIndex>,
 }
 
 pub struct ModelDeps {
