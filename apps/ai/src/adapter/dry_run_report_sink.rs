@@ -1,8 +1,18 @@
 //! dry run 結果の出力 adapter（stdout に人間向けフォーマットで出力）
 
-use crate::domain::DryRunInfo;
+use crate::domain::{DryRunInfo, PromptSourceKind};
 use crate::ports::outbound::DryRunReportSink;
+use common::domain::CatalogScope;
 use common::error::Error;
+
+fn scope_label(scope: CatalogScope) -> &'static str {
+    match scope {
+        CatalogScope::Project => "project",
+        CatalogScope::UserConfig => "config",
+        CatalogScope::LegacyUser => "legacy",
+        CatalogScope::System => "system",
+    }
+}
 
 /// dry run の結果を stdout に出力する adapter
 pub struct StdoutDryRunReportSink;
@@ -42,6 +52,66 @@ impl DryRunReportSink for StdoutDryRunReportSink {
             None => println!("tool_allowlist: (all)"),
         }
         println!("tools_enabled: [{}]", info.tools_enabled.join(", "));
+
+        if info.task_origin.is_some()
+            || info
+                .prompt_sources
+                .as_ref()
+                .map_or(false, |v| !v.is_empty())
+        {
+            println!("--- source provenance ---");
+            if let Some(ref to) = info.task_origin {
+                let p = &to.provenance;
+                let scope = scope_label(p.scope);
+                let package = p.package_name.as_deref().unwrap_or("(none)");
+                if let Some(ref note) = p.note {
+                    println!(
+                        "task: name={} scope={} package={} path={} note={}",
+                        to.task_name,
+                        scope,
+                        package,
+                        p.path.display(),
+                        note
+                    );
+                } else {
+                    println!(
+                        "task: name={} scope={} package={} path={}",
+                        to.task_name,
+                        scope,
+                        package,
+                        p.path.display()
+                    );
+                }
+            }
+            if let Some(ref sources) = info.prompt_sources {
+                for (i, s) in sources.iter().enumerate() {
+                    let kind_label = match s.kind {
+                        PromptSourceKind::Hook => "hook",
+                        PromptSourceKind::TaskPrompt => "task_prompt",
+                        PromptSourceKind::Skill => "skill",
+                    };
+                    let (scope, package, path, note) = match &s.provenance {
+                        Some(p) => (
+                            scope_label(p.scope),
+                            p.package_name.as_deref().unwrap_or("(none)"),
+                            p.path.display().to_string(),
+                            p.note.as_deref().unwrap_or("").to_string(),
+                        ),
+                        None => ("(unknown)", "(none)", "(none)".to_string(), String::new()),
+                    };
+                    let note_suffix = if note.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" note={}", note)
+                    };
+                    println!(
+                        "  [{}] {} name={} scope={} package={} path={}{}",
+                        i, kind_label, s.name, scope, package, path, note_suffix
+                    );
+                }
+            }
+        }
+
         println!("--- messages ({} total) ---", info.messages.len());
         for (i, m) in info.messages.iter().enumerate() {
             let (role, content) = match m {

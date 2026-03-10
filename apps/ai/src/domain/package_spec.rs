@@ -15,15 +15,8 @@ pub struct PackageSpec {
     pub description: Option<String>,
     /// package ルートディレクトリ（package.toml が存在するディレクトリ）
     pub root_dir: PathBuf,
-    /// デフォルトで起動する Task 名（省略可）
-    pub default_task: Option<String>,
     /// system prompt hook のパス（package ルートからの相対パスを解決済みにした絶対パス）
     pub system_hook: Option<PathBuf>,
     /// この package が主に扱う memory topics
     pub memory_topics: Vec<String>,
-    /// この package の想定する aish バージョン互換条件（例: ">=0.1.0"）
-    ///
-    /// Phase F では厳密判定せず、読めた場合は provenance 情報として保持するだけにとどめる。
-    pub compat_aish: Option<String>,
 }
-

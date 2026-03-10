@@ -22,24 +22,13 @@ struct RawPackageToml {
     pub name: String,
     pub version: Option<String>,
     pub description: Option<String>,
-    pub default_task: Option<String>,
     pub system_hook: Option<String>,
     #[serde(default)]
     pub memory_topics: Vec<String>,
-    #[serde(default)]
-    pub compat: CompatSection,
-}
-
-#[derive(Debug, Default, serde::Deserialize)]
-struct CompatSection {
-    pub aish: Option<String>,
 }
 
 impl PackageSpecLoader for StdPackageSpecLoader {
-    fn load_package_spec(
-        &self,
-        package_root: &Path,
-    ) -> Result<Option<PackageSpec>, Error> {
+    fn load_package_spec(&self, package_root: &Path) -> Result<Option<PackageSpec>, Error> {
         let manifest = Self::manifest_path(package_root);
         if !manifest.exists() {
             return Ok(None);
@@ -69,20 +58,15 @@ impl PackageSpecLoader for StdPackageSpecLoader {
         };
 
         let root_dir = package_root.to_path_buf();
-        let system_hook = raw
-            .system_hook
-            .as_ref()
-            .map(|rel| root_dir.join(rel));
+        let system_hook = raw.system_hook.as_ref().map(|rel| root_dir.join(rel));
 
         let spec = PackageSpec {
             name: raw.name,
             version: raw.version,
             description: raw.description,
             root_dir,
-            default_task: raw.default_task,
             system_hook,
             memory_topics: raw.memory_topics,
-            compat_aish: raw.compat.aish,
         };
         Ok(Some(spec))
     }
@@ -129,29 +113,21 @@ name = "ci-investigator"
 version = "0.1.0"
 description = "Investigate CI failures for common build/test pipelines"
 
-default_task = "investigate_ci_failure"
 system_hook = "prompts/system.md"
 
 memory_topics = ["ci", "tests", "build"]
-
-[compat]
-aish = ">=0.1.0"
 "#
         )
         .unwrap();
 
         let loader = StdPackageSpecLoader::new();
-        let spec = loader
-            .load_package_spec(&pkg_dir)
-            .unwrap()
-            .expect("spec");
+        let spec = loader.load_package_spec(&pkg_dir).unwrap().expect("spec");
         assert_eq!(spec.name, "ci-investigator");
         assert_eq!(spec.version.as_deref(), Some("0.1.0"));
         assert_eq!(
             spec.description.as_deref(),
             Some("Investigate CI failures for common build/test pipelines")
         );
-        assert_eq!(spec.default_task.as_deref(), Some("investigate_ci_failure"));
         assert!(spec
             .system_hook
             .as_ref()
@@ -161,7 +137,6 @@ aish = ">=0.1.0"
             spec.memory_topics,
             vec!["ci".to_string(), "tests".to_string(), "build".to_string()]
         );
-        assert_eq!(spec.compat_aish.as_deref(), Some(">=0.1.0"));
     }
 
     #[test]
@@ -183,4 +158,3 @@ aish = ">=0.1.0"
         assert!(list.is_empty());
     }
 }
-

@@ -8,4 +8,3 @@ pub struct ResolvedMemoryContext {
     /// プロンプトに差し込む短い要約テキスト
     pub rendered_summary: String,
 }
-

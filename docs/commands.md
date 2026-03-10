@@ -103,10 +103,9 @@ ai [options] [task] [message...]
 
 `task` に指定した名前に対応するスクリプトが見つかった場合、LLM への問い合わせの代わりにタスクスクリプトが実行されます。
 
-- 検索パス（先に存在する方を使用）
-  - AISH_HOME 設定時: `$AISH_HOME/config/task.d/` または `$AISH_HOME/task.d/`（AISH_HOME が config ルートのときは `task.d` 直下）
-  - `$XDG_CONFIG_HOME/aish/task.d/`
-  - `~/.config/aish/task.d/`
+- 検索パス（この順で探索し、先に存在する方を使用）
+  1) **設定ディレクトリの task.d**: `AISH_HOME` 設定時は `$AISH_HOME/config/task.d/`、未設定時は `$XDG_CONFIG_HOME/aish/task.d/`（未設定時は `~/.config/aish/task.d/`）
+  2) **互換パス**（`AISH_HOME` 設定時のみ）: `$AISH_HOME/task.d/`
 
 > 詳細: `ai` の具体的な使い方やプロンプト設計、セッションとの関係については `ai-usage.md` を参照してください。
 
@@ -115,9 +114,9 @@ ai [options] [task] [message...]
 代表的なものに `leakscan` があります（機密情報の誤送信を防ぐための検査エンジン）。
 
 - `ai` からの利用時は、以下の順でバイナリを探索し、ルールファイルが存在するときのみ有効化されます。
-  1) `$AISH_HOME/bin/leakscan`
-  2) `ai` バイナリの隣にある `leakscan`
-  - ルールファイルは `$AISH_HOME/config/rules.json` 等（XDG 環境では `$XDG_CONFIG_HOME/aish/rules.json`）。
+  1) **設定ホームの bin/leakscan**: `AISH_HOME` 設定時は `$AISH_HOME/bin/leakscan`、未設定時は `$XDG_CONFIG_HOME/aish/bin/leakscan`（未設定時は `~/.config/aish/bin/leakscan`）
+  2) **`ai` バイナリと同じディレクトリ**の `leakscan`
+  - ルールファイルは `AISH_HOME` 設定時は `$AISH_HOME/config/rules.json`、未設定時は `$XDG_CONFIG_HOME/aish/rules.json`（未設定時は `~/.config/aish/rules.json`）を参照します。
 - 見つからない場合やルールが無い場合は、leakscan は無効になり、セッションの準備はスキップされます。
 
 詳細が必要になったタイミングで `tools/` 以下や各ツールのヘルプを参照してください。

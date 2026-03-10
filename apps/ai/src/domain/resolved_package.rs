@@ -10,4 +10,3 @@ pub struct ResolvedPackage {
     pub spec: PackageSpec,
     pub scope: CatalogScope,
 }
-

@@ -85,4 +85,3 @@ mod tests {
         assert!(rendered.contains("[pattern][tests]"));
     }
 }
-

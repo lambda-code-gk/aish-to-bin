@@ -20,7 +20,8 @@ Rust 製の統合バイナリ `aish` (およびそのエイリアス `ai`) と�
 * **Context-aware interactions**: ターミナルの直近の入出力をコンテキストとして自動収集。
 * **Policy & Security Control**: `config.toml` による強力なポリシー制御。ツールの実行承認、LLM 送信データの検知・マスキング（leakscan 連携）が可能。
 * **Memory / Session System**: 過去の履歴を永続化し、必要に応じて LLM コンテキストへ注入。
-* **External Tooling (MCP)**: Model Context Protocol (MCP) を通じた外部ツールの拡張に対応。
+* **External tooling**: stdio + JSON-RPC ベースの外部ツールプラグインに対応。信頼ディレクトリに `plugin.toml` を置くことでツールを追加できる。将来的に MCP 互換拡張も視野。
+* **Packages**: タスク・スキル・プロンプトなどを束ねる package（`package.toml`）をプロジェクト／設定ディレクトリから読み込み可能。
 * **Task-oriented workflows**: タスクスクリプトによる複雑なワークフローの自動化。
 
 ## 📚 Documentation
@@ -31,6 +32,8 @@ Rust 製の統合バイナリ `aish` (およびそのエイリアス `ai`) と�
 - `aish` の使い方とセッション管理: [docs/aish-usage.md](docs/aish-usage.md)
 - `ai` の使い方（最も詳しいガイド）: [docs/ai-usage.md](docs/ai-usage.md)
 - セキュリティ・プライバシーと leakscan: [docs/security.md](docs/security.md)
+- 外部ツールプラグイン: [docs/external-tools.md](docs/external-tools.md)
+- Package: [docs/packages.md](docs/packages.md)
 
 ## 🚀 Quick Start
 
@@ -68,7 +71,10 @@ AISH の挙動は `config.toml` および環境変数で細かく制御できま
 
 ### config.toml
 
-プロジェクトルートの `.aish/config.toml` または `$XDG_CONFIG_HOME/aish/config.toml` を参照します。
+次の場所を参照します（プロジェクトの設定がユーザー設定より優先）。  
+- **ユーザー設定**: `AISH_HOME` 設定時は `$AISH_HOME/config/config.toml`、未設定時は `$XDG_CONFIG_HOME/aish/config.toml`（未設定時は `~/.config/aish/config.toml`）  
+- **プロジェクト**: プロジェクトルートの `.aish/config.toml`  
+
 サンプルは `assets/defaults/config/config.toml.sample` にあります。
 
 - **Policy**: ツール実行の承認モード（`allow` | `require_approval` | `deny`）を機能（capability）やツールごとに設定。
@@ -95,8 +101,8 @@ AISH は統合バイナリ `aish` を通じて利用します。また、`ai` �
 | `ai <msg>` | 自然言語による LLM への問い合わせ |
 | `ai <task>` | タスクスクリプトの実行 |
 | `aish sessions` | セッション一覧の表示 |
-| `aish policy` | 解決済みポリシーとルール順の表示 |
-| `aish config` | 現在の有効な設定とソースの表示 |
+| `aish policy explain` | 解決済みポリシーとルール順の表示 |
+| `aish config explain` | 現在の有効な設定とソースの表示 |
 | `aish memory` | 保存されたメモリ（ナレッジ）の管理 |
 
 ### Task Examples
@@ -119,6 +125,7 @@ aish/
 ├── libs/                 # 現役共有ライブラリ
 │   └── common            # 共通ドメイン・抽象ポート・ドライバ
 ├── tools/                # 補助ツール (leakscan, md-fmt 等)
+├── experimental/         # 将来の再設計用スロット（既定ビルド対象外・[experimental/README.md](experimental/README.md) 参照）
 ├── assets/defaults/      # 設定テンプレート
 ├── dist/bin/             # ビルド成果物
 └── tests/                # テストスクリプト

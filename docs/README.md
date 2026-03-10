@@ -11,4 +11,6 @@
 そのほか、必要に応じて次のドキュメントを参照してください。
 
 - **[security.md](security.md)** — セキュリティ・プライバシーと leakscan
+- **[external-tools.md](external-tools.md)** — 外部ツールプラグイン（plugin.toml、探索場所、stdio/JSON-RPC）
+- **[packages.md](packages.md)** — Package（package.toml、探索場所、タスク・スキル・プロンプトの束）
 - **[faq.md](faq.md)** — よくある質問とトラブルシューティング

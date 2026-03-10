@@ -725,11 +725,9 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         cli_overrides,
     );
     let config_provider: Arc<dyn ConfigProvider> = Arc::new(raw_config_provider);
-    let resolve_memory_dir_adapter: Arc<dyn crate::ports::outbound::ResolveMemoryDir> =
-        Arc::new(StdResolveMemoryDir::new(
-            Arc::clone(&env_resolver),
-            Arc::clone(&runtime_catalog),
-        ));
+    let resolve_memory_dir_adapter: Arc<dyn crate::ports::outbound::ResolveMemoryDir> = Arc::new(
+        StdResolveMemoryDir::new(Arc::clone(&env_resolver), Arc::clone(&runtime_catalog)),
+    );
     let structured_memory_repo: Arc<
         dyn crate::adapter::context::structured_memory_repository::StructuredMemoryRepository,
     > = Arc::new(StdStructuredMemoryRepository::new(Arc::clone(

@@ -255,8 +255,8 @@ fn list_package_task_names<F: FileSystem + ?Sized>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::domain::{CatalogLocation, CatalogScope};
     use common::adapter::{StdFileSystem, StdProcess};
+    use common::domain::{CatalogLocation, CatalogScope};
     use std::fs::{self, File};
 
     struct StubCatalog {

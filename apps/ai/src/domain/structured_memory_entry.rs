@@ -14,4 +14,3 @@ pub struct StructuredMemoryEntry {
     pub updated_at: Option<String>,
     pub source_scope: MemoryScope,
 }
-

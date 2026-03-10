@@ -1,3 +1,5 @@
+use super::SourceProvenance;
+
 /// プロンプト素材の種類
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptSourceKind {
@@ -16,4 +18,6 @@ pub struct ResolvedPromptSource {
     pub preferred_mode: Option<String>,
     pub allowed_tools: Vec<String>,
     pub denied_tools: Vec<String>,
+    /// 出所（dry-run / explain 表示用）。常に設定することを推奨
+    pub provenance: Option<SourceProvenance>,
 }

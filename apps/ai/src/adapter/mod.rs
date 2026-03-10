@@ -6,14 +6,14 @@ pub(crate) mod context;
 pub(crate) mod dry_run_report_sink;
 pub(crate) mod lifecycle;
 pub(crate) mod llm;
+pub(crate) mod package_resolver;
+pub(crate) mod package_spec_loader;
 pub(crate) mod plugin;
 pub(crate) mod policy;
 pub(crate) mod prompt_source_resolver;
 pub(crate) mod session;
 pub(crate) mod sigint_checker;
 pub(crate) mod sinks;
-pub(crate) mod package_spec_loader;
-pub(crate) mod package_resolver;
 pub(crate) mod skill_spec_loader;
 pub(crate) mod task;
 pub(crate) mod task_spec_loader;
@@ -39,6 +39,8 @@ pub(crate) use lifecycle::{
     CliContinuePrompt, CompositeLifecycleHooks, NoContinuePrompt, SelfImproveHandler,
 };
 pub(crate) use llm::{StdLlmCompletion, StdLlmEventStreamFactory};
+pub(crate) use package_resolver::StdPackageResolver;
+pub(crate) use package_spec_loader::StdPackageSpecLoader as StdPackageSpecLoaderAdapter;
 pub(crate) use policy::{
     EgressBudgetHardCapRule, EgressSensitiveRule, LeakscanPrepareSession, LeakscanTextFilter,
     ShellAllowlistRule, StdPolicyEngine, StdPolicyExplainProvider, ToolModeRule,
@@ -54,8 +56,6 @@ pub(crate) use sinks::StdEventSinkFactory;
 pub(crate) use skill_spec_loader::StdSkillSpecLoader;
 pub(crate) use task::StdTaskRunner;
 pub(crate) use task_spec_loader::StdTaskSpecLoader;
-pub(crate) use package_resolver::StdPackageResolver;
-pub(crate) use package_spec_loader::StdPackageSpecLoader as StdPackageSpecLoaderAdapter;
 pub(crate) use tools::{
     GetMemoryContentTool, GrepTool, HistoryGetTool, HistorySearchTool, McpToolProxy,
     QueueShellSuggestionTool, ReadFileTool, ReplaceFileTool, SaveMemoryTool, SearchMemoryTool,

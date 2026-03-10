@@ -4,4 +4,3 @@ pub enum MemoryScope {
     Project,
     Global,
 }
-

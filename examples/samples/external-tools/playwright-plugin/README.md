@@ -25,35 +25,32 @@ npm install
 
 初回は Playwright が Chromium をダウンロードするため、少し時間がかかります。
 
-### 2. manifest を信頼ディレクトリに置く
+### 2. manifest を探索ディレクトリに置く（正式: TOML）
 
-manifest の `transport.args` を、**このリポジトリ内の `plugin.mjs` の絶対パス**に書き換えてからコピーします。
+**推奨**: `plugin.toml.example` をコピーし、`args` を **このリポジトリ内の `plugin.mjs` の絶対パス** に書き換えてから、次のいずれかに配置する。
+
+- **プロジェクトで使う場合**: `{project_root}/.aish/plugins/playwright/plugin.toml`
+- **ユーザー全体**: `config/plugins/playwright/plugin.toml`（`$AISH_HOME/config/plugins` または `$XDG_CONFIG_HOME/aish/plugins`）
+- **レガシー**: `~/.aish/plugins.d/playwright.toml`
 
 ```bash
-# 例: リポジトリのルートを /home/user/aish_to_bin とする場合
-mkdir -p ~/.aish/plugins.d
-cat > ~/.aish/plugins.d/playwright.yaml << 'EOF'
-id: playwright
-version: "0.1.0"
-transport:
-  type: stdio
-  command: node
-  args:
-    - "/home/user/aish_to_bin/examples/samples/external-tools/playwright-plugin/plugin.mjs"
-timeouts:
-  startup_ms: 15000
-  call_ms: 60000
-enabled: true
-EOF
+# 例: プロジェクトの .aish/plugins に置く場合（リポジトリルートを /home/user/aish_to_bin とする）
+mkdir -p .aish/plugins/playwright
+cp plugin.toml.example .aish/plugins/playwright/plugin.toml
+# .aish/plugins/playwright/plugin.toml の args を /home/user/aish_to_bin/examples/samples/external-tools/playwright-plugin/plugin.mjs に書き換える
 ```
 
-別の信頼ディレクトリを使う場合は `~/.config/aish/plugins.d/` に置いても動作します（XDG / AISH_HOME の config に依存）。
+TOML では **`enabled = true`** を明示しないとプラグインは有効にならない（deny-by-default）。
+
+### Legacy YAML を使う場合
+
+`manifest.yaml.example` は旧形式のサンプルです。同じ探索場所（`config/plugins.d` や `~/.aish/plugins.d` など）に `*.yaml` を置けば読み込まれる。YAML でも **`enabled: true`** を明示すること。
 
 ### 3. AISH (ai) の起動
 
 ```bash
 # プロジェクトルートから
-./target/debug/ai "リストのトップの見出しを教えて" -s /tmp/demo-session
+./dist/bin/ai "リストのトップの見出しを教えて" -s /tmp/demo-session
 ```
 
 プラグインが読み込まれていれば、`browser_launch` や `browser_goto` がツール一覧に現れ、LLM がそれらを呼び出せます。
@@ -67,9 +64,9 @@ EOF
 
 ## 注意
 
-- プラグインは **信頼ディレクトリ**（`~/.aish/plugins.d` または `~/.config/aish/plugins.d`）に置いた manifest からのみ有効です。プロジェクト直下の `.aish/plugins.d` は MVP では読みません。
+- プラグインは **探索ディレクトリ**（プロジェクトの `.aish/plugins`、config の `plugins` / `plugins.d`、`~/.aish/plugins.d`）に置いた manifest からのみ有効です。詳細は [docs/external-tools.md](../../../docs/external-tools.md) を参照。
 - ヘッドレスでないブラウザ（`browser_launch` で `headless: false`）は、GUI がある環境でのみ利用してください。
 
 ## 参考
 
-- [docs/external-tools.md](../../../docs/external-tools.md) - 外部ツールの仕様と manifest 形式
+- [docs/external-tools.md](../../../docs/external-tools.md) — 外部ツールの仕様、探索場所、plugin.toml 形式

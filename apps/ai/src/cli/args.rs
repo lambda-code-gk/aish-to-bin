@@ -1,4 +1,4 @@
-use crate::domain::{AiCommand, Query, QueryRetry, TaskName};
+use crate::domain::{AiCommand, Query, QueryRetry, ResolvedPromptSource, TaskName, TaskOriginInfo};
 use clap::builder::ArgAction;
 use clap::value_parser;
 use clap_complete::Shell;
@@ -39,6 +39,10 @@ pub struct Config {
     pub max_queries: Option<usize>,
     pub task: Option<TaskName>,
     pub message_args: Vec<String>,
+    /// タスク解決時に main が設定。dry-run で source 表示に利用
+    pub resolved_prompt_sources: Option<Vec<ResolvedPromptSource>>,
+    /// タスク解決時に main が設定。dry-run で task source 表示に利用
+    pub resolved_task_origin: Option<TaskOriginInfo>,
 }
 
 impl Default for Config {
@@ -63,6 +67,8 @@ impl Default for Config {
             max_queries: None,
             task: None,
             message_args: Vec::new(),
+            resolved_prompt_sources: None,
+            resolved_task_origin: None,
         }
     }
 }
@@ -255,6 +261,8 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
         max_queries: None,
         task,
         message_args,
+        resolved_prompt_sources: None,
+        resolved_task_origin: None,
     }
 }
 

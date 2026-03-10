@@ -1,0 +1,21 @@
+# AISH 外部ツールプラグイン manifest 例（Playwright）- 正式形式 TOML
+#
+# 使い方:
+#   1. このファイルを plugin.toml としてコピーし、args を実際の plugin.mjs の絶対パスに書き換える
+#   2. 配置先のいずれか:
+#      - プロジェクト: {project_root}/.aish/plugins/playwright/plugin.toml
+#      - ユーザー設定: config/plugins/playwright/plugin.toml または config/plugins.d/playwright.toml
+#      - レガシー: ~/.aish/plugins.d/playwright.toml
+#   3. 事前に npm install を実行しておく（playwright のブラウザダウンロードが発生します）
+#
+id = "playwright"
+namespace = "playwright"
+command = "node"
+args = ["/path/to/samples/external-tools/playwright-plugin/plugin.mjs"]  # 絶対パスに書き換える
+enabled = true
+
+# オプション: ポリシー補助（ツール承認モードのヒントなど）
+# [policy]
+# default_tool_mode = "require_approval"
+# capabilities_hint = ["network"]
+# notes = "Browser automation via Playwright"

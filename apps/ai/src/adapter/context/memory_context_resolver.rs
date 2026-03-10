@@ -47,20 +47,20 @@ impl MemoryContextResolver for StdMemoryContextResolver {
             });
         }
 
-        let all_kinds = vec![MemoryKind::Profile, MemoryKind::Pattern, MemoryKind::Preference];
+        let all_kinds = vec![
+            MemoryKind::Profile,
+            MemoryKind::Pattern,
+            MemoryKind::Preference,
+        ];
 
-        let project_query = MemoryQuery::new(
-            norm_project.clone(),
-            all_kinds.clone(),
-            self.total_limit,
-        );
+        let project_query =
+            MemoryQuery::new(norm_project.clone(), all_kinds.clone(), self.total_limit);
         let mut project_entries = match self.repo.query(MemoryScope::Project, &project_query) {
             Ok(v) => v,
             Err(_) => Vec::new(),
         };
 
-        let global_query =
-            MemoryQuery::new(norm_global.clone(), all_kinds, self.total_limit);
+        let global_query = MemoryQuery::new(norm_global.clone(), all_kinds, self.total_limit);
         let mut global_entries = match self.repo.query(MemoryScope::Global, &global_query) {
             Ok(v) => v,
             Err(_) => Vec::new(),
@@ -125,7 +125,13 @@ mod tests {
         }
     }
 
-    fn mk_entry(id: &str, kind: MemoryKind, topics: &[&str], summary: &str, scope: MemoryScope) -> StructuredMemoryEntry {
+    fn mk_entry(
+        id: &str,
+        kind: MemoryKind,
+        topics: &[&str],
+        summary: &str,
+        scope: MemoryScope,
+    ) -> StructuredMemoryEntry {
         StructuredMemoryEntry {
             id: id.to_string(),
             kind,
@@ -157,8 +163,7 @@ mod tests {
                 MemoryScope::Global,
             )],
         };
-        let resolver =
-            StdMemoryContextResolver::new(Arc::new(repo), 8);
+        let resolver = StdMemoryContextResolver::new(Arc::new(repo), 8);
         let ctx = resolver
             .resolve(&vec!["ci".to_string()], &vec!["workflow".to_string()])
             .unwrap();
@@ -174,11 +179,9 @@ mod tests {
             project: Vec::new(),
             global: Vec::new(),
         };
-        let resolver =
-            StdMemoryContextResolver::new(Arc::new(repo), 8);
+        let resolver = StdMemoryContextResolver::new(Arc::new(repo), 8);
         let ctx = resolver.resolve(&[], &[]).unwrap();
         assert!(ctx.entries.is_empty());
         assert!(ctx.rendered_summary.is_empty());
     }
 }
-

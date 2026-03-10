@@ -1,6 +1,6 @@
 //! dry run 時の出力用ペイロード（usecase が返し、CLI が表示する）
 
-use super::BudgetReport;
+use super::{BudgetReport, ResolvedPromptSource, TaskOriginInfo};
 use common::msg::Msg;
 
 /// dry run で LLM を呼ばずに返す情報（プロファイル・モデル・システムプロンプト・メッセージ列など）
@@ -18,4 +18,8 @@ pub struct DryRunInfo {
     pub budget_report: Option<BudgetReport>,
     /// addons 由来の attachments 数（dry-run では artifact 保存しないが件数は表示用に持つ）
     pub attachments_count: Option<usize>,
+    /// タスク解決時の出所（dry-run / debug 表示用）
+    pub task_origin: Option<TaskOriginInfo>,
+    /// 採用された prompt sources（hook / task / skill の順、dry-run 表示用）
+    pub prompt_sources: Option<Vec<ResolvedPromptSource>>,
 }

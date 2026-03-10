@@ -8,10 +8,7 @@ pub trait PackageSpecLoader: Send + Sync {
     ///
     /// - package_root/package.toml を探す
     /// - ファイルが存在しない場合や壊れている場合は Ok(None)
-    fn load_package_spec(
-        &self,
-        package_root: &Path,
-    ) -> Result<Option<PackageSpec>, Error>;
+    fn load_package_spec(&self, package_root: &Path) -> Result<Option<PackageSpec>, Error>;
 
     /// packages_root 直下の全 PackageSpec を列挙する。
     ///
@@ -19,4 +16,3 @@ pub trait PackageSpecLoader: Send + Sync {
     /// - 壊れている package.toml は warn してスキップする。
     fn list_package_specs(&self, packages_root: &Path) -> Result<Vec<PackageSpec>, Error>;
 }
-

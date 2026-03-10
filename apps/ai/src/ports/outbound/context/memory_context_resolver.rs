@@ -9,4 +9,3 @@ pub trait MemoryContextResolver: Send + Sync {
         global_topics: &[String],
     ) -> Result<ResolvedMemoryContext, Error>;
 }
-

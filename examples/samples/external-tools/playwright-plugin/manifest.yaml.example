@@ -1,8 +1,9 @@
-# AISH 外部ツールプラグイン manifest 例（Playwright）
+# [Legacy] AISH 外部ツールプラグイン manifest 例（Playwright）- 旧形式 YAML
+# 新規には plugin.toml（TOML）を推奨します。plugin.toml.example を参照してください。
 #
 # 使い方:
 #   1. このファイルをコピーし、manifest 内の path を実際の plugin.mjs の絶対パスに書き換える
-#   2. コピー先: ~/.aish/plugins.d/playwright.yaml または ~/.config/aish/plugins.d/playwright.yaml
+#   2. コピー先: 探索場所のいずれか（.aish/plugins, config/plugins, config/plugins.d, ~/.aish/plugins.d）
 #   3. 事前に npm install を実行しておく（playwright のブラウザダウンロードが発生します）
 #
 id: playwright

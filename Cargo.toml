@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
+# 現役の既定ビルド・テスト対象。experimental/* は将来スロットのため default からは外す。
 # apps/ai と apps/aish は lib のみ。バイナリ ai / aish は bins/aish-cli から生成。
 default-members = [
     "libs/common",
@@ -7,12 +8,8 @@ default-members = [
     "apps/aish",
     "bins/aish-cli",
     "libs/daemon_api",
-    "experimental/core",
     "libs/storage",
-    "experimental/capture",
-    "experimental/orchestrator",
     "libs/plugins",
-    "experimental/providers",
     "xtask",
     "tools/leakscan",
     "tools/md-fmt",

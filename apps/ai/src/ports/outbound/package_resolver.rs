@@ -15,4 +15,3 @@ pub trait PackageResolver: Send + Sync {
     #[allow(dead_code)]
     fn resolve_package(&self, name: &str) -> Result<Option<ResolvedPackage>, Error>;
 }
-

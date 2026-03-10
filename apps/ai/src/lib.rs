@@ -67,50 +67,55 @@ mod entry {
                 match cmd {
                     AiCommand::Task { name, .. } => {
                         // タスク実行時: hooks / task prompt / skills を合成し、memory_topics からメモリ要約を付与する。
-                        let sources = self
+                        let (sources, task_origin) = self
                             .app
                             .prompt_source_resolver
                             .resolve_for_task(&name, None)?;
-                        if !sources.is_empty() {
-                            let combined = sources
-                                .iter()
-                                .map(|s| s.content.as_str())
-                                .collect::<Vec<_>>()
-                                .join("\n\n");
-                            let base_trimmed = combined.trim();
-                            if !base_trimmed.is_empty() {
-                                let mut project_topics = Vec::new();
-                                for s in &sources {
-                                    for t in &s.memory_topics {
-                                        let trimmed = t.trim();
-                                        if !trimmed.is_empty() {
-                                            project_topics.push(trimmed.to_string());
+                        config.resolved_prompt_sources = Some(sources);
+                        config.resolved_task_origin = task_origin;
+                        if let Some(ref sources) = config.resolved_prompt_sources {
+                            if !sources.is_empty() {
+                                let combined = sources
+                                    .iter()
+                                    .map(|s| s.content.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join("\n\n");
+                                let base_trimmed = combined.trim();
+                                if !base_trimmed.is_empty() {
+                                    let mut project_topics = Vec::new();
+                                    for s in sources.iter() {
+                                        for t in &s.memory_topics {
+                                            let trimmed = t.trim();
+                                            if !trimmed.is_empty() {
+                                                project_topics.push(trimmed.to_string());
+                                            }
                                         }
                                     }
-                                }
-                                let global_topics: Vec<String> = Vec::new();
-                                let memory_summary = if project_topics.is_empty() {
-                                    String::new()
-                                } else {
-                                    match self
-                                        .app
-                                        .memory_context_resolver
-                                        .resolve(&project_topics, &global_topics)
-                                    {
-                                        Ok(ctx) => ctx.rendered_summary,
-                                        Err(_) => String::new(),
-                                    }
-                                };
+                                    let global_topics: Vec<String> = Vec::new();
+                                    let memory_summary = if project_topics.is_empty() {
+                                        String::new()
+                                    } else {
+                                        match self
+                                            .app
+                                            .memory_context_resolver
+                                            .resolve(&project_topics, &global_topics)
+                                        {
+                                            Ok(ctx) => ctx.rendered_summary,
+                                            Err(_) => String::new(),
+                                        }
+                                    };
 
-                                let final_system = if memory_summary.trim().is_empty() {
-                                    base_trimmed.to_string()
-                                } else {
-                                    format!("{base}\n\n{memory}",
-                                        base = base_trimmed,
-                                        memory = memory_summary.trim()
-                                    )
-                                };
-                                config.system = Some(final_system);
+                                    let final_system = if memory_summary.trim().is_empty() {
+                                        base_trimmed.to_string()
+                                    } else {
+                                        format!(
+                                            "{base}\n\n{memory}",
+                                            base = base_trimmed,
+                                            memory = memory_summary.trim()
+                                        )
+                                    };
+                                    config.system = Some(final_system);
+                                }
                             }
                         }
                     }
@@ -134,6 +139,8 @@ mod entry {
             cmd: AiCommand,
             session_dir: Option<SessionDir>,
             mode_name_for_dry_run: Option<String>,
+            resolved_task_origin: Option<crate::domain::TaskOriginInfo>,
+            resolved_prompt_sources: Option<Vec<crate::domain::ResolvedPromptSource>>,
         ) -> Result<i32, Error> {
             let (profile, model, query_opt, system_opt, tool_allowlist, mode_name) = match &cmd {
                 AiCommand::Task {
@@ -208,6 +215,8 @@ mod entry {
                 system_opt.as_deref(),
                 tool_allowlist,
                 mode_name,
+                resolved_task_origin,
+                resolved_prompt_sources,
             )?;
             Ok(0)
         }
@@ -382,6 +391,8 @@ mod entry {
             let task_for_log = config.task.clone();
             let message_args_len = config.message_args.len();
             let non_interactive = config.non_interactive;
+            let resolved_task_origin = config.resolved_task_origin.clone();
+            let resolved_prompt_sources = config.resolved_prompt_sources.clone();
             let cmd = config_to_command(config);
             let command_name = cmd_name_for_log(&cmd);
 
@@ -406,7 +417,13 @@ mod entry {
             );
 
             if dry_run {
-                return self.run_dry_run(cmd, session_dir, mode_name_for_dry_run);
+                return self.run_dry_run(
+                    cmd,
+                    session_dir,
+                    mode_name_for_dry_run,
+                    resolved_task_origin,
+                    resolved_prompt_sources,
+                );
             }
 
             let result = match cmd {

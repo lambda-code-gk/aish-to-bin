@@ -56,8 +56,9 @@ fn list_memory_entry_files(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     for entry in fs::read_dir(&entries_dir)
         .map_err(|e| Error::io_msg(format!("read_dir {}: {}", entries_dir.display(), e)))?
     {
-        let entry = entry
-            .map_err(|e| Error::io_msg(format!("read_dir entry {}: {}", entries_dir.display(), e)))?;
+        let entry = entry.map_err(|e| {
+            Error::io_msg(format!("read_dir entry {}: {}", entries_dir.display(), e))
+        })?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some("json") {
             files.push(path);
@@ -197,11 +198,8 @@ impl StructuredMemoryRepository for StdStructuredMemoryRepository {
                 }
             }
             if !normalized_topics.is_empty() {
-                let entry_topics: Vec<String> = e
-                    .topics
-                    .iter()
-                    .filter_map(|t| normalize_topic(t))
-                    .collect();
+                let entry_topics: Vec<String> =
+                    e.topics.iter().filter_map(|t| normalize_topic(t)).collect();
                 if !normalized_topics
                     .iter()
                     .any(|q| entry_topics.iter().any(|et| et == q))
@@ -243,10 +241,7 @@ impl StructuredMemoryRepository for StdStructuredMemoryRepository {
             content,
             "structured",
             entry.topics.clone(),
-            entry
-                .title
-                .clone()
-                .unwrap_or_else(|| entry.summary.clone()),
+            entry.title.clone().unwrap_or_else(|| entry.summary.clone()),
             timestamp,
         );
         let _ = memory_storage::save_entry(&dir, &mem_entry, None)?;
@@ -308,11 +303,7 @@ mod tests {
 
         repo.put(MemoryScope::Project, &entry).unwrap();
 
-        let q = MemoryQuery::new(
-            vec!["ci".to_string()],
-            vec![MemoryKind::Profile],
-            10,
-        );
+        let q = MemoryQuery::new(vec!["ci".to_string()], vec![MemoryKind::Profile], 10);
         let results = repo.query(MemoryScope::Project, &q).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].kind, MemoryKind::Profile);
@@ -353,13 +344,8 @@ mod tests {
         );
         write_raw_entry(&global_dir, &e2);
 
-        let q = MemoryQuery::new(
-            vec!["ci".to_string()],
-            vec![MemoryKind::Profile],
-            10,
-        );
+        let q = MemoryQuery::new(vec!["ci".to_string()], vec![MemoryKind::Profile], 10);
         let results = repo.query(MemoryScope::Global, &q).unwrap();
         assert!(results.is_empty());
     }
 }
-

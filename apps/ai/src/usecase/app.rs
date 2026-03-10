@@ -142,6 +142,7 @@ impl AiUseCase {
 
     /// dry run: LLM を呼ばず、採用されるプロファイル・モデル・システムプロンプト・メッセージ列・有効ツールを返す。
     /// 保存は行わない（save_user しない）。
+    /// task_origin / prompt_sources はタスク解決時に main が渡し、dry-run 表示で出所を表示するために使う。
     pub fn dry_run_query(
         &self,
         session_dir: Option<SessionDir>,
@@ -151,6 +152,8 @@ impl AiUseCase {
         system_instruction: Option<&str>,
         tool_allowlist: Option<&[String]>,
         mode_name: Option<String>,
+        task_origin: Option<crate::domain::TaskOriginInfo>,
+        prompt_sources: Option<Vec<crate::domain::ResolvedPromptSource>>,
     ) -> Result<DryRunInfo, Error> {
         let (profile_name, model_name) = self
             .deps
@@ -233,6 +236,8 @@ impl AiUseCase {
             messages,
             budget_report,
             attachments_count,
+            task_origin,
+            prompt_sources,
         })
     }
 
@@ -246,6 +251,8 @@ impl AiUseCase {
         system_instruction: Option<&str>,
         tool_allowlist: Option<&[String]>,
         mode_name: Option<String>,
+        task_origin: Option<crate::domain::TaskOriginInfo>,
+        prompt_sources: Option<Vec<crate::domain::ResolvedPromptSource>>,
     ) -> Result<(), Error> {
         let info = self.dry_run_query(
             session_dir,
@@ -255,6 +262,8 @@ impl AiUseCase {
             system_instruction,
             tool_allowlist,
             mode_name,
+            task_origin,
+            prompt_sources,
         )?;
         self.deps.dry_run_report_sink.report(&info)?;
         Ok(())

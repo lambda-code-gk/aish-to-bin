@@ -11,17 +11,11 @@ pub struct StdPackageResolver {
 }
 
 impl StdPackageResolver {
-    pub fn new(
-        catalog: Arc<dyn RuntimeCatalog>,
-        loader: Arc<dyn PackageSpecLoader>,
-    ) -> Self {
+    pub fn new(catalog: Arc<dyn RuntimeCatalog>, loader: Arc<dyn PackageSpecLoader>) -> Self {
         Self { catalog, loader }
     }
 
-    fn list_for_location(
-        &self,
-        loc: &CatalogLocation,
-    ) -> Result<Vec<ResolvedPackage>, Error> {
+    fn list_for_location(&self, loc: &CatalogLocation) -> Result<Vec<ResolvedPackage>, Error> {
         let specs = self.loader.list_package_specs(&loc.path)?;
         let mut out = Vec::with_capacity(specs.len());
         for spec in specs {
@@ -102,10 +96,7 @@ mod tests {
     }
 
     impl RuntimeCatalog for StubCatalog {
-        fn locations(
-            &self,
-            kind: CatalogKind,
-        ) -> Result<Vec<CatalogLocation>, Error> {
+        fn locations(&self, kind: CatalogKind) -> Result<Vec<CatalogLocation>, Error> {
             if kind == CatalogKind::Packages {
                 Ok(self.locations.clone())
             } else {
@@ -124,10 +115,8 @@ mod tests {
             version: None,
             description: None,
             root_dir: root.clone(),
-            default_task: None,
             system_hook: None,
             memory_topics: Vec::new(),
-            compat_aish: None,
         }
     }
 
@@ -138,7 +127,10 @@ mod tests {
         let specs1 = vec![mk_spec("pkg1", &root1)];
         let specs2 = vec![mk_spec("pkg2", &root2)];
         let loader = StubLoader {
-            specs_by_root: vec![(root1.clone(), specs1.clone()), (root2.clone(), specs2.clone())],
+            specs_by_root: vec![
+                (root1.clone(), specs1.clone()),
+                (root2.clone(), specs2.clone()),
+            ],
         };
         let catalog = StubCatalog {
             locations: vec![
@@ -154,10 +146,7 @@ mod tests {
                 },
             ],
         };
-        let resolver = StdPackageResolver::new(
-            Arc::new(catalog),
-            Arc::new(loader),
-        );
+        let resolver = StdPackageResolver::new(Arc::new(catalog), Arc::new(loader));
         let pkgs = resolver.list_packages().unwrap();
         assert_eq!(pkgs.len(), 2);
         assert_eq!(pkgs[0].spec.name, "pkg1");
@@ -173,7 +162,10 @@ mod tests {
         let specs1 = vec![mk_spec("ci-investigator", &root1)];
         let specs2 = vec![mk_spec("ci-investigator", &root2)];
         let loader = StubLoader {
-            specs_by_root: vec![(root1.clone(), specs1.clone()), (root2.clone(), specs2.clone())],
+            specs_by_root: vec![
+                (root1.clone(), specs1.clone()),
+                (root2.clone(), specs2.clone()),
+            ],
         };
         let catalog = StubCatalog {
             locations: vec![
@@ -189,10 +181,7 @@ mod tests {
                 },
             ],
         };
-        let resolver = StdPackageResolver::new(
-            Arc::new(catalog),
-            Arc::new(loader),
-        );
+        let resolver = StdPackageResolver::new(Arc::new(catalog), Arc::new(loader));
         let pkg = resolver
             .resolve_package("ci-investigator")
             .unwrap()
@@ -201,4 +190,3 @@ mod tests {
         assert_eq!(pkg.scope, CatalogScope::Project);
     }
 }
-

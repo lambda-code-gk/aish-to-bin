@@ -14,6 +14,7 @@ mod context_pack_builder_tests;
 mod context_sensitive_filter_tests;
 mod leakscan_text_filter_tests;
 mod manifest_reviewed_session_storage_tests;
+mod package_e2e_tests;
 mod policy_engine_egress_tests;
 mod policy_engine_tool_tests;
 mod policy_explain_provider_tests;
