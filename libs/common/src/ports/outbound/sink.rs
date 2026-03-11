@@ -11,6 +11,12 @@ use serde_json::Value;
 pub enum AgentEvent {
     /// LLM ストリーム由来
     Llm(LlmEvent),
+    /// ツール実行開始（実行前に args を表示したい場合など）
+    ToolCall {
+        call_id: String,
+        name: String,
+        args: Value,
+    },
     /// ツール実行結果
     ToolResult {
         call_id: String,

@@ -15,6 +15,36 @@ fn profile_with_exec_allowlist(tool_name: &str, allowlist: &[&str], mode: ToolMo
 }
 
 #[test]
+fn replace_file_prompt_shows_path_and_change_preview() {
+    let rule = ToolModeRule;
+    let profile = profile_with_exec_allowlist("replace_file", &[], ToolMode::RequireApproval);
+    let tool_ctx = ToolContext::new(None);
+
+    let tool_args = serde_json::json!({
+        "path": "/workspace/src/main.rs",
+        "old_block": "fn old() { println!(\"old\"); }",
+        "new_block": "fn new() { println!(\"new\"); }",
+    });
+
+    let verdict = rule
+        .evaluate("replace_file", &tool_args, &profile, &tool_ctx, false)
+        .expect("evaluate should succeed");
+
+    match verdict {
+        RuleVerdict::Verdict(PolicyVerdict::RequireApproval { prompt, .. }) => {
+            // パスと old/new の概要が含まれていること
+            assert!(prompt.contains("replace_file"));
+            assert!(prompt.contains("/workspace/src/main.rs"));
+            assert!(prompt.contains("old:["));
+            assert!(prompt.contains("-> new:["));
+            // 長くなりすぎていないこと（上限+suffix 程度）
+            assert!(prompt.chars().count() <= 200 + "...(truncated)".chars().count());
+        }
+        _ => panic!("expected RequireApproval for replace_file"),
+    }
+}
+
+#[test]
 fn tool_summary_preview_panics_on_utf8_when_truncating_by_bytes() {
     // 目的:
     // - 以前の実装(summary[..200])だと必ずpanicする入力を作る

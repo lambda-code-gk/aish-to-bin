@@ -677,6 +677,13 @@ impl QueryLoop {
                     }
                 };
 
+                // Sink へ「これからツールを実行する」イベントを通知（表示用）
+                self.emit(&AgentEvent::ToolCall {
+                    call_id: call_id.clone(),
+                    name: name.clone(),
+                    args: args.clone(),
+                })?;
+
                 // events.jsonl: tool call started（巨大 args は artifacts 参照）
                 {
                     let mut payload = serde_json::Map::new();

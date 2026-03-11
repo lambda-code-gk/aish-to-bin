@@ -28,6 +28,35 @@ fn truncate_chars(s: &str, max_chars: usize) -> String {
 }
 
 fn tool_summary_preview(tool_name: &str, tool_args: &serde_json::Value) -> String {
+    // replace_file は Approval 時に「どのファイルをどう変えるか」が分かることが重要なので、
+    // path / old_block / new_block を短く要約して表示する。
+    if tool_name == "replace_file" {
+        let path = tool_args
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let old_block = tool_args
+            .get("old_block")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        let new_block = tool_args
+            .get("new_block")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+
+        let path_preview = truncate_chars(path, 80);
+        let old_first = old_block.lines().next().unwrap_or("");
+        let new_first = new_block.lines().next().unwrap_or("");
+        let old_preview = truncate_chars(old_first, 40);
+        let new_preview = truncate_chars(new_first, 40);
+
+        let summary = format!(
+            "replace_file path={} old:[{}] -> new:[{}]",
+            path_preview, old_preview, new_preview
+        );
+        return truncate_chars(&summary, TOOL_SUMMARY_MAX_CHARS);
+    }
+
     let args_str = serde_json::to_string(tool_args).unwrap_or_else(|_| "{}".to_string());
     let summary = format!("{} {}", tool_name, args_str);
 

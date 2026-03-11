@@ -184,9 +184,7 @@ impl EventSink for FilteringStdoutSink {
                     );
                 }
             }
-            AgentEvent::ToolResult {
-                name, args, result, ..
-            } => {
+            AgentEvent::ToolCall { name, args, .. } => {
                 let args_str = args.to_string();
                 let args_display = if args_str.len() > MAX_ARGS_DISPLAY {
                     format!(
@@ -197,6 +195,13 @@ impl EventSink for FilteringStdoutSink {
                     args_str
                 };
                 eprintln!("{}Tool {} args: {}{}", DARK_GREY, name, args_display, RESET);
+            }
+            AgentEvent::ToolResult {
+                name: _,
+                args: _,
+                result,
+                ..
+            } => {
                 if self.verbose {
                     let result_str = result.to_string();
                     let snippet = if result_str.len() > 200 {
@@ -373,19 +378,12 @@ impl EventSink for StdoutSink {
                 }
             }
             AgentEvent::ToolResult {
-                name, args, result, ..
+                name: _,
+                args: _,
+                result,
+                ..
             } => {
                 self.close_reasoning_block_if_open()?;
-                let args_str = args.to_string();
-                let args_display = if args_str.len() > MAX_ARGS_DISPLAY {
-                    format!(
-                        "{}...",
-                        &args_str[..args_str.floor_char_boundary(MAX_ARGS_DISPLAY)]
-                    )
-                } else {
-                    args_str
-                };
-                eprintln!("{}Tool {} args: {}{}", DARK_GREY, name, args_display, RESET);
                 if self.verbose {
                     let result_str = result.to_string();
                     let snippet = if result_str.len() > 200 {
@@ -421,6 +419,9 @@ impl EventSink for StdoutSink {
                     "{}Tool {} args: {} failed: {}{}",
                     DARK_GREY, name, args_display, msg_display, RESET
                 );
+            }
+            AgentEvent::ToolCall { .. } => {
+                // ToolCall は FilteringStdoutSink 側で表示する（ここでは特別な処理なし）
             }
         }
         Ok(())
