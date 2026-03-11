@@ -23,7 +23,7 @@ out/
 # Dev sandbox (runtime data isolated for development)
 .sandbox/
 .aish
-.cursor
+.cursor/*.log
 tmp
 
 # Runtime artifacts (legacy dev layout)

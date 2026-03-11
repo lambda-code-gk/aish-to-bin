@@ -73,6 +73,14 @@ usecase モジュール（`apps/ai/src/usecase/`, `apps/aish/src/usecase/`）で
 - [ ] **usecase が cli や wiring に依存していないか？**（`use crate::cli` / `use crate::wiring` が usecase に無いこと）
 - [ ] **adapter の new / 生成は wiring にだけあるか？**（main や usecase から adapter を `new` していないこと）
 - [ ] **main は「parse_args → wire → Runner.run」以外のロジックを持っていないか？**
+- [ ] **編集したファイルに冒頭の責務一行がある場合、それに反していないか？**（確認時は `.cursor/skills/check-responsibility/SKILL.md` の手順に従う）
+
+### 6. 責務の一行と確認
+
+- **各ソースの冒頭に責務を一行で書く**  
+  そのモジュールが「何のみを行い、何をしないか」を一行で明示する。Rust では `//! 責務: …` のモジュール doc をファイル先頭に置く。境界が重要な adapter（policy・usecase 等）から順に揃える。責務を記述する際は、**SRP（単一責任の原則）**・**関心の分離**・**Ports and Adapters** 等の原理原則を考慮する。
+- **変更後は責務違反がないか確認する**  
+  冒頭に責務の一行があるファイルを編集したら、プロジェクトの SKILL「check-responsibility」（`.cursor/skills/check-responsibility/SKILL.md`）の手順で、コードがその責務に反していないか確認する。AGENTS.md を読まないモデルでも、この SKILL を参照すれば確認手順が同じになる。
 
 ---
 
@@ -144,6 +152,8 @@ usecase モジュール（`apps/ai/src/usecase/`, `apps/aish/src/usecase/`）で
 
 ## 更新履歴
 
+- **2026年3月**: 責務記述の際に SRP・関心の分離・Ports and Adapters 等の原理原則を考慮する旨を「責務の一行と確認」に追記。
+- **2026年3月**: 責務の一行（ファイル冒頭）と SKILL（check-responsibility）による確認手順を追加。実装時チェックリストに「冒頭の責務に反していないか」を追加。
 - **2026年3月**: 文字列切り詰めの UTF-8 文字境界ルールを追加（`truncate_str` 等でバイトスライスが多バイト文字の途中で切れてパニックになる事象を踏まえ）。エラー修正時は AGENTS.md を更新して同様の失敗を防ぐことを必須確認に追加。セッションディレクトリ構造変更時の migrations 運用ルールと、互換性は shell migrations で担保し Rust 側は最新スキーマのみを扱う方針を明文化。
 - **2026年3月**: `evolve` のように task から `ai` をネスト実行する場合は、下位 `ai` の失敗ログを正常な LLM 応答としてパースしないルールを追加。`tee` 使用時も元コマンドの終了コードを保持し、失敗時は即時エラーにする。
 - **2026年2月**: common の port & adapter 整理。adapter から port の re-export を削除し、usecase は `common::ports::outbound` から trait を参照。StdIdGenerator を adapter に移動。Tool / LlmProvider が ports 外に定義されている理由を明記。

@@ -1,0 +1,13 @@
+---
+description: 各ソースの冒頭に責務を一行で書く。責務があるファイルを編集したら check-responsibility スキルで違反がないか確認する。
+alwaysApply: true
+---
+
+# 責務の一行と確認
+
+- **新規・修正するソースには、冒頭にそのモジュールの責務を一行で書く。**  
+  Rust では `//! 責務: ○○のみを行う。××は知らない。` のようにモジュール doc で書く。境界が重要な adapter（policy・usecase 等）から優先して揃える。
+- **冒頭に責務の一行があるファイルを編集したら、責務違反がないか確認する。**  
+  プロジェクトの SKILL「check-responsibility」（`.cursor/skills/check-responsibility/SKILL.md`）の手順に従い、コードがその責務に反していないか確認する。違反があれば port への委譲や別モジュールへの移動で修正する。
+
+詳細は AGENTS.md の「責務の一行と確認」セクションを参照。
