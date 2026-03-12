@@ -62,7 +62,10 @@ mod tests {
 
     #[test]
     fn assemble_orders_sources_according_to_aish_rules() {
-        let hooks = vec![mk("hook1", PromptSourceKind::Hook), mk("hook2", PromptSourceKind::Hook)];
+        let hooks = vec![
+            mk("hook1", PromptSourceKind::Hook),
+            mk("hook2", PromptSourceKind::Hook),
+        ];
         let package_hook = Some(mk("pkg", PromptSourceKind::Hook));
         let task_prompt = Some(mk("task", PromptSourceKind::TaskPrompt));
         let skills = vec![
@@ -98,4 +101,3 @@ mod tests {
         assert_eq!(names, vec!["skill_only".to_string()]);
     }
 }
-

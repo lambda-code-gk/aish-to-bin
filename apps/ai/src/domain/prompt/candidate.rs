@@ -78,4 +78,3 @@ mod tests {
         assert_eq!(resolved.provenance, back.provenance);
     }
 }
-

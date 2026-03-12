@@ -6,9 +6,9 @@
 #![allow(dead_code)]
 
 use crate::domain::{
-    addon_insertion_index, select_addons_within_budget, Budget, BudgetDecision, BudgetReport,
-    BudgetStats, ContextAddon, ContextBudget, ContextPack, HistoryReducer, Query,
-    SensitiveFilterOutcome,
+    apply_sensitive_outcome_to_addon, assemble_context_with_addons, build_budget_report,
+    select_addons_within_budget, BudgetDecision, ContextAddon, ContextAssemblyPlan, ContextBudget,
+    ContextPack, HistoryPackDecision, HistoryReducer, Query, SensitiveCheckResult,
 };
 use crate::ports::outbound::{
     ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
@@ -19,30 +19,6 @@ use common::llm::provider::Message as LlmMessage;
 use common::msg::Msg;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-/// LlmMessage の概算文字数（監査用。tool_calls / tool_call_id / tool_name を含む）
-fn approx_char_count_llm(m: &LlmMessage) -> usize {
-    let mut n = m.content.len();
-    if let Some(ref tcs) = m.tool_calls {
-        for tc in tcs {
-            n += tc.name.len();
-            n += serde_json::to_string(&tc.args)
-                .map(|s| s.len())
-                .unwrap_or(0);
-        }
-    }
-    if let Some(ref s) = m.tool_call_id {
-        n += s.len();
-    }
-    if let Some(ref s) = m.tool_name {
-        n += s.len();
-    }
-    n
-}
-
-fn count_chars_llm_messages(messages: &[LlmMessage]) -> usize {
-    messages.iter().map(approx_char_count_llm).sum()
-}
 
 fn history_to_msgs(messages: &[LlmMessage]) -> Vec<Msg> {
     let mut msgs = Vec::with_capacity(messages.len());
@@ -111,52 +87,52 @@ impl ContextPackBuilder for StdContextPackBuilder {
             history.to_vec()
         };
 
-        let input_count = all_messages.len();
-        let input_chars = count_chars_llm_messages(&all_messages);
-
-        let reduced = self.reducer.reduce(&all_messages, self.budget);
-        let output_count = reduced.len();
-        let output_chars = count_chars_llm_messages(&reduced);
-
-        let action = if output_count == input_count {
-            "keep"
-        } else {
-            "truncate"
-        };
         let mut msgs = Vec::new();
         if let Some(s) = system_instruction {
             msgs.push(Msg::system(s));
         }
-        msgs.extend(history_to_msgs(&reduced));
+        let reduced = self.reducer.reduce(&all_messages, self.budget);
+        let internal_msgs_count = msgs.len() + reduced.len();
+        let HistoryPackDecision {
+            reduced_messages,
+            decisions,
+            input_count,
+            input_chars,
+            output_count,
+            output_chars,
+        } = crate::domain::decide_history_pack(
+            &all_messages,
+            reduced,
+            |m| {
+                let mut n = m.content.len();
+                if let Some(ref tcs) = m.tool_calls {
+                    for tc in tcs {
+                        n += tc.name.len();
+                        n += serde_json::to_string(&tc.args)
+                            .map(|s| s.len())
+                            .unwrap_or(0);
+                    }
+                }
+                if let Some(ref s) = m.tool_call_id {
+                    n += s.len();
+                }
+                if let Some(ref s) = m.tool_name {
+                    n += s.len();
+                }
+                n
+            },
+            Some(internal_msgs_count),
+        );
 
-        let internal_msgs_count = msgs.len();
-        let budget_report = BudgetReport {
-            v: 1,
-            budget: Budget {
-                max_messages: self.budget.max_messages,
-                max_chars: self.budget.max_chars,
-            },
-            input: BudgetStats {
-                message_count: input_count,
-                char_count: input_chars,
-            },
-            output: BudgetStats {
-                message_count: output_count,
-                char_count: output_chars,
-            },
-            decisions: vec![BudgetDecision {
-                stage: "history.reduce".to_string(),
-                action: action.to_string(),
-                reason: "history_reducer".to_string(),
-                details: serde_json::json!({
-                    "input_messages": input_count,
-                    "output_messages": output_count,
-                    "input_chars": input_chars,
-                    "output_chars": output_chars,
-                    "internal_msgs_count": internal_msgs_count,
-                }),
-            }],
-        };
+        msgs.extend(history_to_msgs(&reduced_messages));
+        let budget_report = build_budget_report(
+            self.budget,
+            input_count,
+            input_chars,
+            output_count,
+            output_chars,
+            decisions,
+        );
 
         Ok(ContextPack {
             v: 1,
@@ -165,20 +141,6 @@ impl ContextPackBuilder for StdContextPackBuilder {
             budget_report,
         })
     }
-}
-
-fn msg_char_len(msg: &Msg) -> usize {
-    match msg {
-        Msg::System(s) | Msg::User(s) | Msg::Assistant(s) => s.len(),
-        Msg::ToolCall { args, .. } => serde_json::to_string(args).map(|s| s.len()).unwrap_or(0),
-        Msg::ToolResult { result, .. } => {
-            serde_json::to_string(result).map(|s| s.len()).unwrap_or(0)
-        }
-    }
-}
-
-fn msgs_char_total(msgs: &[Msg]) -> usize {
-    msgs.iter().map(msg_char_len).sum()
 }
 
 /// Addons/selectors 対応の ContextPackBuilder（テスト・将来拡張用）
@@ -262,9 +224,6 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
             history.to_vec()
         };
 
-        let input_count = all_messages.len();
-        let input_chars = count_chars_llm(&all_messages);
-
         let history_budget = ContextBudget {
             max_messages: self
                 .budget
@@ -277,31 +236,22 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
         };
         let reduced = self.reducer.reduce(&all_messages, history_budget);
 
-        let output_count = reduced.len();
-        let output_chars = count_chars_llm(&reduced);
-
-        let history_action = if output_count == input_count {
-            "keep"
-        } else {
-            "truncate"
-        };
-        decisions.push(BudgetDecision {
-            stage: "history.reduce".to_string(),
-            action: history_action.to_string(),
-            reason: "history_reducer".to_string(),
-            details: serde_json::json!({
-                "input_messages": input_count,
-                "output_messages": output_count,
-                "input_chars": input_chars,
-                "output_chars": output_chars,
-            }),
-        });
-
         let mut msgs = Vec::new();
         if let Some(s) = system_instruction {
             msgs.push(Msg::system(s));
         }
-        msgs.extend(history_to_msgs(&reduced));
+        let HistoryPackDecision {
+            reduced_messages,
+            decisions: history_decisions,
+            input_count,
+            input_chars,
+            output_count: _,
+            output_chars: _,
+        } = crate::domain::decide_history_pack(&all_messages, reduced, |m| m.content.len(), None);
+
+        decisions.extend(history_decisions);
+
+        msgs.extend(history_to_msgs(&reduced_messages));
 
         // --- Phase 2: collect addons from selectors ---
         let addon_input = ContextAddonInput {
@@ -331,146 +281,46 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
         // --- Phase 2.5: sensitive filter on addon candidates ---
         if let Some(ref filter) = self.sensitive_filter {
             let mut filtered = Vec::with_capacity(candidates.len());
-            for mut addon in candidates {
-                let mut denied = false;
-                if let Some(text) = msg_text_content(&addon.msg) {
-                    match filter.filter(text) {
-                        Ok(SensitiveFilterOutcome::Clean) => {}
-                        Ok(SensitiveFilterOutcome::Hit { verbose }) => {
-                            decisions.push(BudgetDecision {
-                                stage: "addon.sensitive".to_string(),
-                                action: "allow".to_string(),
-                                reason: "leakscan".to_string(),
-                                details: serde_json::json!({
-                                    "addon_id": addon.id,
-                                    "kind": addon.kind,
-                                    "target": "msg",
-                                    "verbose": truncate_verbose(&verbose, 2000),
-                                }),
-                            });
-                        }
-                        Ok(SensitiveFilterOutcome::Deny { verbose }) => {
-                            decisions.push(BudgetDecision {
-                                stage: "addon.sensitive".to_string(),
-                                action: "deny".to_string(),
-                                reason: "leakscan".to_string(),
-                                details: serde_json::json!({
-                                    "addon_id": addon.id,
-                                    "kind": addon.kind,
-                                    "target": "msg",
-                                    "verbose": truncate_verbose(&verbose, 2000),
-                                }),
-                            });
-                            denied = true;
-                        }
-                        Ok(SensitiveFilterOutcome::Masked { masked, verbose }) => {
-                            decisions.push(BudgetDecision {
-                                stage: "addon.sensitive".to_string(),
-                                action: "mask".to_string(),
-                                reason: "leakscan".to_string(),
-                                details: serde_json::json!({
-                                    "addon_id": addon.id,
-                                    "kind": addon.kind,
-                                    "target": "msg",
-                                    "verbose": truncate_verbose(&verbose, 2000),
-                                }),
-                            });
-                            addon.msg = replace_msg_text(&addon.msg, masked);
-                        }
-                        Err(e) => {
-                            decisions.push(BudgetDecision {
-                                stage: "addon.sensitive".to_string(),
-                                action: "deny".to_string(),
-                                reason: "leakscan_error".to_string(),
-                                details: serde_json::json!({
-                                    "addon_id": addon.id,
-                                    "kind": addon.kind,
-                                    "target": "msg",
-                                    "verbose": truncate_verbose(&e.to_string(), 2000),
-                                }),
-                            });
-                            denied = true;
-                        }
-                    }
+            for addon in candidates {
+                let msg_result = match msg_text_content(&addon.msg) {
+                    Some(text) => match filter.filter(text) {
+                        Ok(outcome) => SensitiveCheckResult::Ok(outcome),
+                        Err(e) => SensitiveCheckResult::Err(e.to_string()),
+                    },
+                    None => SensitiveCheckResult::NotChecked,
+                };
+
+                let att_result = match addon.attachment.as_ref().and_then(|a| a.content.as_ref()) {
+                    Some(content) => match filter.filter(content) {
+                        Ok(outcome) => SensitiveCheckResult::Ok(outcome),
+                        Err(e) => SensitiveCheckResult::Err(e.to_string()),
+                    },
+                    None => SensitiveCheckResult::NotChecked,
+                };
+
+                let (maybe_addon, addon_decisions) =
+                    apply_sensitive_outcome_to_addon(addon, msg_result, att_result, 2000);
+                decisions.extend(addon_decisions);
+                if let Some(addon) = maybe_addon {
+                    filtered.push(addon);
                 }
-                if denied {
-                    continue;
-                }
-                if let Some(ref att) = addon.attachment {
-                    if let Some(ref content) = att.content {
-                        match filter.filter(content) {
-                            Ok(SensitiveFilterOutcome::Clean) => {}
-                            Ok(SensitiveFilterOutcome::Hit { verbose }) => {
-                                decisions.push(BudgetDecision {
-                                    stage: "addon.sensitive".to_string(),
-                                    action: "allow".to_string(),
-                                    reason: "leakscan".to_string(),
-                                    details: serde_json::json!({
-                                        "addon_id": addon.id,
-                                        "kind": addon.kind,
-                                        "target": "attachment",
-                                        "verbose": truncate_verbose(&verbose, 2000),
-                                    }),
-                                });
-                            }
-                            Ok(SensitiveFilterOutcome::Deny { verbose }) => {
-                                decisions.push(BudgetDecision {
-                                    stage: "addon.sensitive".to_string(),
-                                    action: "deny".to_string(),
-                                    reason: "leakscan".to_string(),
-                                    details: serde_json::json!({
-                                        "addon_id": addon.id,
-                                        "kind": addon.kind,
-                                        "target": "attachment",
-                                        "verbose": truncate_verbose(&verbose, 2000),
-                                    }),
-                                });
-                                continue;
-                            }
-                            Ok(SensitiveFilterOutcome::Masked { masked, verbose }) => {
-                                decisions.push(BudgetDecision {
-                                    stage: "addon.sensitive".to_string(),
-                                    action: "mask".to_string(),
-                                    reason: "leakscan".to_string(),
-                                    details: serde_json::json!({
-                                        "addon_id": addon.id,
-                                        "kind": addon.kind,
-                                        "target": "attachment",
-                                        "verbose": truncate_verbose(&verbose, 2000),
-                                    }),
-                                });
-                                let new_hash = crate::domain::hash64(&masked);
-                                let new_bytes = masked.len() as u64;
-                                let mut new_att = att.clone();
-                                new_att.content = Some(masked);
-                                new_att.bytes = new_bytes;
-                                new_att.hash64 = new_hash;
-                                addon.attachment = Some(new_att);
-                            }
-                            Err(e) => {
-                                decisions.push(BudgetDecision {
-                                    stage: "addon.sensitive".to_string(),
-                                    action: "deny".to_string(),
-                                    reason: "leakscan_error".to_string(),
-                                    details: serde_json::json!({
-                                        "addon_id": addon.id,
-                                        "kind": addon.kind,
-                                        "target": "attachment",
-                                        "verbose": truncate_verbose(&e.to_string(), 2000),
-                                    }),
-                                });
-                                continue;
-                            }
-                        }
-                    }
-                }
-                filtered.push(addon);
             }
             candidates = filtered;
         }
 
         // --- Phase 3: budget-fit addons (domain pure function) ---
-        let baseline_chars = msgs_char_total(&msgs);
+        let baseline_chars = msgs
+            .iter()
+            .map(|msg| match msg {
+                Msg::System(s) | Msg::User(s) | Msg::Assistant(s) => s.len(),
+                Msg::ToolCall { args, .. } => {
+                    serde_json::to_string(args).map(|s| s.len()).unwrap_or(0)
+                }
+                Msg::ToolResult { result, .. } => {
+                    serde_json::to_string(result).map(|s| s.len()).unwrap_or(0)
+                }
+            })
+            .sum();
         let baseline_count = msgs.len();
 
         let alloc = select_addons_within_budget(
@@ -482,45 +332,39 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
         );
         decisions.extend(alloc.decisions);
 
-        let mut attachments = Vec::new();
-        for addon in &alloc.accepted {
-            if let Some(ref att) = addon.attachment {
-                attachments.push(att.clone());
-            }
-        }
-
-        // --- Phase 4: insert addon messages (domain pure function) ---
-        if !alloc.accepted.is_empty() {
-            let addon_msgs: Vec<Msg> = alloc.accepted.iter().map(|a| a.msg.clone()).collect();
-            let insert_pos = addon_insertion_index(&msgs, query.is_some());
-            for (i, m) in addon_msgs.into_iter().enumerate() {
-                msgs.insert(insert_pos + i, m);
-            }
-        }
-
-        let final_count = msgs.len();
-        let final_chars = msgs_char_total(&msgs);
-
-        let budget_report = BudgetReport {
-            v: 1,
-            budget: Budget {
-                max_messages: self.budget.max_messages,
-                max_chars: self.budget.max_chars,
-            },
-            input: BudgetStats {
-                message_count: input_count,
-                char_count: input_chars,
-            },
-            output: BudgetStats {
-                message_count: final_count,
-                char_count: final_chars,
-            },
+        // --- Phase 4: assemble final context (messages + attachments + decisions) ---
+        let ContextAssemblyPlan {
+            messages,
+            attachments,
             decisions,
-        };
+        } = assemble_context_with_addons(msgs, alloc.accepted, query.is_some(), decisions);
+
+        let final_count = messages.len();
+        let final_chars: usize = messages
+            .iter()
+            .map(|msg| match msg {
+                Msg::System(s) | Msg::User(s) | Msg::Assistant(s) => s.len(),
+                Msg::ToolCall { args, .. } => {
+                    serde_json::to_string(args).map(|s| s.len()).unwrap_or(0)
+                }
+                Msg::ToolResult { result, .. } => {
+                    serde_json::to_string(result).map(|s| s.len()).unwrap_or(0)
+                }
+            })
+            .sum();
+
+        let budget_report = build_budget_report(
+            self.budget,
+            input_count,
+            input_chars,
+            final_count,
+            final_chars,
+            decisions,
+        );
 
         Ok(ContextPack {
             v: 1,
-            messages: msgs,
+            messages,
             attachments,
             budget_report,
         })

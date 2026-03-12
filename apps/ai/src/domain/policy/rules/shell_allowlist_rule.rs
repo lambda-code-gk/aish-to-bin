@@ -1,7 +1,7 @@
 //! 責務: shell 実行ツール用の allowlist 規約に基づき、Allow / RequireApproval / Deny を決める純粋な Rule 実装。I/O を持たない。
 
 use crate::domain::{
-    is_shell_command_allowed, truncate_chars, PolicyVerdict, RuleVerdict, ToolCapability, ToolMode,
+    is_shell_command_allowed, truncate_chars, PolicyVerdict, RuleVerdict, ToolCapability,
     ToolPolicyRule, ToolProfile,
 };
 use common::error::Error;
@@ -85,7 +85,7 @@ impl ToolPolicyRule for ShellAllowlistRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{PolicyVerdict, RuleVerdict, ToolPolicyRule};
+    use crate::domain::{PolicyVerdict, RuleVerdict, ToolMode, ToolPolicyRule};
     use common::tool::CommandAllowRule;
 
     fn profile_with_exec_allowlist(
@@ -161,4 +161,3 @@ mod tests {
         }
     }
 }
-

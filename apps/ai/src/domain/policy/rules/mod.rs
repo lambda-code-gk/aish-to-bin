@@ -22,4 +22,3 @@ fn base_decision(scope: &str, subject: &str, status: &str, reason: &str) -> Poli
 
 /// tool 要約などで使う文字数上限。
 pub const TOOL_SUMMARY_MAX_CHARS: usize = 200;
-
