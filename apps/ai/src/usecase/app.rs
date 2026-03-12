@@ -811,10 +811,7 @@ impl AiUseCase {
             }
         };
 
-        const DEFAULT_MAX_TURNS: usize = 16;
-        const DEFAULT_MAX_QUERIES_ACT: usize = 2;
-        const DEFAULT_MAX_QUERIES_PLAN: usize = 1;
-        let max_turns = max_turns_override.unwrap_or(DEFAULT_MAX_TURNS);
+        let max_turns = max_turns_override.unwrap_or(crate::domain::DEFAULT_MAX_TURNS);
         let max_tool_calls = self
             .deps
             .policy
@@ -822,10 +819,7 @@ impl AiUseCase {
             .ai_max_tool_calls()
             .unwrap_or_else(|| max_turns.saturating_mul(4));
         let query_retry = query_retry.unwrap_or(QueryRetry::Act);
-        let default_max_queries = match query_retry {
-            QueryRetry::Plan => DEFAULT_MAX_QUERIES_PLAN,
-            QueryRetry::Act | QueryRetry::Auto => DEFAULT_MAX_QUERIES_ACT,
-        };
+        let dmq = crate::domain::default_max_queries(query_retry);
         let max_queries = if let Some(override_) = max_queries_override {
             override_
         } else {
@@ -833,7 +827,7 @@ impl AiUseCase {
                 .policy
                 .env_resolver
                 .ai_max_queries()
-                .unwrap_or(default_max_queries)
+                .unwrap_or(dmq)
         };
 
         if let Some(ref hub) = event_hub {

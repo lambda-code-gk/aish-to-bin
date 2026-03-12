@@ -1,3 +1,6 @@
+use crate::domain::{
+    default_followup, looks_like_command_block, looks_like_question_or_need_user_input,
+};
 use common::error::Error;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -33,7 +36,7 @@ impl AgentJudge for PlanJudge {
     }
 }
 
-// --- HeuristicJudge（言語非依存、形状ベース）
+// --- HeuristicJudge（判定ロジックは domain::query::completion_heuristic に委譲）
 
 pub struct HeuristicJudge;
 
@@ -45,7 +48,6 @@ impl HeuristicJudge {
 
 impl AgentJudge for HeuristicJudge {
     fn judge(&self, input: &AgentJudgeInput) -> Result<AgentVerdict, Error> {
-        // ツールが動いているなら基本 Done
         if input.tool_delta > 0 {
             return Ok(AgentVerdict::Done);
         }
@@ -53,11 +55,9 @@ impl AgentJudge for HeuristicJudge {
         if t.is_empty() {
             return Ok(AgentVerdict::Done);
         }
-        // 質問/入力待ちっぽいなら retry しない
         if looks_like_question_or_need_user_input(t) {
             return Ok(AgentVerdict::NeedUserInput);
         }
-        // 形状が「手順/コマンド提示で止まった」なら retry
         if looks_like_command_block(t) {
             return Ok(AgentVerdict::Retry {
                 followup: default_followup(),
@@ -65,78 +65,6 @@ impl AgentJudge for HeuristicJudge {
         }
         Ok(AgentVerdict::Done)
     }
-}
-
-fn default_followup() -> String {
-    let marker = "[AISH_INTERNAL] retry_for_completion_v1";
-    format!(
-        "{marker}\nobjective: complete the user's request end-to-end\nrequirements:\n  - do not stop at suggested commands only\n  - prefer using tools to execute and verify\n  - if critical information is missing, ask exactly one clarification question\n"
-    )
-}
-
-fn strip_fenced_code_blocks(s: &str) -> String {
-    let mut out = String::new();
-    let mut in_fence = false;
-    for line in s.lines() {
-        let l = line.trim_start();
-        if l.starts_with("```") || l.starts_with("~~~") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if !in_fence {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    out
-}
-
-fn last_non_empty_line(s: &str) -> Option<&str> {
-    s.lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim())
-}
-
-fn looks_like_question_or_need_user_input(assistant_text: &str) -> bool {
-    let outside = strip_fenced_code_blocks(assistant_text);
-    let last = match last_non_empty_line(&outside) {
-        Some(l) => l,
-        None => return false,
-    };
-    if last.ends_with('?') || last.ends_with('？') {
-        return true;
-    }
-    if last.ends_with(':') || last.ends_with('：') {
-        let core = last.trim_end_matches(|c| c == ':' || c == '：').trim();
-        if !core.is_empty()
-            && core.chars().count() <= 24
-            && !core.chars().any(|c| c.is_whitespace())
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn looks_like_command_block(s: &str) -> bool {
-    let t = s.trim();
-    if t.contains("```") || t.contains("~~~") {
-        return true;
-    }
-    let mut shell_prompt_lines = 0usize;
-    let mut pipe_like_lines = 0usize;
-    for line in t.lines() {
-        let l = line.trim_start();
-        if l.starts_with("$ ") || l.starts_with("> ") || l.starts_with("PS>") {
-            shell_prompt_lines += 1;
-        }
-        // 空白無しパイプも拾う（誤検知は fence で防ぐ）
-        if l.contains("&&") || l.contains('|') {
-            pipe_like_lines += 1;
-        }
-    }
-    shell_prompt_lines >= 1 || pipe_like_lines >= 2
 }
 
 // --- LlmJudge（JSON判定）

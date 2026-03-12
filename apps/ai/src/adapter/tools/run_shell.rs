@@ -1,7 +1,6 @@
-//! シェルコマンド実行ツール（adapter 層）
+//! 責務: run_shell ツールの呼び出しを実行するのみ。Allow/Deny/RequireApproval の決定は知らない（policy の責務）。実行時は allow_unsafe でない場合に allowlist を適用する。
 //!
 //! OS 副作用（sh -c 実行）を伴うため、common ではなく adapter に配置。
-//! allowlist 判定を行い、allow_unsafe=false かつ不一致なら PermissionDenied を返す。
 
 use common::domain::event::Event;
 use common::tool::{is_command_allowed, Tool, ToolContext, ToolError};

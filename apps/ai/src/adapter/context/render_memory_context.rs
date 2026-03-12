@@ -1,46 +1,10 @@
-use crate::domain::{MemoryKind, StructuredMemoryEntry};
+//! 責務: domain::render_memory_context への委譲のみ。
+//!
+//! レンダリングロジックは domain/context/memory_render.rs に移動済み。
+//! このモジュールは既存コードからの参照互換のために残す。
 
-/// 構造化メモリをプロンプト用の短いテキストに整形する
-pub fn render_memory_context(entries: &[StructuredMemoryEntry], max_entries: usize) -> String {
-    if entries.is_empty() || max_entries == 0 {
-        return String::new();
-    }
-
-    let mut lines = Vec::new();
-    lines.push("Relevant memory:".to_string());
-
-    for e in entries.iter().take(max_entries) {
-        let kind = match e.kind {
-            MemoryKind::Profile => "profile",
-            MemoryKind::Pattern => "pattern",
-            MemoryKind::Preference => "preference",
-        };
-        let mut topics = e.topics.clone();
-        topics.retain(|t| !t.trim().is_empty());
-        let topics_str = if topics.is_empty() {
-            "".to_string()
-        } else {
-            format!("[{}]", topics.join(","))
-        };
-        let mut summary = e.summary.clone();
-        if summary.len() > 200 {
-            let mut end = 200;
-            while end > 0 && !summary.is_char_boundary(end) {
-                end -= 1;
-            }
-            summary.truncate(end);
-            summary.push_str("...");
-        }
-        let line = if topics_str.is_empty() {
-            format!("- [{}] {}", kind, summary)
-        } else {
-            format!("- [{}]{} {}", kind, topics_str, summary)
-        };
-        lines.push(line);
-    }
-
-    lines.join("\n")
-}
+#[allow(unused_imports)]
+pub use crate::domain::context::memory_render::render_memory_context;
 
 #[cfg(test)]
 mod tests {

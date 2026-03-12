@@ -6,8 +6,9 @@
 #![allow(dead_code)]
 
 use crate::domain::{
-    Budget, BudgetDecision, BudgetReport, BudgetStats, ContextAddon, ContextBudget, ContextPack,
-    HistoryReducer, Query, SensitiveFilterOutcome,
+    addon_insertion_index, select_addons_within_budget, Budget, BudgetDecision, BudgetReport,
+    BudgetStats, ContextAddon, ContextBudget, ContextPack, HistoryReducer, Query,
+    SensitiveFilterOutcome,
 };
 use crate::ports::outbound::{
     ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
@@ -468,79 +469,32 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
             candidates = filtered;
         }
 
-        // --- Phase 3: budget-fit addons ---
+        // --- Phase 3: budget-fit addons (domain pure function) ---
         let baseline_chars = msgs_char_total(&msgs);
         let baseline_count = msgs.len();
 
-        let remaining_msgs = self.budget.max_messages.saturating_sub(baseline_count);
-        let remaining_chars = self.budget.max_chars.saturating_sub(baseline_chars);
+        let alloc = select_addons_within_budget(
+            candidates,
+            self.budget,
+            self.addons_budget,
+            baseline_count,
+            baseline_chars,
+        );
+        decisions.extend(alloc.decisions);
 
-        let addons_msg_limit = remaining_msgs.min(self.addons_budget.max_messages);
-        let addons_char_limit = remaining_chars.min(self.addons_budget.max_chars);
-
-        let mut used_msgs = 0usize;
-        let mut used_chars = 0usize;
-        let mut accepted: Vec<&ContextAddon> = Vec::new();
         let mut attachments = Vec::new();
-
-        for addon in &candidates {
-            let attachment_chars = addon
-                .attachment
-                .as_ref()
-                .and_then(|a| a.content.as_ref())
-                .map(|s| s.len())
-                .unwrap_or(0);
-            let addon_chars = msg_char_len(&addon.msg) + attachment_chars;
-            if used_msgs + 1 > addons_msg_limit || used_chars + addon_chars > addons_char_limit {
-                decisions.push(BudgetDecision {
-                    stage: "addon.select".to_string(),
-                    action: "drop".to_string(),
-                    reason: "budget".to_string(),
-                    details: serde_json::json!({
-                        "addon_id": addon.id,
-                        "addon_chars": addon_chars,
-                        "used_msgs": used_msgs,
-                        "used_chars": used_chars,
-                        "limit_msgs": addons_msg_limit,
-                        "limit_chars": addons_char_limit,
-                    }),
-                });
-                continue;
-            }
-            decisions.push(BudgetDecision {
-                stage: "addon.select".to_string(),
-                action: "keep".to_string(),
-                reason: "budget".to_string(),
-                details: serde_json::json!({
-                    "addon_id": addon.id,
-                    "addon_chars": addon_chars,
-                }),
-            });
-            used_msgs += 1;
-            used_chars += addon_chars;
-            accepted.push(addon);
+        for addon in &alloc.accepted {
             if let Some(ref att) = addon.attachment {
                 attachments.push(att.clone());
             }
         }
 
-        // --- Phase 4: insert addon messages before the last user message (query) ---
-        if !accepted.is_empty() {
-            let addon_msgs: Vec<Msg> = accepted.iter().map(|a| a.msg.clone()).collect();
-            if query.is_some() {
-                let insert_pos = msgs.iter().rposition(|m| matches!(m, Msg::User(_)));
-                match insert_pos {
-                    Some(pos) => {
-                        for (i, m) in addon_msgs.into_iter().enumerate() {
-                            msgs.insert(pos + i, m);
-                        }
-                    }
-                    None => {
-                        msgs.extend(addon_msgs);
-                    }
-                }
-            } else {
-                msgs.extend(addon_msgs);
+        // --- Phase 4: insert addon messages (domain pure function) ---
+        if !alloc.accepted.is_empty() {
+            let addon_msgs: Vec<Msg> = alloc.accepted.iter().map(|a| a.msg.clone()).collect();
+            let insert_pos = addon_insertion_index(&msgs, query.is_some());
+            for (i, m) in addon_msgs.into_iter().enumerate() {
+                msgs.insert(insert_pos + i, m);
             }
         }
 

@@ -1,13 +1,11 @@
 //! 責務: ツール呼び出しの Allow/Deny/RequireApproval を決めるのみ。個別ツールの表示仕様（要約の出し方）は知らない。要約は呼び出し元が port 経由で取得する。
 
-use crate::domain::ToolPolicyRule;
 use crate::domain::{
-    PolicyDecision, PolicyVerdict, RuleVerdict, ToolCapability, ToolMode, ToolProfile,
+    is_shell_command_allowed, tool_summary_preview, truncate_chars, PolicyDecision, PolicyVerdict,
+    RuleVerdict, ToolCapability, ToolMode, ToolPolicyRule, ToolProfile,
 };
 use common::error::Error;
-use common::tool::{is_command_allowed, ToolContext};
-
-const TOOL_SUMMARY_MAX_CHARS: usize = 200;
+use common::tool::ToolContext;
 
 fn base_decision(scope: &str, subject: &str, status: &str, reason: &str) -> PolicyDecision {
     PolicyDecision {
@@ -20,53 +18,7 @@ fn base_decision(scope: &str, subject: &str, status: &str, reason: &str) -> Poli
     }
 }
 
-fn truncate_chars(s: &str, max_chars: usize) -> String {
-    if s.chars().count() <= max_chars {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max_chars).collect();
-        format!("{}...(truncated)", truncated)
-    }
-}
-
-fn tool_summary_preview(tool_name: &str, tool_args: &serde_json::Value) -> String {
-    // replace_file は Approval 時に「どのファイルをどう変えるか」が分かることが重要なので、
-    // path / old_block / new_block を短く要約して表示する。
-    if tool_name == "replace_file" {
-        let path = tool_args
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        let old_block = tool_args
-            .get("old_block")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-        let new_block = tool_args
-            .get("new_block")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("");
-
-        let path_preview = truncate_chars(path, 80);
-        let old_first = old_block.lines().next().unwrap_or("");
-        let new_first = new_block.lines().next().unwrap_or("");
-        let old_preview = truncate_chars(old_first, 40);
-        let new_preview = truncate_chars(new_first, 40);
-
-        let summary = format!(
-            "replace_file path={} old:[{}] -> new:[{}]",
-            path_preview, old_preview, new_preview
-        );
-        return truncate_chars(&summary, TOOL_SUMMARY_MAX_CHARS);
-    }
-
-    let args_str = serde_json::to_string(tool_args).unwrap_or_else(|_| "{}".to_string());
-    let summary = format!("{} {}", tool_name, args_str);
-
-    // NOTE:
-    // summary.len() はバイト数。日本語など UTF-8 のマルチバイト文字を含む場合、
-    // バイト境界でスライスすると panic するため、文字数ベースで切り詰める。
-    truncate_chars(&summary, TOOL_SUMMARY_MAX_CHARS)
-}
+const TOOL_SUMMARY_MAX_CHARS: usize = 200;
 
 /// ToolProfile.mode に基づき Allow / RequireApproval / Deny を決めるルール
 pub struct ToolModeRule;
@@ -149,9 +101,7 @@ impl ToolPolicyRule for ShellAllowlistRule {
             .get("command")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("");
-        let first_token = command.split_whitespace().next().unwrap_or("");
 
-        // profile.capabilities から Exec allowlist を抽出（無ければ empty）
         let mut profile_allowlist: Vec<String> = Vec::new();
         for cap in &profile.capabilities {
             if let ToolCapability::Exec { allowlist } = cap {
@@ -159,20 +109,8 @@ impl ToolPolicyRule for ShellAllowlistRule {
             }
         }
 
-        // ToolProfile 側の allowlist（policy.tools.run_shell.allowlist 等）
-        let allowed_by_profile = if profile_allowlist.is_empty() {
-            false
-        } else {
-            profile_allowlist
-                .iter()
-                .any(|prefix| first_token.starts_with(prefix) || first_token == prefix)
-        };
-
-        // command_rules.txt（ToolContext.command_allow_rules）側の allowlist。
-        // ここで許可されたコマンドも approval なしで通す。
-        let allowed_by_command_rules = is_command_allowed(command, &tool_ctx.command_allow_rules);
-
-        let allowed = allowed_by_profile || allowed_by_command_rules;
+        let allowed =
+            is_shell_command_allowed(command, &profile_allowlist, &tool_ctx.command_allow_rules);
 
         if allowed {
             let mut decision = base_decision("tool", tool_name, "allowed", "shell_allowlist");

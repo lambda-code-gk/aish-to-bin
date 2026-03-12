@@ -5,6 +5,7 @@ use common::domain::CatalogKind;
 use common::error::Error;
 use common::ports::outbound::{FileSystem, Process, RuntimeCatalog};
 
+use crate::domain::task::resolution;
 use crate::ports::outbound::{PackageResolver, TaskRunner};
 
 /// TaskRunner の標準実装（run_task_if_exists をラップし、package 由来タスクも探索する）
@@ -140,25 +141,10 @@ fn resolve_task_path<F: FileSystem + ?Sized>(
     task_dir: &Path,
     task_name: &str,
 ) -> Option<PathBuf> {
-    let dir_execute = task_dir.join(task_name).join("execute");
-    if fs.exists(&dir_execute) {
-        if let Ok(m) = fs.metadata(&dir_execute) {
-            if m.is_file() {
-                return Some(dir_execute);
-            }
-        }
-    }
-
-    let script = task_dir.join(format!("{}.sh", task_name));
-    if fs.exists(&script) {
-        if let Ok(m) = fs.metadata(&script) {
-            if m.is_file() {
-                return Some(script);
-            }
-        }
-    }
-
-    None
+    resolution::resolve_task_path(task_dir, task_name, |p| {
+        fs.exists(p) && fs.metadata(p).map(|m| m.is_file()).unwrap_or(false)
+    })
+    .map(|r| r.path)
 }
 
 /// タスク名一覧を返す（task.d 内のディレクトリ名と .sh のベース名）。補完用。
@@ -170,34 +156,16 @@ fn list_task_names<F: FileSystem + ?Sized>(
     let mut names = Vec::new();
 
     for loc in locations {
-        let task_dir = &loc.path;
-        let entries = fs.read_dir(task_dir)?;
-        for path in entries {
-            let name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n,
-                None => continue,
-            };
-            if name.starts_with('.') {
-                continue;
-            }
-            let full = task_dir.join(name);
-            let meta = match fs.metadata(&full) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            if meta.is_dir() {
-                if fs.exists(&full.join("execute")) {
-                    if let Ok(m) = fs.metadata(&full.join("execute")) {
-                        if m.is_file() {
-                            names.push(name.to_string());
-                        }
-                    }
-                }
-            } else if meta.is_file() && name.ends_with(".sh") {
-                let base = name.strip_suffix(".sh").unwrap_or(name);
-                names.push(base.to_string());
-            }
-        }
+        let dir_entries = collect_dir_entries(fs, &loc.path)?;
+        let mut extracted = resolution::extract_task_names(&dir_entries, |name| {
+            let exec_path = loc.path.join(name).join("execute");
+            fs.exists(&exec_path)
+                && fs
+                    .metadata(&exec_path)
+                    .map(|m| m.is_file())
+                    .unwrap_or(false)
+        });
+        names.append(&mut extracted);
     }
 
     names.sort();
@@ -218,38 +186,40 @@ fn list_package_task_names<F: FileSystem + ?Sized>(
         if !fs.exists(&task_dir) {
             continue;
         }
-        let entries = fs.read_dir(&task_dir)?;
-        for path in entries {
-            let name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n,
-                None => continue,
-            };
-            if name.starts_with('.') {
-                continue;
-            }
-            let full = task_dir.join(name);
-            let meta = match fs.metadata(&full) {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            if meta.is_dir() {
-                if fs.exists(&full.join("execute")) {
-                    if let Ok(m) = fs.metadata(&full.join("execute")) {
-                        if m.is_file() {
-                            names.push(name.to_string());
-                        }
-                    }
-                }
-            } else if meta.is_file() && name.ends_with(".sh") {
-                let base = name.strip_suffix(".sh").unwrap_or(name);
-                names.push(base.to_string());
-            }
-        }
+        let dir_entries = collect_dir_entries(fs, &task_dir)?;
+        let mut extracted = resolution::extract_task_names(&dir_entries, |name| {
+            let exec_path = task_dir.join(name).join("execute");
+            fs.exists(&exec_path)
+                && fs
+                    .metadata(&exec_path)
+                    .map(|m| m.is_file())
+                    .unwrap_or(false)
+        });
+        names.append(&mut extracted);
     }
 
     names.sort();
     names.dedup();
     Ok(names)
+}
+
+/// read_dir の結果を `(name, is_dir)` のタプル列に変換するヘルパー。
+fn collect_dir_entries<F: FileSystem + ?Sized>(
+    fs: &F,
+    dir: &Path,
+) -> Result<Vec<(String, bool)>, Error> {
+    let paths = fs.read_dir(dir)?;
+    let mut entries = Vec::new();
+    for path in paths {
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        let full = dir.join(&name);
+        let is_dir = fs.metadata(&full).map(|m| m.is_dir()).unwrap_or(false);
+        entries.push((name, is_dir));
+    }
+    Ok(entries)
 }
 
 #[cfg(test)]

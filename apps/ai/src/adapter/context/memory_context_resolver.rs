@@ -1,9 +1,10 @@
-use crate::adapter::context::render_memory_context::render_memory_context;
 use crate::adapter::context::structured_memory_repository::StructuredMemoryRepository;
-use crate::domain::{MemoryKind, MemoryQuery, MemoryScope, ResolvedMemoryContext};
+use crate::domain::{
+    merge_memory_entries_project_first, normalize_topics, render_memory_context, MemoryKind,
+    MemoryQuery, MemoryScope, ResolvedMemoryContext,
+};
 use crate::ports::outbound::MemoryContextResolver;
 use common::error::Error;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 pub struct StdMemoryContextResolver {
@@ -15,20 +16,6 @@ impl StdMemoryContextResolver {
     pub fn new(repo: Arc<dyn StructuredMemoryRepository>, total_limit: usize) -> Self {
         Self { repo, total_limit }
     }
-
-    fn normalize_topics(topics: &[String]) -> Vec<String> {
-        topics
-            .iter()
-            .filter_map(|t| {
-                let s = t.trim();
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_ascii_lowercase())
-                }
-            })
-            .collect()
-    }
 }
 
 impl MemoryContextResolver for StdMemoryContextResolver {
@@ -37,8 +24,8 @@ impl MemoryContextResolver for StdMemoryContextResolver {
         project_topics: &[String],
         global_topics: &[String],
     ) -> Result<ResolvedMemoryContext, Error> {
-        let norm_project = Self::normalize_topics(project_topics);
-        let norm_global = Self::normalize_topics(global_topics);
+        let norm_project = normalize_topics(project_topics);
+        let norm_global = normalize_topics(global_topics);
 
         if norm_project.is_empty() && norm_global.is_empty() {
             return Ok(ResolvedMemoryContext {
@@ -55,40 +42,19 @@ impl MemoryContextResolver for StdMemoryContextResolver {
 
         let project_query =
             MemoryQuery::new(norm_project.clone(), all_kinds.clone(), self.total_limit);
-        let mut project_entries = match self.repo.query(MemoryScope::Project, &project_query) {
+        let project_entries = match self.repo.query(MemoryScope::Project, &project_query) {
             Ok(v) => v,
             Err(_) => Vec::new(),
         };
 
         let global_query = MemoryQuery::new(norm_global.clone(), all_kinds, self.total_limit);
-        let mut global_entries = match self.repo.query(MemoryScope::Global, &global_query) {
+        let global_entries = match self.repo.query(MemoryScope::Global, &global_query) {
             Ok(v) => v,
             Err(_) => Vec::new(),
         };
 
-        let mut seen = HashSet::new();
-        let mut combined = Vec::new();
-
-        for e in project_entries.drain(..) {
-            let key = format!("{}::{:?}", e.summary.trim(), e.kind);
-            if seen.insert(key) {
-                combined.push(e);
-            }
-            if combined.len() >= self.total_limit {
-                break;
-            }
-        }
-        if combined.len() < self.total_limit {
-            for e in global_entries.drain(..) {
-                let key = format!("{}::{:?}", e.summary.trim(), e.kind);
-                if seen.insert(key) {
-                    combined.push(e);
-                }
-                if combined.len() >= self.total_limit {
-                    break;
-                }
-            }
-        }
+        let combined =
+            merge_memory_entries_project_first(project_entries, global_entries, self.total_limit);
 
         let rendered_summary = render_memory_context(&combined, self.total_limit);
         Ok(ResolvedMemoryContext {

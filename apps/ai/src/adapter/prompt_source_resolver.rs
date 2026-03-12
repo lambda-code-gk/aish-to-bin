@@ -1,3 +1,4 @@
+use crate::domain::prompt::{detect_task_kind, task_prompt_path, TaskKind};
 use crate::domain::{
     PromptSourceKind, ResolvedPromptSource, SkillSpec, SourceProvenance, TaskName, TaskOriginInfo,
     TaskSpec,
@@ -92,30 +93,9 @@ impl StdPromptSourceResolver {
         task_root: &Path,
         task_name: &TaskName,
     ) -> Option<TaskKind> {
-        let dir_execute = task_root.join(task_name.as_ref()).join("execute");
-        if fs.exists(&dir_execute) {
-            if let Ok(m) = fs.metadata(&dir_execute) {
-                if m.is_file() {
-                    return Some(TaskKind::Directory);
-                }
-            }
-        }
-        let script = task_root.join(format!("{}.sh", task_name.as_ref()));
-        if fs.exists(&script) {
-            if let Ok(m) = fs.metadata(&script) {
-                if m.is_file() {
-                    return Some(TaskKind::File);
-                }
-            }
-        }
-        None
-    }
-
-    fn task_prompt_path(task_root: &Path, task_name: &TaskName, kind: TaskKind) -> PathBuf {
-        match kind {
-            TaskKind::Directory => task_root.join(task_name.as_ref()).join("prompt.md"),
-            TaskKind::File => task_root.join(format!("{}.prompt.md", task_name.as_ref())),
-        }
+        detect_task_kind(task_root, task_name.as_ref(), |p| {
+            fs.exists(p) && fs.metadata(p).map(|m| m.is_file()).unwrap_or(false)
+        })
     }
 
     fn load_or_use_spec(
@@ -210,7 +190,7 @@ impl StdPromptSourceResolver {
         scope: CatalogScope,
         package_name: Option<String>,
     ) -> Option<ResolvedPromptSource> {
-        let path = Self::task_prompt_path(task_root, task_name, kind);
+        let path = task_prompt_path(task_root, task_name, kind);
         if !self.fs.exists(&path) {
             return None;
         }
@@ -363,12 +343,6 @@ impl StdPromptSourceResolver {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-enum TaskKind {
-    Directory,
-    File,
-}
-
 impl PromptSourceResolver for StdPromptSourceResolver {
     fn resolve_for_task(
         &self,
@@ -389,13 +363,13 @@ impl PromptSourceResolver for StdPromptSourceResolver {
         let spec_ref = owned_spec.as_ref().or(task_spec);
 
         let package_name = package.as_ref().map(|p| p.spec.name.clone());
-        let task_prompt_path = Self::task_prompt_path(&task_root, task_name, task_kind);
+        let prompt_path = task_prompt_path(&task_root, task_name, task_kind);
         let task_origin_info = Some(TaskOriginInfo {
             task_name: task_name.as_ref().to_string(),
             provenance: SourceProvenance::new(
                 scope,
                 package_name.clone(),
-                task_prompt_path.clone(),
+                prompt_path.clone(),
                 None,
             ),
         });
