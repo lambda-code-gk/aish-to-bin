@@ -1,4 +1,6 @@
-use crate::domain::prompt::{detect_task_kind, task_prompt_path, TaskKind};
+use crate::domain::prompt::{
+    detect_task_kind, task_prompt_path, PromptAssemblyDecision, PromptCandidate, TaskKind,
+};
 use crate::domain::{
     PromptSourceKind, ResolvedPromptSource, SkillSpec, SourceProvenance, TaskName, TaskOriginInfo,
     TaskSpec,
@@ -138,10 +140,10 @@ impl StdPromptSourceResolver {
         Ok(out)
     }
 
-    fn resolve_package_system_hook(
+    fn resolve_package_system_hook_candidate(
         &self,
         package: &crate::domain::ResolvedPackage,
-    ) -> Option<ResolvedPromptSource> {
+    ) -> Option<PromptCandidate> {
         let path = match &package.spec.system_hook {
             Some(p) => p,
             None => return None,
@@ -164,7 +166,7 @@ impl StdPromptSourceResolver {
         if trimmed.is_empty() {
             return None;
         }
-        Some(ResolvedPromptSource {
+        Some(PromptCandidate {
             kind: PromptSourceKind::Hook,
             name: format!("package:{}", package.spec.name),
             content: trimmed.to_string(),
@@ -181,7 +183,7 @@ impl StdPromptSourceResolver {
         })
     }
 
-    fn resolve_task_prompt(
+    fn resolve_task_prompt_candidate(
         &self,
         task_root: &Path,
         task_name: &TaskName,
@@ -189,7 +191,7 @@ impl StdPromptSourceResolver {
         spec: Option<&TaskSpec>,
         scope: CatalogScope,
         package_name: Option<String>,
-    ) -> Option<ResolvedPromptSource> {
+    ) -> Option<PromptCandidate> {
         let path = task_prompt_path(task_root, task_name, kind);
         if !self.fs.exists(&path) {
             return None;
@@ -214,7 +216,7 @@ impl StdPromptSourceResolver {
         } else {
             (Vec::new(), None)
         };
-        Some(ResolvedPromptSource {
+        Some(PromptCandidate {
             kind: PromptSourceKind::TaskPrompt,
             name: task_name.as_ref().to_string(),
             content: trimmed.to_string(),
@@ -307,11 +309,11 @@ impl StdPromptSourceResolver {
         Ok(None)
     }
 
-    fn resolve_skills(
+    fn resolve_skills_candidates(
         &self,
         task_name: &TaskName,
         spec: Option<&TaskSpec>,
-    ) -> Result<Vec<ResolvedPromptSource>, Error> {
+    ) -> Result<Vec<PromptCandidate>, Error> {
         let mut out = Vec::new();
         let Some(spec) = spec else {
             return Ok(out);
@@ -319,7 +321,7 @@ impl StdPromptSourceResolver {
         for skill_name in &spec.skills {
             match self.resolve_skill_prompt_for(skill_name)? {
                 Some((skill_spec, content, provenance)) => {
-                    out.push(ResolvedPromptSource {
+                    out.push(PromptCandidate {
                         kind: PromptSourceKind::Skill,
                         name: skill_spec.name.clone(),
                         content,
@@ -355,6 +357,7 @@ impl PromptSourceResolver for StdPromptSourceResolver {
         let (task_root, task_kind, package, scope) = match origin {
             Some(v) => v,
             None => {
+                // タスクが見つからない場合は hooks のみ（従来どおり）。
                 return Ok((hooks, None));
             }
         };
@@ -374,25 +377,31 @@ impl PromptSourceResolver for StdPromptSourceResolver {
             ),
         });
 
-        let mut out = hooks;
-        if let Some(pkg) = package.as_ref() {
-            if let Some(pkg_hook) = self.resolve_package_system_hook(pkg) {
-                out.push(pkg_hook);
-            }
-        }
-        if let Some(task_prompt) = self.resolve_task_prompt(
+        let hook_candidates: Vec<PromptCandidate> =
+            hooks.clone().into_iter().map(Into::into).collect();
+        let package_candidate = package
+            .as_ref()
+            .and_then(|pkg| self.resolve_package_system_hook_candidate(pkg));
+        let task_candidate = self.resolve_task_prompt_candidate(
             &task_root,
             task_name,
             task_kind,
             spec_ref,
             scope,
             package_name,
-        ) {
-            out.push(task_prompt);
-        }
-        let skills = self.resolve_skills(task_name, spec_ref)?;
-        out.extend(skills);
-        Ok((out, task_origin_info))
+        );
+        let skill_candidates = self.resolve_skills_candidates(task_name, spec_ref)?;
+
+        let decision = PromptAssemblyDecision::assemble(
+            hook_candidates,
+            package_candidate,
+            task_candidate,
+            skill_candidates,
+        );
+        let ordered: Vec<ResolvedPromptSource> =
+            decision.ordered.into_iter().map(Into::into).collect();
+
+        Ok((ordered, task_origin_info))
     }
 }
 

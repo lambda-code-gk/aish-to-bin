@@ -6,6 +6,7 @@ use common::error::Error;
 use common::ports::outbound::{FileSystem, Process, RuntimeCatalog};
 
 use crate::domain::task::resolution;
+use crate::domain::TaskName;
 use crate::ports::outbound::{PackageResolver, TaskRunner};
 
 /// TaskRunner の標準実装（run_task_if_exists をラップし、package 由来タスクも探索する）
@@ -34,12 +35,18 @@ impl StdTaskRunner {
 
 impl TaskRunner for StdTaskRunner {
     fn run_if_exists(&self, task_name: &str, args: &[String]) -> Result<Option<i32>, Error> {
+        // TaskName 規約に従ってパースする。無効な名前は「存在しないタスク」として扱う。
+        let task_name = match TaskName::parse(task_name) {
+            Ok(n) => n,
+            Err(_) => return Ok(None),
+        };
+
         // 1. 既存の task.d 由来タスクを優先して解決する
         if let Some(code) = run_task_if_exists(
             self.fs.as_ref(),
             self.process.as_ref(),
             self.catalog.as_ref(),
-            task_name,
+            &task_name,
             args,
         )? {
             return Ok(Some(code));
@@ -50,7 +57,7 @@ impl TaskRunner for StdTaskRunner {
             self.fs.as_ref(),
             self.process.as_ref(),
             self.packages.as_ref(),
-            task_name,
+            &task_name,
             args,
         )
     }
@@ -81,14 +88,14 @@ pub fn run_task_if_exists<F, P>(
     fs: &F,
     process: &P,
     catalog: &dyn RuntimeCatalog,
-    task_name: &str,
+    task_name: &TaskName,
     args: &[String],
 ) -> Result<Option<i32>, Error>
 where
     F: FileSystem + ?Sized,
     P: Process + ?Sized,
 {
-    if task_name.is_empty() {
+    if task_name.as_ref().is_empty() {
         return Ok(None);
     }
 
@@ -111,14 +118,14 @@ pub fn run_task_in_packages<F, P>(
     fs: &F,
     process: &P,
     packages: &dyn PackageResolver,
-    task_name: &str,
+    task_name: &TaskName,
     args: &[String],
 ) -> Result<Option<i32>, Error>
 where
     F: FileSystem + ?Sized,
     P: Process + ?Sized,
 {
-    if task_name.is_empty() {
+    if task_name.as_ref().is_empty() {
         return Ok(None);
     }
 
@@ -139,7 +146,7 @@ where
 fn resolve_task_path<F: FileSystem + ?Sized>(
     fs: &F,
     task_dir: &Path,
-    task_name: &str,
+    task_name: &TaskName,
 ) -> Option<PathBuf> {
     resolution::resolve_task_path(task_dir, task_name, |p| {
         fs.exists(p) && fs.metadata(p).map(|m| m.is_file()).unwrap_or(false)
@@ -158,14 +165,14 @@ fn list_task_names<F: FileSystem + ?Sized>(
     for loc in locations {
         let dir_entries = collect_dir_entries(fs, &loc.path)?;
         let mut extracted = resolution::extract_task_names(&dir_entries, |name| {
-            let exec_path = loc.path.join(name).join("execute");
+            let exec_path = loc.path.join(name.as_dir_name()).join("execute");
             fs.exists(&exec_path)
                 && fs
                     .metadata(&exec_path)
                     .map(|m| m.is_file())
                     .unwrap_or(false)
         });
-        names.append(&mut extracted);
+        names.extend(extracted.drain(..).map(|n| n.as_ref().to_string()));
     }
 
     names.sort();
@@ -188,14 +195,14 @@ fn list_package_task_names<F: FileSystem + ?Sized>(
         }
         let dir_entries = collect_dir_entries(fs, &task_dir)?;
         let mut extracted = resolution::extract_task_names(&dir_entries, |name| {
-            let exec_path = task_dir.join(name).join("execute");
+            let exec_path = task_dir.join(name.as_dir_name()).join("execute");
             fs.exists(&exec_path)
                 && fs
                     .metadata(&exec_path)
                     .map(|m| m.is_file())
                     .unwrap_or(false)
         });
-        names.append(&mut extracted);
+        names.extend(extracted.drain(..).map(|n| n.as_ref().to_string()));
     }
 
     names.sort();
@@ -279,7 +286,8 @@ mod tests {
         let fs = StdFileSystem;
         let process = StdProcess;
         let catalog = StubCatalog { roots: vec![tmp] };
-        let result = run_task_if_exists(&fs, &process, &catalog, "unknown_task", &[]);
+        let task_name = TaskName::new("unknown_task");
+        let result = run_task_if_exists(&fs, &process, &catalog, &task_name, &[]);
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }
@@ -312,9 +320,11 @@ mod tests {
         assert!(names.contains(&"bar".to_string()));
         assert_eq!(names.len(), 2);
 
-        let resolved_foo = resolve_task_path(&fs, &task_dir, "foo").expect("foo should resolve");
+        let resolved_foo =
+            resolve_task_path(&fs, &task_dir, &TaskName::new("foo")).expect("foo should resolve");
         assert_eq!(resolved_foo, foo_sh);
-        let resolved_bar = resolve_task_path(&fs, &task_dir, "bar").expect("bar should resolve");
+        let resolved_bar =
+            resolve_task_path(&fs, &task_dir, &TaskName::new("bar")).expect("bar should resolve");
         assert_eq!(resolved_bar, bar_exec);
     }
 }
