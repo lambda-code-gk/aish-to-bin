@@ -12,7 +12,9 @@ pub mod memory_dedup;
 pub mod memory_render;
 pub mod selection_policy;
 
-pub use addon_screening::{apply_sensitive_outcome_to_addon, SensitiveCheckResult};
+pub use addon_screening::{
+    screen_addons, AddonScreeningDecision, ScreenAddonInput, SensitiveCheckResult,
+};
 pub use assembly::{assemble_context_with_addons, ContextAssemblyPlan};
 pub use budget_report::*;
 pub use budget_report_builder::build_budget_report;

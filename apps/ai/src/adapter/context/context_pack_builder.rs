@@ -6,9 +6,10 @@
 #![allow(dead_code)]
 
 use crate::domain::{
-    apply_sensitive_outcome_to_addon, assemble_context_with_addons, build_budget_report,
-    select_addons_within_budget, BudgetDecision, ContextAddon, ContextAssemblyPlan, ContextBudget,
-    ContextPack, HistoryPackDecision, HistoryReducer, Query, SensitiveCheckResult,
+    assemble_context_with_addons, build_budget_report, screen_addons, select_addons_within_budget,
+    AddonScreeningDecision, BudgetDecision, ContextAddon, ContextAssemblyPlan, ContextBudget,
+    ContextPack, HistoryPackDecision, HistoryReducer, Query, ScreenAddonInput,
+    SensitiveCheckResult,
 };
 use crate::ports::outbound::{
     ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
@@ -51,8 +52,28 @@ fn history_to_msgs(messages: &[LlmMessage]) -> Vec<Msg> {
     msgs
 }
 
-fn count_chars_llm(messages: &[LlmMessage]) -> usize {
-    messages.iter().map(|m| m.content.len()).sum()
+/// 1 件の LlmMessage の概算文字数（content + tool_calls の name/args + tool_call_id + tool_name）。
+fn count_chars_llm_message(m: &LlmMessage) -> usize {
+    let mut n = m.content.len();
+    if let Some(ref tcs) = m.tool_calls {
+        for tc in tcs {
+            n += tc.name.len();
+            n += serde_json::to_string(&tc.args)
+                .map(|s| s.len())
+                .unwrap_or(0);
+        }
+    }
+    if let Some(ref s) = m.tool_call_id {
+        n += s.len();
+    }
+    if let Some(ref s) = m.tool_name {
+        n += s.len();
+    }
+    n
+}
+
+fn count_chars_llm_messages(messages: &[LlmMessage]) -> usize {
+    messages.iter().map(count_chars_llm_message).sum()
 }
 
 /// v0.1: 履歴＋クエリのみ。attachments は常に空。StdContextMessageBuilder と同等の messages。
@@ -103,24 +124,7 @@ impl ContextPackBuilder for StdContextPackBuilder {
         } = crate::domain::decide_history_pack(
             &all_messages,
             reduced,
-            |m| {
-                let mut n = m.content.len();
-                if let Some(ref tcs) = m.tool_calls {
-                    for tc in tcs {
-                        n += tc.name.len();
-                        n += serde_json::to_string(&tc.args)
-                            .map(|s| s.len())
-                            .unwrap_or(0);
-                    }
-                }
-                if let Some(ref s) = m.tool_call_id {
-                    n += s.len();
-                }
-                if let Some(ref s) = m.tool_name {
-                    n += s.len();
-                }
-                n
-            },
+            count_chars_llm_message,
             Some(internal_msgs_count),
         );
 
@@ -180,27 +184,6 @@ fn msg_text_content(msg: &Msg) -> Option<&str> {
     }
 }
 
-fn replace_msg_text(msg: &Msg, new_text: String) -> Msg {
-    match msg {
-        Msg::System(_) => Msg::system(new_text),
-        Msg::User(_) => Msg::user(new_text),
-        Msg::Assistant(_) => Msg::assistant(new_text),
-        other => other.clone(),
-    }
-}
-
-fn truncate_verbose(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        let mut end = max;
-        while end > 0 && !s.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}...(truncated)", &s[..end])
-    }
-}
-
 impl ContextPackBuilder for StdContextPackBuilderWithAddons {
     fn build(
         &self,
@@ -247,7 +230,12 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
             input_chars,
             output_count: _,
             output_chars: _,
-        } = crate::domain::decide_history_pack(&all_messages, reduced, |m| m.content.len(), None);
+        } = crate::domain::decide_history_pack(
+            &all_messages,
+            reduced,
+            count_chars_llm_message,
+            None,
+        );
 
         decisions.extend(history_decisions);
 
@@ -278,34 +266,39 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
         // sort by priority desc (higher = more important)
         candidates.sort_by(|a, b| b.priority.cmp(&a.priority));
 
-        // --- Phase 2.5: sensitive filter on addon candidates ---
+        // --- Phase 2.5: sensitive filter on addon candidates (domain で集約) ---
         if let Some(ref filter) = self.sensitive_filter {
-            let mut filtered = Vec::with_capacity(candidates.len());
-            for addon in candidates {
-                let msg_result = match msg_text_content(&addon.msg) {
-                    Some(text) => match filter.filter(text) {
-                        Ok(outcome) => SensitiveCheckResult::Ok(outcome),
-                        Err(e) => SensitiveCheckResult::Err(e.to_string()),
-                    },
-                    None => SensitiveCheckResult::NotChecked,
-                };
-
-                let att_result = match addon.attachment.as_ref().and_then(|a| a.content.as_ref()) {
-                    Some(content) => match filter.filter(content) {
-                        Ok(outcome) => SensitiveCheckResult::Ok(outcome),
-                        Err(e) => SensitiveCheckResult::Err(e.to_string()),
-                    },
-                    None => SensitiveCheckResult::NotChecked,
-                };
-
-                let (maybe_addon, addon_decisions) =
-                    apply_sensitive_outcome_to_addon(addon, msg_result, att_result, 2000);
-                decisions.extend(addon_decisions);
-                if let Some(addon) = maybe_addon {
-                    filtered.push(addon);
-                }
-            }
-            candidates = filtered;
+            let inputs: Vec<ScreenAddonInput> = candidates
+                .into_iter()
+                .map(|addon| {
+                    let msg_result = match msg_text_content(&addon.msg) {
+                        Some(text) => match filter.filter(text) {
+                            Ok(outcome) => SensitiveCheckResult::Ok(outcome),
+                            Err(e) => SensitiveCheckResult::Err(e.to_string()),
+                        },
+                        None => SensitiveCheckResult::NotChecked,
+                    };
+                    let att_result =
+                        match addon.attachment.as_ref().and_then(|a| a.content.as_ref()) {
+                            Some(content) => match filter.filter(content) {
+                                Ok(outcome) => SensitiveCheckResult::Ok(outcome),
+                                Err(e) => SensitiveCheckResult::Err(e.to_string()),
+                            },
+                            None => SensitiveCheckResult::NotChecked,
+                        };
+                    ScreenAddonInput {
+                        addon,
+                        msg_outcome: msg_result,
+                        attachment_outcome: att_result,
+                    }
+                })
+                .collect();
+            let AddonScreeningDecision {
+                accepted,
+                decisions: addon_decisions,
+            } = screen_addons(inputs, 2000);
+            decisions.extend(addon_decisions);
+            candidates = accepted;
         }
 
         // --- Phase 3: budget-fit addons (domain pure function) ---
@@ -368,5 +361,39 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
             attachments,
             budget_report,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::llm::provider::Message as LlmMessage;
+
+    #[test]
+    fn count_chars_llm_message_content_only() {
+        let m = LlmMessage::user("hello");
+        assert_eq!(count_chars_llm_message(&m), 5);
+    }
+
+    #[test]
+    fn count_chars_llm_message_includes_tool_calls_and_metadata() {
+        let m = LlmMessage::assistant_with_tool_calls(
+            "think",
+            vec![(
+                "call_1".to_string(),
+                "run_shell".to_string(),
+                serde_json::json!({"x": 1}),
+                None,
+            )],
+        );
+        let n = count_chars_llm_message(&m);
+        assert!(n >= "think".len());
+        assert!(n > 5, "should count tool name and args");
+    }
+
+    #[test]
+    fn count_chars_llm_messages_sums_all() {
+        let messages = vec![LlmMessage::user("ab"), LlmMessage::user("c")];
+        assert_eq!(count_chars_llm_messages(&messages), 3);
     }
 }

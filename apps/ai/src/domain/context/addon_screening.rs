@@ -11,10 +11,24 @@ pub enum SensitiveCheckResult {
 }
 
 /// screening の結果、受理された addon と生成された BudgetDecision 一覧。
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AddonScreeningDecision {
     pub accepted: Vec<ContextAddon>,
+    pub decisions: Vec<BudgetDecision>,
+}
+
+/// 1 件の addon に対する screening 入力（addon と msg/attachment の filter outcome）。
+#[derive(Debug, Clone)]
+pub struct ScreenAddonInput {
+    pub addon: ContextAddon,
+    pub msg_outcome: SensitiveCheckResult,
+    pub attachment_outcome: SensitiveCheckResult,
+}
+
+/// 1 件の addon を screening した結果。
+#[derive(Debug, Clone)]
+pub struct SingleAddonScreeningResult {
+    pub accepted: Option<ContextAddon>,
     pub decisions: Vec<BudgetDecision>,
 }
 
@@ -160,26 +174,67 @@ fn apply_attachment_result(
     (Some(addon), decisions)
 }
 
+/// 1 件の addon に対して、メッセージと添付の sensitive 結果を適用する（単件結果）。
+fn screen_single_addon(
+    addon: ContextAddon,
+    msg_result: SensitiveCheckResult,
+    att_result: SensitiveCheckResult,
+    max_verbose: usize,
+) -> SingleAddonScreeningResult {
+    let (maybe_after_msg, mut decisions) = apply_msg_result(addon, msg_result, max_verbose);
+    let Some(after_msg) = maybe_after_msg else {
+        return SingleAddonScreeningResult {
+            accepted: None,
+            decisions,
+        };
+    };
+
+    let (maybe_after_att, att_decisions) =
+        apply_attachment_result(after_msg, att_result, max_verbose);
+    decisions.extend(att_decisions);
+    SingleAddonScreeningResult {
+        accepted: maybe_after_att,
+        decisions,
+    }
+}
+
+/// 複数 addon の screening を一括で行い、受理リストと decisions を返す。
+pub fn screen_addons(inputs: Vec<ScreenAddonInput>, max_verbose: usize) -> AddonScreeningDecision {
+    let mut accepted = Vec::with_capacity(inputs.len());
+    let mut decisions = Vec::new();
+    for input in inputs {
+        let result = screen_single_addon(
+            input.addon,
+            input.msg_outcome,
+            input.attachment_outcome,
+            max_verbose,
+        );
+        if let Some(a) = result.accepted {
+            accepted.push(a);
+        }
+        decisions.extend(result.decisions);
+    }
+    AddonScreeningDecision {
+        accepted,
+        decisions,
+    }
+}
+
 /// 1 件の addon に対して、メッセージと添付の sensitive 結果を適用する。
+/// 本処理は `screen_addons` を使用。単体テスト・後方互換用に残す。
 ///
 /// 戻り値:
 /// - accepted: keep/drop/mask 後に keep する場合は Some(addon)、drop する場合は None
 /// - decisions: 生成された BudgetDecision 一覧
+#[allow(dead_code)]
 pub fn apply_sensitive_outcome_to_addon(
     addon: ContextAddon,
     msg_result: SensitiveCheckResult,
     att_result: SensitiveCheckResult,
     max_verbose: usize,
 ) -> (Option<ContextAddon>, Vec<BudgetDecision>) {
-    let (maybe_after_msg, mut decisions) = apply_msg_result(addon, msg_result, max_verbose);
-    let Some(after_msg) = maybe_after_msg else {
-        return (None, decisions);
-    };
-
-    let (maybe_after_att, att_decisions) =
-        apply_attachment_result(after_msg, att_result, max_verbose);
-    decisions.extend(att_decisions);
-    (maybe_after_att, decisions)
+    let result = screen_single_addon(addon, msg_result, att_result, max_verbose);
+    (result.accepted, result.decisions)
 }
 
 #[cfg(test)]
@@ -314,5 +369,103 @@ mod tests {
         assert_eq!(decisions.len(), 1);
         assert_eq!(decisions[0].action, "deny");
         assert_eq!(decisions[0].reason, "leakscan_error");
+    }
+
+    // --- screen_addons 集約のテスト ---
+
+    #[test]
+    fn screen_addons_aggregates_accepted_and_decisions() {
+        let a1 = base_addon();
+        let mut a2 = base_addon();
+        a2.id = "a2".to_string();
+        let inputs = vec![
+            ScreenAddonInput {
+                addon: a1,
+                msg_outcome: SensitiveCheckResult::Ok(SensitiveFilterOutcome::Clean),
+                attachment_outcome: SensitiveCheckResult::NotChecked,
+            },
+            ScreenAddonInput {
+                addon: a2,
+                msg_outcome: SensitiveCheckResult::Ok(SensitiveFilterOutcome::Hit {
+                    verbose: "v2".to_string(),
+                }),
+                attachment_outcome: SensitiveCheckResult::NotChecked,
+            },
+        ];
+        let decision = screen_addons(inputs, 2000);
+        assert_eq!(decision.accepted.len(), 2);
+        assert_eq!(decision.accepted[0].id, "a1");
+        assert_eq!(decision.accepted[1].id, "a2");
+        assert_eq!(decision.decisions.len(), 1);
+        assert_eq!(decision.decisions[0].action, "allow");
+        assert_eq!(decision.decisions[0].details["target"], "msg");
+    }
+
+    #[test]
+    fn screen_addons_deny_drops_addon_but_keeps_decisions() {
+        let a1 = base_addon();
+        let mut a2 = base_addon();
+        a2.id = "a2".to_string();
+        let inputs = vec![
+            ScreenAddonInput {
+                addon: a1,
+                msg_outcome: SensitiveCheckResult::Ok(SensitiveFilterOutcome::Clean),
+                attachment_outcome: SensitiveCheckResult::NotChecked,
+            },
+            ScreenAddonInput {
+                addon: a2,
+                msg_outcome: SensitiveCheckResult::Ok(SensitiveFilterOutcome::Deny {
+                    verbose: "denied".to_string(),
+                }),
+                attachment_outcome: SensitiveCheckResult::NotChecked,
+            },
+        ];
+        let decision = screen_addons(inputs, 2000);
+        assert_eq!(decision.accepted.len(), 1);
+        assert_eq!(decision.accepted[0].id, "a1");
+        assert_eq!(decision.decisions.len(), 1);
+        assert_eq!(decision.decisions[0].action, "deny");
+    }
+
+    #[test]
+    fn screen_addons_masked_replaces_msg_and_attachment() {
+        let mut addon = base_addon();
+        addon.attachment = Some(ContextAttachment {
+            kind: "k".to_string(),
+            title: "t".to_string(),
+            content_type: "text/plain".to_string(),
+            content: Some("secret".to_string()),
+            artifact_rel_path: None,
+            bytes: 6,
+            hash64: hash64("secret"),
+            source: None,
+        });
+        let inputs = vec![ScreenAddonInput {
+            addon,
+            msg_outcome: SensitiveCheckResult::Ok(SensitiveFilterOutcome::Masked {
+                masked: "masked_msg".to_string(),
+                verbose: "v".to_string(),
+            }),
+            attachment_outcome: SensitiveCheckResult::Ok(SensitiveFilterOutcome::Masked {
+                masked: "masked_att".to_string(),
+                verbose: "va".to_string(),
+            }),
+        }];
+        let decision = screen_addons(inputs, 2000);
+        assert_eq!(decision.accepted.len(), 1);
+        let a = &decision.accepted[0];
+        match &a.msg {
+            Msg::User(s) => assert_eq!(s, "masked_msg"),
+            _ => panic!("expected user msg"),
+        }
+        let att = a.attachment.as_ref().expect("attachment");
+        assert_eq!(att.content.as_deref(), Some("masked_att"));
+        assert_eq!(decision.decisions.len(), 2);
+        let mask_actions: Vec<_> = decision
+            .decisions
+            .iter()
+            .filter(|d| d.action == "mask")
+            .collect();
+        assert_eq!(mask_actions.len(), 2);
     }
 }
