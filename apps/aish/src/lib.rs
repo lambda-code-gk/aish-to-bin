@@ -2,13 +2,15 @@
 
 mod adapter;
 mod cli;
+mod daemon_access;
+mod daemon_bridge;
+mod daemon_cli;
+mod daemon_handler;
+mod daemon_server;
 mod domain;
 mod ports;
 mod usecase;
 mod wiring;
-
-#[cfg(unix)]
-mod daemon;
 
 // Re-export run and run_with_args from main. The binary and the library share the same code;
 // the library target does not compile main.rs, so we must provide run_with_args here.
@@ -17,6 +19,8 @@ mod daemon;
 use common::error::Error;
 use common::ports::outbound::PathResolverInput;
 use ports::inbound::UseCaseRunner;
+use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 /// Run aish with arguments from the environment (binary entry point).
 pub fn run() -> Result<i32, Error> {
@@ -63,6 +67,61 @@ struct AishRunner {
 }
 
 #[cfg(unix)]
+fn ai_process_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[cfg(unix)]
+struct AiEnvGuard {
+    _guard: MutexGuard<'static, ()>,
+    prev_session: Option<String>,
+    prev_home: Option<String>,
+    prev_cwd: PathBuf,
+}
+
+#[cfg(unix)]
+impl AiEnvGuard {
+    fn apply(session_dir: Option<&str>, home_dir: Option<&str>) -> Result<Self, Error> {
+        let guard = ai_process_lock()
+            .lock()
+            .map_err(|_| Error::system("ai env lock poisoned"))?;
+        let prev_session = std::env::var("AISH_SESSION").ok();
+        let prev_home = std::env::var("AISH_HOME").ok();
+        let prev_cwd = std::env::current_dir().map_err(|e| Error::io_msg(e.to_string()))?;
+        match session_dir {
+            Some(value) => std::env::set_var("AISH_SESSION", value),
+            None => std::env::remove_var("AISH_SESSION"),
+        }
+        match home_dir {
+            Some(value) => std::env::set_var("AISH_HOME", value),
+            None => std::env::remove_var("AISH_HOME"),
+        }
+        Ok(Self {
+            _guard: guard,
+            prev_session,
+            prev_home,
+            prev_cwd,
+        })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for AiEnvGuard {
+    fn drop(&mut self) {
+        let _ = std::env::set_current_dir(&self.prev_cwd);
+        match &self.prev_session {
+            Some(value) => std::env::set_var("AISH_SESSION", value),
+            None => std::env::remove_var("AISH_SESSION"),
+        }
+        match &self.prev_home {
+            Some(value) => std::env::set_var("AISH_HOME", value),
+            None => std::env::remove_var("AISH_HOME"),
+        }
+    }
+}
+
+#[cfg(unix)]
 impl UseCaseRunner for AishRunner {
     fn run(&self, config: cli::Config) -> Result<i32, Error> {
         use domain::command::Command;
@@ -79,6 +138,11 @@ impl UseCaseRunner for AishRunner {
                 Ok(0)
             }
             Command::Shell => self.app.shell_use_case.run(&path_input),
+            Command::ShellStatus => {
+                let snapshot = self.app.shell_status_use_case.get(&path_input)?;
+                entry_print_shell_status(&snapshot);
+                Ok(0)
+            }
             Command::TruncateConsoleLog => self.app.truncate_console_log_use_case.run(&path_input),
             Command::Rollout => self.app.rollout_use_case.run(&path_input),
             Command::Mute => self.app.mute_use_case.run(&path_input),
@@ -142,7 +206,13 @@ impl UseCaseRunner for AishRunner {
                 Ok(0)
             }
             Command::MemoryList => {
-                let entries = self.app.memory_use_case.list()?;
+                let entries: Vec<domain::MemoryListEntry> =
+                    daemon_access::run_aish_read_with_fallback(
+                        daemon_api::AishReadRequest::MemoryList {
+                            context: daemon_access::backend_context(&config),
+                        },
+                        || self.app.memory_use_case.list(),
+                    )?;
                 entry_print_memory_list(&entries);
                 Ok(0)
             }
@@ -152,7 +222,14 @@ impl UseCaseRunner for AishRunner {
                         "memory get requires at least one id".to_string(),
                     ));
                 }
-                let entries = self.app.memory_use_case.get(&ids)?;
+                let ids_for_fallback = ids.clone();
+                let entries: Vec<domain::MemoryEntry> = daemon_access::run_aish_read_with_fallback(
+                    daemon_api::AishReadRequest::MemoryGet {
+                        context: daemon_access::backend_context(&config),
+                        ids,
+                    },
+                    || self.app.memory_use_case.get(&ids_for_fallback),
+                )?;
                 entry_print_memory_get(&entries);
                 Ok(0)
             }
@@ -162,7 +239,14 @@ impl UseCaseRunner for AishRunner {
                         "memory remove requires at least one id".to_string(),
                     ));
                 }
-                self.app.memory_use_case.remove(&ids)?;
+                let ids_for_fallback = ids.clone();
+                daemon_access::run_aish_write_with_fallback(
+                    daemon_api::AishWriteRequest::MemoryRemove {
+                        context: daemon_access::backend_context(&config),
+                        ids,
+                    },
+                    || self.app.memory_use_case.remove(&ids_for_fallback),
+                )?;
                 Ok(0)
             }
             Command::HistoryLs {
@@ -171,32 +255,59 @@ impl UseCaseRunner for AishRunner {
                 assistant_only,
             } => {
                 let session_explicitly_specified = entry_is_session_explicitly_specified(&config);
-                let entries = self.app.history_use_case.list(
-                    &path_input,
-                    session_explicitly_specified,
-                    all,
-                    user_only,
-                    assistant_only,
-                )?;
+                let entries: Vec<domain::HistoryListEntry> =
+                    daemon_access::run_aish_read_with_fallback(
+                        daemon_api::AishReadRequest::HistoryList {
+                            context: daemon_access::backend_context(&config),
+                            session_explicitly_specified,
+                            all,
+                            user_only,
+                            assistant_only,
+                        },
+                        || {
+                            self.app.history_use_case.list(
+                                &path_input,
+                                session_explicitly_specified,
+                                all,
+                                user_only,
+                                assistant_only,
+                            )
+                        },
+                    )?;
                 let width = (self.app.get_terminal_width)();
                 entry_print_history_list(&entries, width);
                 Ok(0)
             }
             Command::HistoryGet { ids } => {
                 let session_explicitly_specified = entry_is_session_explicitly_specified(&config);
-                let entries = self.app.history_use_case.get(
-                    &path_input,
-                    session_explicitly_specified,
-                    &ids,
-                )?;
+                let ids_for_fallback = ids.clone();
+                let entries: Vec<domain::HistoryGetEntry> =
+                    daemon_access::run_aish_read_with_fallback(
+                        daemon_api::AishReadRequest::HistoryGet {
+                            context: daemon_access::backend_context(&config),
+                            session_explicitly_specified,
+                            ids,
+                        },
+                        || {
+                            self.app.history_use_case.get(
+                                &path_input,
+                                session_explicitly_specified,
+                                &ids_for_fallback,
+                            )
+                        },
+                    )?;
                 entry_print_history_get(&entries);
                 Ok(0)
             }
             Command::PolicyExplain => entry_run_ai_policy_explain(),
             Command::ConfigExplain => entry_run_ai_config_explain(),
             Command::PluginsList => {
-                let mut list = self.app.mcp_host.discover()?;
-                list.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+                let list = daemon_access::run_aish_read_with_fallback(
+                    daemon_api::AishReadRequest::PluginsList {
+                        context: daemon_access::backend_context(&config),
+                    },
+                    || Ok(daemon_access::sort_plugins(self.app.mcp_host.discover()?)),
+                )?;
                 for p in list {
                     let flag = if p.enabled { "enabled" } else { "disabled" };
                     let src = p.source.unwrap_or_default();
@@ -205,59 +316,47 @@ impl UseCaseRunner for AishRunner {
                 Ok(0)
             }
             #[cfg(unix)]
-            Command::DaemonStart => {
-                let path = daemon::default_socket_path();
-                let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| Error::invalid_argument(e.to_string()))?;
-                rt.block_on(daemon::run_server(path)).map_err(
-                    |e: Box<dyn std::error::Error + Send + Sync>| {
-                        Error::invalid_argument(e.to_string())
-                    },
-                )?;
-                Ok(0)
-            }
-            #[cfg(unix)]
-            Command::DaemonPing => {
-                let path = daemon::default_socket_path();
-                let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| Error::invalid_argument(e.to_string()))?;
-                let ok = rt.block_on(daemon::run_ping(&path)).map_err(
-                    |e: Box<dyn std::error::Error + Send + Sync>| {
-                        Error::invalid_argument(e.to_string())
-                    },
-                )?;
-                Ok(if ok { 0 } else { 1 })
-            }
-            #[cfg(unix)]
-            Command::DaemonStatus => {
-                let path = daemon::default_socket_path();
-                let rt = tokio::runtime::Runtime::new()
-                    .map_err(|e| Error::invalid_argument(e.to_string()))?;
-                rt.block_on(daemon::run_status(&path)).map_err(
-                    |e: Box<dyn std::error::Error + Send + Sync>| {
-                        Error::invalid_argument(e.to_string())
-                    },
-                )?;
-                Ok(0)
-            }
-            Command::ToolsList => {
-                let mut tool_ids: Vec<String> = Vec::new();
-                let servers = self.app.mcp_host.discover()?;
-                for s in servers.into_iter().filter(|s| s.enabled) {
-                    match self.app.mcp_host.list_tools(&s.id) {
-                        Ok(tools) => {
-                            for t in tools {
-                                tool_ids.push(t.id.0);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("tools list failed for {}: {}", s.id.0, e);
-                        }
-                    }
+            Command::DaemonStart { detach } => {
+                if detach {
+                    daemon_cli::run_start_detached()
+                } else {
+                    daemon_cli::run_start()
                 }
-                tool_ids.sort();
-                tool_ids.dedup();
-                for id in tool_ids {
+            }
+            #[cfg(unix)]
+            Command::DaemonPing => daemon_cli::run_ping(),
+            #[cfg(unix)]
+            Command::DaemonStatus => daemon_cli::run_status(),
+            #[cfg(unix)]
+            Command::DaemonJobs {
+                active_only,
+                persisted_only,
+            } => daemon_cli::run_jobs(
+                &config,
+                &self.app,
+                &path_input,
+                active_only,
+                persisted_only,
+                entry_is_session_explicitly_specified(&config),
+            ),
+            #[cfg(unix)]
+            Command::DaemonStop => daemon_cli::run_stop(),
+            #[cfg(unix)]
+            Command::DaemonCancel { job_id } => daemon_cli::run_cancel(&job_id),
+            #[cfg(unix)]
+            Command::DaemonEnsure => daemon_cli::run_ensure(),
+            Command::ToolsList => {
+                let result: daemon_api::AishToolsListResult =
+                    daemon_access::run_aish_read_with_fallback(
+                        daemon_api::AishReadRequest::ToolsList {
+                            context: daemon_access::backend_context(&config),
+                        },
+                        || daemon_access::list_tools_locally(&self.app),
+                    )?;
+                for warning in result.warnings {
+                    eprintln!("{}", warning);
+                }
+                for id in result.tool_ids {
                     println!("{}", id);
                 }
                 Ok(0)
@@ -290,20 +389,80 @@ fn entry_is_session_explicitly_specified(config: &cli::Config) -> bool {
 
 #[cfg(unix)]
 fn entry_run_ai_policy_explain() -> Result<i32, Error> {
-    let status = std::process::Command::new("ai")
-        .arg("--policy-explain")
-        .status()
-        .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
-    Ok(status.code().unwrap_or(1))
+    ai::run_with_args([
+        std::ffi::OsString::from("ai"),
+        std::ffi::OsString::from("--policy-explain"),
+    ])
 }
 
 #[cfg(unix)]
 fn entry_run_ai_config_explain() -> Result<i32, Error> {
-    let status = std::process::Command::new("ai")
-        .arg("--config-explain")
-        .status()
-        .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
-    Ok(status.code().unwrap_or(1))
+    ai::run_with_args([
+        std::ffi::OsString::from("ai"),
+        std::ffi::OsString::from("--config-explain"),
+    ])
+}
+
+#[cfg(unix)]
+fn entry_print_shell_status(snapshot: &domain::ShellStatusSnapshot) {
+    println!("[session]");
+    println!("session_id\t{}", snapshot.session_id);
+    println!("persisted_job_count\t{}", snapshot.persisted_job_count);
+    if let Some(job) = &snapshot.latest_job {
+        println!("latest_job_id\t{}", job.job_id);
+        println!("latest_job_state\t{}", job.state);
+        if let Some(exit_code) = job.exit_code {
+            println!("latest_job_exit_code\t{}", exit_code);
+        }
+    }
+    println!();
+    println!("[shell attachment]");
+    match &snapshot.attachment {
+        Some(attachment) => {
+            let status = match attachment.status {
+                domain::ShellAttachmentStatus::Attached => "attached",
+                domain::ShellAttachmentStatus::Detached => "detached",
+            };
+            println!("status\t{}", status);
+            if let Some(pid) = attachment.pid {
+                println!("pid\t{}", pid);
+            }
+            println!("muted\t{}", attachment.muted);
+            println!("console_path\t{}", attachment.console_path);
+            println!("pending_input_path\t{}", attachment.pending_input_path);
+            println!(
+                "prompt_suggestion_path\t{}",
+                attachment.prompt_suggestion_path
+            );
+            println!("mute_flag_path\t{}", attachment.mute_flag_path);
+            println!("part_file_prefix\t{}", attachment.part_file_prefix);
+            let job_link_mode = match attachment.job_link_mode {
+                domain::ShellJobLinkMode::SessionEvents => "session_events",
+            };
+            println!("job_link_mode\t{}", job_link_mode);
+            let part_file_tracking_mode = match attachment.part_file_tracking_mode {
+                domain::ShellPartTrackingMode::LayoutOnly => "layout_only",
+            };
+            println!("part_file_tracking_mode\t{}", part_file_tracking_mode);
+        }
+        None => println!("status\tnone"),
+    }
+    println!();
+    println!("[console log]");
+    println!("console_exists\t{}", snapshot.console_exists);
+    if let Some(bytes) = snapshot.console_bytes {
+        println!("console_bytes\t{}", bytes);
+    }
+    println!("part_file_count\t{}", snapshot.part_file_count);
+    if let Some(part_file) = &snapshot.latest_part_file {
+        println!("latest_part_file\t{}", part_file);
+    }
+    println!("mute_flag_exists\t{}", snapshot.mute_flag_exists);
+    println!("pending_input_exists\t{}", snapshot.pending_input_exists);
+    println!(
+        "prompt_suggestion_exists\t{}",
+        snapshot.prompt_suggestion_exists
+    );
 }
 
 #[cfg(unix)]
@@ -322,13 +481,11 @@ fn entry_run_ai_sessions_rebuild_derived(
     } else {
         default_session
     };
-    let status = std::process::Command::new("ai")
-        .arg("-s")
-        .arg(&session_path)
-        .arg("--sessions-rebuild-derived")
-        .status()
-        .map_err(|e| Error::io_msg(format!("Failed to run ai: {}", e)))?;
-    Ok(status.code().unwrap_or(1))
+    let _env = AiEnvGuard::apply(Some(&session_path), Some(&home_dir))?;
+    ai::run_with_args([
+        std::ffi::OsString::from("ai"),
+        std::ffi::OsString::from("--sessions-rebuild-derived"),
+    ])
 }
 
 #[cfg(unix)]

@@ -2,7 +2,10 @@ use crate::adapter::console_handler::ConsoleLogHandler;
 use crate::adapter::platform::{get_winsize, TermMode};
 use crate::adapter::prompt_ready_detector::PromptReadyDetector;
 use crate::adapter::terminal::TerminalBuffer;
-use crate::domain::SessionEvent;
+use crate::domain::{
+    SessionEvent, ShellStorageLayout, PENDING_INPUT_FILENAME, PROMPT_SUGGESTION_FILENAME,
+};
+use crate::ports::outbound::ShellAttachmentStore;
 use common::domain::event::{Event, RunId, SessionId};
 use common::domain::{PendingInput, PolicyStatus};
 use common::error::Error;
@@ -17,8 +20,6 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-const PENDING_INPUT_FILENAME: &str = "pending_input.json";
-const PROMPT_SUGGESTION_FILENAME: &str = "prompt_suggestion.txt";
 const PENDING_MAX_LEN: usize = 4096;
 
 /// ShellRunner の標準実装（run_shell をラップ）
@@ -29,6 +30,7 @@ pub struct StdShellRunner {
     id_gen: Arc<dyn IdGenerator>,
     signal: Arc<dyn Signal>,
     pty_spawn: Arc<dyn PtySpawn>,
+    attachment_store: Arc<dyn ShellAttachmentStore>,
 }
 
 #[cfg(unix)]
@@ -39,6 +41,7 @@ impl StdShellRunner {
         id_gen: Arc<dyn IdGenerator>,
         signal: Arc<dyn Signal>,
         pty_spawn: Arc<dyn PtySpawn>,
+        attachment_store: Arc<dyn ShellAttachmentStore>,
     ) -> Self {
         Self {
             env_resolver,
@@ -46,6 +49,7 @@ impl StdShellRunner {
             id_gen,
             signal,
             pty_spawn,
+            attachment_store,
         }
     }
 }
@@ -61,6 +65,7 @@ impl crate::ports::outbound::ShellRunner for StdShellRunner {
             self.id_gen.as_ref(),
             self.signal.as_ref(),
             self.pty_spawn.as_ref(),
+            self.attachment_store.clone(),
         )
     }
 }
@@ -261,6 +266,7 @@ pub fn run_shell(
     id_gen: &dyn IdGenerator,
     signal: &dyn Signal,
     pty_spawn: &dyn PtySpawn,
+    attachment_store: Arc<dyn ShellAttachmentStore>,
 ) -> Result<i32, Error> {
     let display_id = session_display_id(session_dir);
     let _end_notify = SessionEndNotify {
@@ -321,8 +327,9 @@ pub fn run_shell(
     let session_id = SessionId::new(session_dir.display().to_string());
     let run_id = RunId::new("inject");
 
-    let log_file_path = session_dir.join("console.txt");
-    let mute_flag_path = session_dir.join("console.muted");
+    let storage = ShellStorageLayout::default();
+    let log_file_path = storage.console_file(session_dir);
+    let mute_flag_path = storage.mute_flag_file(session_dir);
 
     let mut log_file = fs_ref.open_append(&log_file_path)?;
 
@@ -333,6 +340,21 @@ pub fn run_shell(
     let aish_pid = std::process::id();
     let pid_file_path = session_dir.join("AISH_PID");
     fs_ref.write(&pid_file_path, &aish_pid.to_string())?;
+    attachment_store.mark_attached(session_dir, aish_pid, fs_ref.exists(&mute_flag_path))?;
+
+    struct ShellAttachmentGuard {
+        session_dir: PathBuf,
+        attachment_store: Arc<dyn ShellAttachmentStore>,
+    }
+    impl Drop for ShellAttachmentGuard {
+        fn drop(&mut self) {
+            let _ = self.attachment_store.mark_detached(&self.session_dir);
+        }
+    }
+    let _attachment_guard = ShellAttachmentGuard {
+        session_dir: session_dir.to_path_buf(),
+        attachment_store: Arc::clone(&attachment_store),
+    };
 
     let mut env_vars = Vec::new();
     env_vars.push((

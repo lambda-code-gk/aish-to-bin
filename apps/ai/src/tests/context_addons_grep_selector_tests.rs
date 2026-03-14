@@ -34,6 +34,7 @@ fn test_grep_selector_finds_token_in_file() {
         history: &[],
         query: Some(&query),
         project_root: root,
+        session_dir: None,
     };
     let addons = selector.select(&input).expect("select should succeed");
     assert!(!addons.is_empty(), "should find at least one addon");
@@ -70,6 +71,7 @@ fn test_grep_selector_ignores_dirs() {
         history: &[],
         query: Some(&query),
         project_root: root,
+        session_dir: None,
     };
     let addons = selector.select(&input).expect("select should succeed");
     assert!(
@@ -87,6 +89,7 @@ fn test_grep_selector_returns_empty_when_no_query() {
         history: &[],
         query: None,
         project_root: tmp.path(),
+        session_dir: None,
     };
     let addons = selector.select(&input).expect("select should succeed");
     assert!(addons.is_empty());

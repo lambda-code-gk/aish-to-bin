@@ -1,14 +1,13 @@
 //! Echoプロバイダの実装
 //!
-//! このプロバイダは実際にLLM APIを呼び出さず、クエリを表示するだけです。
-//! デバッグやテスト用に使用します。
+//! このプロバイダは実際にLLM APIを呼び出さず、固定応答や疑似イベントを返します。
+//! 表示は行わず、デバッグやテスト用に使用します。
 
 use crate::error::Error;
 use crate::llm::events::{FinishReason, LlmEvent};
 use crate::llm::provider::{LlmProvider, Message};
 use crate::tool::ToolDef;
 use serde_json::{json, Value};
-use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
 
@@ -28,12 +27,8 @@ impl LlmProvider for EchoProvider {
     }
 
     fn make_http_request(&self, request_json: &str) -> Result<String, Error> {
-        // クエリを表示
-        println!("[Echo Provider] Request JSON:");
-        println!("{}", request_json);
-
         // ダミーのレスポンスを返す（実際のAPI呼び出しは行わない）
-        Ok(r#"{"echo": "This is a dummy response from echo provider"}"#.to_string())
+        Ok(json!({ "echo": request_json }).to_string())
     }
 
     fn parse_response_text(&self, _response_json: &str) -> Result<Option<String>, Error> {
@@ -55,12 +50,6 @@ impl LlmProvider for EchoProvider {
         history: &[Message],
         _tools: Option<&[ToolDef]>,
     ) -> Result<Value, Error> {
-        // クエリ情報を表示（システム指示は stream_events で1回だけ表示）
-        println!("[Echo Provider] Query: {}", query);
-        if !history.is_empty() {
-            println!("[Echo Provider] History: {} messages", history.len());
-        }
-
         // シンプルなペイロードを生成
         let mut payload = json!({
             "query": query,
@@ -96,7 +85,6 @@ impl LlmProvider for EchoProvider {
         for word in text.split_whitespace() {
             callback(word)?;
             callback(" ")?;
-            io::stdout().flush().ok();
             thread::sleep(Duration::from_millis(50));
         }
 
@@ -112,21 +100,14 @@ impl LlmProvider for EchoProvider {
     ) -> Result<(), Error> {
         let payload: Value = match serde_json::from_str(request_json) {
             Ok(p) => p,
-            Err(_) => {
-                // パース失敗時は従来どおりテキストのみ返す（履歴件数は 0）
-                return self.stream_events_text_only(callback, 0);
-            }
+            Err(_) => return self.stream_events_text_only(callback, "", 0, None),
         };
         let query = payload["query"].as_str().unwrap_or("").trim();
         let history = payload["history"]
             .as_array()
             .map(|a| a.as_slice())
             .unwrap_or(&[]);
-
-        // ストリーム入口でもシステムプロンプトを表示
-        if let Some(s) = payload.get("system_instruction").and_then(|v| v.as_str()) {
-            println!("[Echo Provider] System instruction: {}", s);
-        }
+        let system_instruction = payload.get("system_instruction").and_then(|v| v.as_str());
 
         // 直近がツール結果なら、テキスト応答を返すか、ループテスト用にツール呼び出しを続ける
         let last_is_tool = history
@@ -188,7 +169,6 @@ impl LlmProvider for EchoProvider {
             for word in msg.split_whitespace() {
                 callback(LlmEvent::TextDelta(word.to_string()))?;
                 callback(LlmEvent::TextDelta(" ".to_string()))?;
-                io::stdout().flush().ok();
                 thread::sleep(Duration::from_millis(30));
             }
             callback(LlmEvent::Completed {
@@ -262,9 +242,9 @@ impl LlmProvider for EchoProvider {
             }
         }
 
-        // 通常のテキスト応答（採用された履歴件数を表示）
+        // 通常のテキスト応答
         let history_count = history.len();
-        self.stream_events_text_only(callback, history_count)
+        self.stream_events_text_only(callback, query, history_count, system_instruction)
     }
 }
 
@@ -272,22 +252,33 @@ impl EchoProvider {
     fn stream_events_text_only(
         &self,
         callback: &mut dyn FnMut(LlmEvent) -> Result<(), Error>,
+        query: &str,
         history_count: usize,
+        system_instruction: Option<&str>,
     ) -> Result<(), Error> {
-        let header = format!(
+        let mut text = format!("[Echo Provider] Query: user message: {}\n\n", query);
+        if history_count > 0 {
+            text.push_str(&format!(
+                "[Echo Provider] History: {} messages\n",
+                history_count
+            ));
+        }
+        if let Some(system_instruction) = system_instruction {
+            text.push_str(&format!(
+                "[Echo Provider] System instruction: {}\n",
+                system_instruction
+            ));
+        }
+        text.push('\n');
+        text.push_str(&format!(
             "[Echo Provider] 採用された履歴件数: {} 件。\n\n",
             history_count
+        ));
+        text.push_str(
+            "[Echo Provider] This is a simulated streaming response from the echo provider. It displays text chunk by chunk to demonstrate the streaming capability.",
         );
-        callback(LlmEvent::TextDelta(header))?;
-        io::stdout().flush().ok();
-
-        let text = "[Echo Provider] This is a simulated streaming response from the echo provider. It displays text chunk by chunk to demonstrate the streaming capability.";
-        for word in text.split_whitespace() {
-            callback(LlmEvent::TextDelta(word.to_string()))?;
-            callback(LlmEvent::TextDelta(" ".to_string()))?;
-            io::stdout().flush().ok();
-            thread::sleep(Duration::from_millis(50));
-        }
+        callback(LlmEvent::TextDelta(text))?;
+        thread::sleep(Duration::from_millis(50));
         callback(LlmEvent::Completed {
             finish: FinishReason::Stop,
         })?;
@@ -349,5 +340,44 @@ mod tests {
         let provider = EchoProvider::new();
         let result = provider.check_tool_calls("{}").unwrap();
         assert_eq!(result, false);
+    }
+
+    #[test]
+    fn test_echo_provider_stream_events_text_only_includes_query_history_and_system() {
+        let provider = EchoProvider::new();
+        let payload = provider
+            .make_request_payload(
+                "say hello",
+                Some("You are helpful"),
+                &[Message::user("first"), Message::assistant("second")],
+                None,
+            )
+            .unwrap();
+        let request_json = serde_json::to_string(&payload).unwrap();
+        let mut events = Vec::new();
+        provider
+            .stream_events(&request_json, None, &mut |ev| {
+                events.push(ev);
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(
+            events.last(),
+            Some(LlmEvent::Completed {
+                finish: FinishReason::Stop
+            })
+        ));
+        let text = events
+            .iter()
+            .filter_map(|ev| match ev {
+                LlmEvent::TextDelta(text) => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<String>();
+        assert!(text.contains("[Echo Provider] Query: user message: say hello"));
+        assert!(text.contains("[Echo Provider] History: 2 messages"));
+        assert!(text.contains("[Echo Provider] System instruction: You are helpful"));
+        assert!(text.contains("[Echo Provider] 採用された履歴件数: 2 件。"));
+        assert!(text.contains("simulated streaming response"));
     }
 }

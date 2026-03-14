@@ -4,6 +4,10 @@ use std::ffi::OsString;
 
 /// メイン処理。bin エントリ（ai / aish）から呼ばれる。
 pub fn run() -> Result<i32, common::error::Error> {
+    if let Some(result) = aish_daemon::maybe_run_worker_from_env() {
+        return result;
+    }
+
     use clap::builder::ArgAction;
 
     let mut args: Vec<OsString> = std::env::args_os().collect();
@@ -53,7 +57,16 @@ pub fn run() -> Result<i32, common::error::Error> {
                         .allow_hyphen_values(true),
                 ),
         )
-        .subcommand(clap::Command::new("shell").about("Start the interactive shell (default)"))
+        .subcommand(
+            clap::Command::new("shell")
+                .about("Start the interactive shell (default) or show shell status")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("shell_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
         .subcommand(
             clap::Command::new("plugins")
                 .about("External plugins (aish plugins list)")
@@ -74,25 +87,135 @@ pub fn run() -> Result<i32, common::error::Error> {
                         .allow_hyphen_values(true),
                 ),
         )
-        .subcommand(clap::Command::new("sessions").about("List sessions or rebuild-derived"))
-        .subcommand(clap::Command::new("policy").about("Policy explain (ai --policy-explain)"))
-        .subcommand(clap::Command::new("config").about("Config explain (ai --config-explain)"))
-        .subcommand(clap::Command::new("clear").about("Clear part files in session"))
-        .subcommand(clap::Command::new("init").about("Copy default config"))
-        .subcommand(clap::Command::new("memory").about("Memory list/get/remove"))
-        .subcommand(clap::Command::new("history").about("History ls/get"))
-        .subcommand(clap::Command::new("resume").about("Resume session"))
+        .subcommand(
+            clap::Command::new("sessions")
+                .about("List sessions or rebuild-derived")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("sessions_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("policy")
+                .about("Policy explain (ai --policy-explain)")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("policy_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("config")
+                .about("Config explain (ai --config-explain)")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("config_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("clear")
+                .about("Clear part files in session")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("clear_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("init")
+                .about("Copy default config")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("init_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("memory")
+                .about("Memory list/get/remove")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("memory_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("history")
+                .about("History ls/get")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("history_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
+        .subcommand(
+            clap::Command::new("resume")
+                .about("Resume session")
+                .trailing_var_arg(true)
+                .arg(
+                    clap::Arg::new("resume_rest")
+                        .num_args(0..)
+                        .allow_hyphen_values(true),
+                ),
+        )
         .subcommand(clap::Command::new("rollout").about("Rollover console log"))
         .subcommand(clap::Command::new("mute").about("Stop recording console"))
         .subcommand(clap::Command::new("unmute").about("Resume recording console"))
         .subcommand(clap::Command::new("truncate_console_log").about("Truncate console buffer"))
         .subcommand(
             clap::Command::new("daemon")
-                .about("Single-writer daemon (aishd): start, ping, status")
+                .about("Single-writer daemon (aishd): start, ensure, ping, status, jobs, stop, cancel")
                 .subcommand_required(true)
-                .subcommand(clap::Command::new("start").about("Run daemon in foreground"))
+                .subcommand(
+                    clap::Command::new("start")
+                        .about("Run daemon in foreground")
+                        .arg(
+                            clap::Arg::new("detach")
+                                .long("detach")
+                                .help("Start daemon in background (detach) and return immediately")
+                                .action(ArgAction::SetTrue),
+                        ),
+                )
+                .subcommand(
+                    clap::Command::new("ensure")
+                        .about("Ensure daemon is running (start in background if needed)"),
+                )
                 .subcommand(clap::Command::new("ping").about("Check daemon liveness"))
-                .subcommand(clap::Command::new("status").about("Show daemon status")),
+                .subcommand(clap::Command::new("status").about("Show daemon status"))
+                .subcommand(
+                    clap::Command::new("jobs")
+                        .about("List backend jobs and/or persisted lifecycle state")
+                        .arg(
+                            clap::Arg::new("active")
+                                .long("active")
+                                .action(ArgAction::SetTrue),
+                        )
+                        .arg(
+                            clap::Arg::new("persisted")
+                                .long("persisted")
+                                .action(ArgAction::SetTrue),
+                        ),
+                )
+                .subcommand(clap::Command::new("stop").about("Ask daemon to stop"))
+                .subcommand(
+                    clap::Command::new("cancel")
+                        .about("Cancel a running ai backend job")
+                        .arg(
+                            clap::Arg::new("job_id")
+                                .value_name("job_id")
+                                .required(true)
+                                .num_args(1),
+                        ),
+                ),
         );
 
     let matches = cmd.get_matches_from(args);
@@ -191,5 +314,5 @@ fn print_help() {
     println!("  policy                Policy explain");
     println!("  config                Config explain");
     println!("  clear, init, memory, history, resume, rollout, mute, unmute, truncate_console_log");
-    println!("  daemon start|ping|status   Single-writer daemon (aishd)");
+    println!("  daemon start|ping|status|stop   Single-writer daemon (aishd)");
 }

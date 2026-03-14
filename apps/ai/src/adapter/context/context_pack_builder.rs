@@ -15,6 +15,7 @@ use crate::ports::outbound::{
     ContextAddonInput, ContextAddonSelector, ContextPackBuilder, QueryPlacement,
     SensitiveTextFilter,
 };
+use common::domain::SessionDir;
 use common::error::Error;
 use common::llm::provider::Message as LlmMessage;
 use common::msg::Msg;
@@ -92,6 +93,7 @@ impl ContextPackBuilder for StdContextPackBuilder {
     fn build(
         &self,
         history: &[LlmMessage],
+        _session_dir: Option<&SessionDir>,
         query: Option<&Query>,
         system_instruction: Option<&str>,
         query_placement: QueryPlacement,
@@ -188,6 +190,7 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
     fn build(
         &self,
         history: &[LlmMessage],
+        session_dir: Option<&SessionDir>,
         query: Option<&Query>,
         system_instruction: Option<&str>,
         query_placement: QueryPlacement,
@@ -246,6 +249,7 @@ impl ContextPackBuilder for StdContextPackBuilderWithAddons {
             history,
             query,
             project_root: &self.project_root,
+            session_dir,
         };
 
         let mut candidates: Vec<ContextAddon> = Vec::new();

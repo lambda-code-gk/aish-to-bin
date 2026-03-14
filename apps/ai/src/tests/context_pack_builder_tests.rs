@@ -29,6 +29,7 @@ fn test_append_at_end_adds_query_and_budget_report() {
     let pack = builder
         .build(
             &history,
+            None,
             Some(&query),
             Some("sys"),
             QueryPlacement::AppendAtEnd,
@@ -55,6 +56,7 @@ fn test_already_in_history_does_not_duplicate_query() {
     let pack = builder
         .build(
             &history,
+            None,
             Some(&query),
             Some("sys"),
             QueryPlacement::AlreadyInHistory,
@@ -79,6 +81,7 @@ fn test_resume_no_query() {
         .build(
             &history,
             None,
+            None,
             Some("sys"),
             QueryPlacement::AlreadyInHistory,
         )
@@ -98,7 +101,13 @@ fn test_tail_window_truncates_and_reports() {
     ];
     let query = Query::new("d");
     let pack = builder
-        .build(&history, Some(&query), None, QueryPlacement::AppendAtEnd)
+        .build(
+            &history,
+            None,
+            Some(&query),
+            None,
+            QueryPlacement::AppendAtEnd,
+        )
         .expect("build should succeed");
 
     let history_decision = pack
@@ -123,7 +132,7 @@ fn test_tail_window_char_budget() {
         LlmMessage::user("c"),
     ];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let history_decision = pack
@@ -142,7 +151,7 @@ fn test_budget_report_serializable() {
     let builder = make_passthrough_builder();
     let history = vec![LlmMessage::user("hello")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let json = serde_json::to_string(&pack.budget_report).expect("should serialize");
@@ -158,6 +167,7 @@ fn test_system_instruction_prepended() {
         .build(
             &history,
             None,
+            None,
             Some("system prompt"),
             QueryPlacement::AlreadyInHistory,
         )
@@ -172,7 +182,7 @@ fn test_no_system_instruction() {
     let builder = make_passthrough_builder();
     let history = vec![LlmMessage::user("msg")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     assert_eq!(pack.messages.len(), 1);

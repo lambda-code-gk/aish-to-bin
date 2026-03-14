@@ -4,10 +4,11 @@
 
 use crate::error::Error;
 use crate::llm::events::LlmEvent;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// QueryLoop / AgentLoop から Sink へ流すイベント
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AgentEvent {
     /// LLM ストリーム由来
     Llm(LlmEvent),

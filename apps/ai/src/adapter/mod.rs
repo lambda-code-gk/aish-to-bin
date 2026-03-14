@@ -1,6 +1,7 @@
 //! 標準アダプタ（config / context / lifecycle / llm / plugin / policy / session / tools）
 
 pub(crate) mod approval;
+pub(crate) mod backend_client;
 pub(crate) mod config;
 pub(crate) mod context;
 pub(crate) mod dry_run_report_sink;
@@ -30,7 +31,7 @@ pub(crate) use config::{
 #[allow(unused_imports)] // テストで StdContextMessageBuilder, StdContextPackBuilder 等を参照
 pub(crate) use context::{
     ChangedFilesSnippetSelector, GrepHitsSelector, MemorySelector, PassThroughReducer,
-    StdContextArtifactStore, StdContextMessageBuilder, StdContextPackBuilder,
+    ShellConsoleSelector, StdContextArtifactStore, StdContextMessageBuilder, StdContextPackBuilder,
     StdContextPackBuilderWithAddons, StdMemoryContextResolver, StdResolveMemoryDir,
     StdStructuredMemoryRepository, TailWindowReducer,
 };
@@ -43,7 +44,8 @@ pub(crate) use package_resolver::StdPackageResolver;
 pub(crate) use package_spec_loader::StdPackageSpecLoader as StdPackageSpecLoaderAdapter;
 pub(crate) use policy::{
     EgressBudgetHardCapRule, EgressSensitiveRule, LeakscanPrepareSession, LeakscanTextFilter,
-    ShellAllowlistRule, StdPolicyEngine, StdPolicyExplainProvider, ToolModeRule,
+    SensitiveContentPrompt, SensitivePromptChoice, ShellAllowlistRule, StdPolicyEngine,
+    StdPolicyExplainProvider, ToolModeRule,
 };
 pub(crate) use prompt_source_resolver::StdPromptSourceResolver;
 pub(crate) use session::{

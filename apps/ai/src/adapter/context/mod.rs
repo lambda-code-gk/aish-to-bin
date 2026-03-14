@@ -3,6 +3,7 @@
 pub(crate) mod context_addon_selectors;
 pub(crate) mod context_addon_selectors_grep;
 pub(crate) mod context_addon_selectors_memory;
+pub(crate) mod context_addon_selectors_shell_console;
 pub(crate) mod context_artifact_store;
 pub(crate) mod context_message_builder;
 pub(crate) mod context_pack_builder;
@@ -16,6 +17,7 @@ pub(crate) mod structured_memory_repository;
 pub(crate) use context_addon_selectors::ChangedFilesSnippetSelector;
 pub(crate) use context_addon_selectors_grep::GrepHitsSelector;
 pub(crate) use context_addon_selectors_memory::MemorySelector;
+pub(crate) use context_addon_selectors_shell_console::ShellConsoleSelector;
 pub(crate) use context_artifact_store::StdContextArtifactStore;
 #[allow(unused_imports)]
 pub(crate) use context_message_builder::StdContextMessageBuilder;

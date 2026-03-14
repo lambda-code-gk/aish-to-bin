@@ -116,6 +116,20 @@ domain 層は「型定義の置き場」ではなく、**判断ロジック（�
 - **common 肥大化防止**: 2 crate 以上で共有され安定したものだけ common に置く。ai 専用・aish 専用は各 crate の adapter / usecase に置く。OS 副作用のある具象ツール実装は `apps/*/adapter/` に置く。システムプロンプトの注入は hooks ベースのアダプタ（`ResolveSystemPromptFromHooks`）で行い、usecase からは直接扱わない。
 - **文字列の切り詰め（UTF-8）**: `&str` をバイト長で切り詰める場合、**必ず文字境界で切る**こと。`&s[..n]` のようにバイト位置 `n` でそのままスライスすると、UTF-8 の多バイト文字（日本語の「コ」等）の途中で切り、`byte index N is not a char boundary` でパニックになる。切り詰め位置を `n` にしたあと、`str::is_char_boundary(n)` が真になるまで `n` を減らすか、`char_indices()` で文字境界だけを扱うこと。
 - **タスク内で `ai` をネスト呼び出しする場合**: 下位 `ai` コマンドが非ゼロ終了したら、その stderr/stdout を LLM 正常応答として後続パースしないこと。`tee` やパイプを挟む場合でも元コマンドの終了コードを保持し、失敗時はマーカー抽出や JSON パースに進まず即座に明示的なエラーで終了すること。
+- **backend 実行中の task から `ai` をネスト呼び出しする場合**: 下位 `ai` も daemon 経由で動かせるように、`run_ai` は daemon 本体で直接実行せず worker process に分離すること。process-global な `cwd` / `AISH_HOME` / `AISH_SESSION` を daemon 本体に抱えたまま再入させると self-deadlock の原因になる。
+- **backend 実行中の task から `ai` をネスト呼び出しする場合 その2**: task 子プロセスには `AISH_JOB_ID` / `AISH_JOB_DEPTH` / `AISH_MAX_BACKEND_JOB_DEPTH` を明示的に引き継ぎ、nested `ai` は `stdin` が非 TTY でも local task 経路に落とさず backend を優先すること。これが欠けると深さ制限や親子 job 関係が効かなくなる。
+- **nested job の cancel**: 親 job を cancel したら active registry 上の子孫 job もまとめて cancel し、子 job を orphan のまま走らせないこと。nested worker を個別 kill できるよう parent-child 関係は daemon 側 registry に残す。
+- **nested job の interaction**: backend 実行中の task から起動された nested `ai` は `stdin` が非 TTY になりやすい。この場合 approval / continue / sensitive prompt をローカル stdin で待たず、fail-closed（approval deny / continue false / sensitive deny）で自動応答すること。
+- **nested job の出力帰属**: nested `ai` の本文出力は親 task の stdout/stderr に流れるため、backend client 側で child job の開始・終了を stderr に明示し、どの nested job の出力か追えるようにすること。
+- **nested job の interactive notice**: nested `ai` が approval / continue / sensitive prompt を要求した場合、親 frontend 側の stderr に interaction 種別と prompt preview を出し、非 TTY の auto-resolve 時も結果を明示すること。
+- **nested job の frontend TTY**: truly interactive な nested prompt を親 frontend に返すため、root `ai` は frontend TTY パスを backend request に載せ、worker は `AISH_FRONTEND_TTY` として保持すること。nested child は `stdin` 非 TTY でもこの TTY を開いて prompt を出せるようにする。
+- **frontend SIGINT**: backend 実行中に frontend が `Ctrl+C` を受けたら、frontend だけ先に死なず current job を `cancel_ai` し、その subtree を停止させること。
+- **read-only `aish` コマンドの backend 化**: `memory list/get`, `history ls/get`, `plugins list`, `tools list` は daemon 未起動時でも従来どおり local fallback で動作させること。read-only backend 化で daemon 必須にしてはいけない。
+- **backend task 出力転送時の stdin**: 出力観測や転送を入れても task の stdin 意味論は変えないこと。`run()` と `run_observing()` で pipe / read の挙動が変わらないようにする。
+- **foreground daemon の終了経路**: `aish daemon start` のような foreground 常駐プロセスは、`Ctrl+C`（SIGINT）で確実に accept loop を抜けて終了し、Unix ソケット等のランタイムファイルを掃除すること。手動確認や結合テストでは SIGINT で停止できることまで確認する。
+- **backend job の cancel 永続化**: backend job を cancel した場合、`events.jsonl` 上の terminal state は `completed` に上書きせず `cancelled` のまま残すこと。`daemon jobs --persisted` でも cancel 後は `cancelled` を見せる。
+- **`ai` の backend 経路を非 TTY で結合テストするとき**: 現在の CLI は先頭位置引数を task と解釈するため、`stdin` が TTY でない実行では `should_use_backend()` が local 実行を選ぶことがある。backend 実行を明示的に検証する integration / manual test では `AISH_FORCE_BACKEND=1` を付けること。
+- **backend 実行タスクの出力経路**: `ai` / `aish` の backend が task や subprocess を実行する場合、stdout / stderr / prompt を daemon 側コンソールへ直接出さないこと。ユーザーに見せる出力は frontend へ転送し、backend は中継に徹すること。
 
 ### セッションディレクトリ構造と migrations 運用
 
@@ -170,6 +184,16 @@ domain 層は「型定義の置き場」ではなく、**判断ロジック（�
 - **2026年3月**: 責務の一行（ファイル冒頭）と SKILL（check-responsibility）による確認手順を追加。実装時チェックリストに「冒頭の責務に反していないか」を追加。
 - **2026年3月**: 文字列切り詰めの UTF-8 文字境界ルールを追加（`truncate_str` 等でバイトスライスが多バイト文字の途中で切れてパニックになる事象を踏まえ）。エラー修正時は AGENTS.md を更新して同様の失敗を防ぐことを必須確認に追加。セッションディレクトリ構造変更時の migrations 運用ルールと、互換性は shell migrations で担保し Rust 側は最新スキーマのみを扱う方針を明文化。
 - **2026年3月**: `evolve` のように task から `ai` をネスト実行する場合は、下位 `ai` の失敗ログを正常な LLM 応答としてパースしないルールを追加。`tee` 使用時も元コマンドの終了コードを保持し、失敗時は即時エラーにする。
+- **2026年3月**: backend 実行中の task から nested `ai` を呼ぶ場合は、task 子プロセスに `AISH_JOB_ID` / `AISH_JOB_DEPTH` / `AISH_MAX_BACKEND_JOB_DEPTH` を明示的に渡し、nested `ai` は `AISH_JOB_DEPTH` があるとき backend を優先するルールを追加。`stdin` 非 TTY だからと local 経路へ落とすと深さ制限が効かない。
+- **2026年3月**: nested job の cancel は親だけでなく active な子孫 job にも再帰的に伝播させるルールを追加。親だけ kill して child を orphan のまま残さない。
+- **2026年3月**: backend task から起動された nested `ai` が `stdin` 非 TTY のまま approval / continue prompt で詰まらないよう、nested context では fail-closed の自動応答を返すルールを追加。
+- **2026年3月**: nested `ai` の出力帰属を追えるよう、child job の開始・終了は stderr に job_id 付きで明示するルールを追加。
+- **2026年3月**: nested `ai` の interactive request を親 frontend から追えるよう、approval / continue / sensitive prompt は prompt preview を stderr に出し、auto-resolve 結果も明示するルールを追加。
+- **2026年3月**: root `ai` は frontend TTY パスを backend request に含め、nested child は `stdin` 非 TTY でも `AISH_FRONTEND_TTY` を使って truly interactive な prompt を返せるルールを追加。
+- **2026年3月**: backend 実行中の `Ctrl+C` は frontend だけでなく daemon job subtree にも `cancel_ai` を送って停止させるルールを追加。
+- **2026年3月**: daemon が worker stdout/stderr を同一 client socket へ relay する場合、書き込みは必ず直列化するルールを追加。複数 thread から `write_frame_sync` を並行実行すると frame が壊れ、nested backend failure 時に protocol parse error を起こす。
+- **2026年3月**: integration で backend query/task の出力内容を固定文字列で検証する場合は、呼び出し時に `AISH_SESSION` / `AISH_JOB_DEPTH` / `AISH_FRONTEND_TTY` を明示的に外して外部シェル環境を混入させないルールを追加。既存 session/history が混ざると echo provider の query/history 表示が変わる。
+- **2026年3月**: `aish daemon start` の foreground daemon は SIGINT で終了し、ソケットを掃除するルールを追加。手動確認や integration でも Ctrl+C 終了を確認する。
 - **2026年2月**: common の port & adapter 整理。adapter から port の re-export を削除し、usecase は `common::ports::outbound` から trait を参照。StdIdGenerator を adapter に移動。Tool / LlmProvider が ports 外に定義されている理由を明記。
 - **2026年2月**: 旧 sysq（システムプロンプトの専用サブコマンド/UseCase/Adapter）を廃止。代わりに hooks ベースのシステムプロンプト解決（`ResolveSystemPromptFromHooks`）を導入し、`-S` 未指定時は hooks（`$AISH_HOME/config/hooks/system_prompt/`, `$HOME/.aish/hooks/system_prompt/`, プロジェクト直下の `.aish/hooks/system_prompt/`）からの解決を試行する仕様に統一。
 - **2026年2月**: アーキテクチャを「逆流防止」の判断基準として整理。依存方向・usecase 禁止事項・wiring 責務・inbound/outbound・実装時チェックリストを明文化。長さを抑え実務で参照しやすい形に変更。

@@ -31,6 +31,17 @@ enum SensitiveChoice {
     Mask,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SensitivePromptChoice {
+    Allow,
+    Deny,
+    Mask,
+}
+
+pub(crate) trait SensitiveContentPrompt: Send + Sync {
+    fn choose(&self, verbose_output: &str) -> Result<SensitivePromptChoice, Error>;
+}
+
 /// part ファイル名から id と role を抽出する。
 /// 例: part_ABC12xyz_user.txt -> (ABC12xyz, "user"), part_ABC12xyz_assistant.txt -> (ABC12xyz, "assistant")
 fn parse_part_filename(name: &str) -> Option<(String, &'static str)> {
@@ -74,6 +85,7 @@ pub struct LeakscanPrepareSession {
     non_interactive: bool,
     /// compaction 実装（None のときは compaction しない）
     compaction: Option<Arc<dyn CompactionStrategy>>,
+    prompt_handler: Option<Arc<dyn SensitiveContentPrompt>>,
 }
 
 impl LeakscanPrepareSession {
@@ -84,6 +96,7 @@ impl LeakscanPrepareSession {
         interrupt_checker: Option<Arc<dyn InterruptChecker>>,
         non_interactive: bool,
         compaction: Option<Arc<dyn CompactionStrategy>>,
+        prompt_handler: Option<Arc<dyn SensitiveContentPrompt>>,
     ) -> Self {
         Self {
             fs,
@@ -92,6 +105,7 @@ impl LeakscanPrepareSession {
             interrupt_checker,
             non_interactive,
             compaction,
+            prompt_handler,
         }
     }
 
@@ -152,6 +166,13 @@ impl LeakscanPrepareSession {
 
     /// ヒット時に対話で y/n/a/m を聞く
     fn prompt_sensitive_choice(&self, verbose_output: &str) -> Result<SensitiveChoice, Error> {
+        if let Some(ref handler) = self.prompt_handler {
+            return Ok(match handler.choose(verbose_output)? {
+                SensitivePromptChoice::Allow => SensitiveChoice::Allow,
+                SensitivePromptChoice::Deny => SensitiveChoice::Deny,
+                SensitivePromptChoice::Mask => SensitiveChoice::Mask,
+            });
+        }
         eprintln!("\x1b[1;33mSECURITY: Sensitive content matched\x1b[0m");
         eprintln!("----------------------------------------");
         eprint!("{}", verbose_output);
@@ -363,6 +384,7 @@ mod tests {
             rules_path,
             None,
             true,
+            None,
             None,
         );
 

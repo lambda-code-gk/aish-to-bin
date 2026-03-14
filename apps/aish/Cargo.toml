@@ -7,8 +7,10 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
+aish-daemon = { path = "../daemon" }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
+ai = { path = "../ai" }
 common = { path = "../../libs/common" }
 daemon_api = { path = "../../libs/daemon_api" }
 plugins = { path = "../../libs/plugins" }
@@ -17,6 +19,5 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
 storage = { path = "../../libs/storage" }
-tokio = { version = "1", features = ["net", "io-util", "rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["macros", "net", "io-util", "rt-multi-thread", "signal", "sync"] }
 unicode-width = "0.1"
-

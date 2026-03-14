@@ -2,6 +2,8 @@
 //!
 //! 以降の console.txt への記録を停止する。
 
+use crate::domain::ShellStorageLayout;
+use crate::ports::outbound::ShellAttachmentStore;
 use common::error::Error;
 use common::ports::outbound::{FileSystem, PathResolver, PathResolverInput, Signal};
 use common::session::Session;
@@ -14,6 +16,7 @@ pub struct MuteUseCase {
     fs: Arc<dyn FileSystem>,
     #[allow(dead_code)] // 将来 SIGUSR1 送信等で使用予定
     signal: Arc<dyn Signal>,
+    attachment_store: Arc<dyn ShellAttachmentStore>,
 }
 
 impl MuteUseCase {
@@ -21,11 +24,13 @@ impl MuteUseCase {
         path_resolver: Arc<dyn PathResolver>,
         fs: Arc<dyn FileSystem>,
         signal: Arc<dyn Signal>,
+        attachment_store: Arc<dyn ShellAttachmentStore>,
     ) -> Self {
         Self {
             path_resolver,
             fs,
             signal,
+            attachment_store,
         }
     }
 
@@ -52,8 +57,16 @@ impl MuteUseCase {
         }
 
         // 以降の console.txt への記録を停止するためのフラグファイルを作成
-        let mute_flag_path = session_dir.join("console.muted");
+        let mute_flag_path = ShellStorageLayout::default().mute_flag_file(session_dir);
         self.fs.write(&mute_flag_path, "muted")?;
+        let pid: u32 = self
+            .fs
+            .read_to_string(&pid_file_path)?
+            .trim()
+            .parse()
+            .map_err(|e| Error::io_msg(format!("Invalid PID in AISH_PID file: {}", e)))?;
+        self.attachment_store
+            .mark_attached(session_dir, pid, true)?;
 
         Ok(0)
     }
@@ -62,12 +75,14 @@ impl MuteUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::ShellAttachment;
+    use crate::ports::outbound::ShellAttachmentStore;
     use common::adapter::StdFileSystem;
     use common::ports::outbound::PathResolver;
     use common::ports::outbound::PathResolverInput;
     use common::ports::outbound::Signal as SignalPort;
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     struct TestPathResolver;
 
@@ -92,6 +107,38 @@ mod tests {
 
     #[cfg(unix)]
     struct TestSignal;
+
+    struct TestAttachmentStore {
+        attachment: Mutex<Option<ShellAttachment>>,
+    }
+
+    impl TestAttachmentStore {
+        fn new() -> Self {
+            Self {
+                attachment: Mutex::new(None),
+            }
+        }
+    }
+
+    impl ShellAttachmentStore for TestAttachmentStore {
+        fn load(&self, _session_dir: &Path) -> Result<Option<ShellAttachment>, Error> {
+            Ok(self.attachment.lock().expect("lock poisoned").clone())
+        }
+
+        fn mark_attached(&self, _session_dir: &Path, pid: u32, muted: bool) -> Result<(), Error> {
+            *self.attachment.lock().expect("lock poisoned") =
+                Some(ShellAttachment::attached(pid, muted, "test-now"));
+            Ok(())
+        }
+
+        fn mark_detached(&self, _session_dir: &Path) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn set_muted(&self, _session_dir: &Path, _muted: bool) -> Result<(), Error> {
+            Ok(())
+        }
+    }
 
     #[cfg(unix)]
     impl SignalPort for TestSignal {
@@ -146,6 +193,7 @@ mod tests {
 
         let path_resolver: Arc<dyn PathResolver> = Arc::new(TestPathResolver);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
+        let attachment_store: Arc<dyn ShellAttachmentStore> = Arc::new(TestAttachmentStore::new());
 
         #[cfg(unix)]
         {
@@ -154,6 +202,7 @@ mod tests {
                 Arc::clone(&path_resolver),
                 Arc::clone(&fs),
                 Arc::clone(&signal) as Arc<dyn SignalPort>,
+                Arc::clone(&attachment_store),
             );
 
             let input = PathResolverInput {
@@ -172,6 +221,9 @@ mod tests {
             // フラグファイルが作成されていること（part ファイル・SIGUSR1 は送られない）
             let mute_flag = session_dir.join("console.muted");
             assert!(mute_flag.exists());
+            let attachment = attachment_store.load(&session_dir).unwrap().unwrap();
+            assert!(attachment.muted);
+            assert_eq!(attachment.pid, Some(12345));
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -192,6 +244,7 @@ mod tests {
 
         let path_resolver: Arc<dyn PathResolver> = Arc::new(TestPathResolver);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
+        let attachment_store: Arc<dyn ShellAttachmentStore> = Arc::new(TestAttachmentStore::new());
 
         #[cfg(unix)]
         {
@@ -200,6 +253,7 @@ mod tests {
                 Arc::clone(&path_resolver),
                 Arc::clone(&fs),
                 Arc::clone(&signal) as Arc<dyn SignalPort>,
+                Arc::clone(&attachment_store),
             );
 
             let input = PathResolverInput {
@@ -218,6 +272,7 @@ mod tests {
             // フラグファイルも作成されない
             let mute_flag = session_dir.join("console.muted");
             assert!(!mute_flag.exists());
+            assert!(attachment_store.load(&session_dir).unwrap().is_none());
         }
 
         let _ = std::fs::remove_dir_all(&temp_dir);

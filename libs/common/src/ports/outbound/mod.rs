@@ -35,7 +35,7 @@ pub use mcp_host::{
     ToolDescriptor,
 };
 pub use path_resolver::{PathResolver, PathResolverInput};
-pub use process::Process;
+pub use process::{Process, ProcessOutputObserver, ProcessOutputStream};
 pub use runtime_catalog::RuntimeCatalog;
 pub use session_event_store::SessionEventStore;
 pub use sink::{AgentEvent, EventSink};

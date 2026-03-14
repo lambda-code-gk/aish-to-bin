@@ -7,6 +7,7 @@ mod config_schema_version_tests;
 mod context_addons_budget_tests;
 mod context_addons_grep_selector_tests;
 mod context_addons_memory_selector_tests;
+mod context_addons_shell_console_selector_tests;
 mod context_artifact_store_tests;
 mod context_message_builder_tests;
 mod context_pack_builder_sensitive_gate_tests;

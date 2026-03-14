@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use common::domain::CatalogKind;
 use common::error::Error;
-use common::ports::outbound::{FileSystem, Process, RuntimeCatalog};
+use common::ports::outbound::{FileSystem, Process, ProcessOutputObserver, RuntimeCatalog};
 
 use crate::domain::task::resolution;
 use crate::domain::TaskName;
@@ -15,6 +15,7 @@ pub struct StdTaskRunner {
     process: Arc<dyn Process>,
     catalog: Arc<dyn RuntimeCatalog>,
     packages: Arc<dyn PackageResolver>,
+    output_observer: Option<Arc<dyn ProcessOutputObserver>>,
 }
 
 impl StdTaskRunner {
@@ -23,12 +24,14 @@ impl StdTaskRunner {
         process: Arc<dyn Process>,
         catalog: Arc<dyn RuntimeCatalog>,
         packages: Arc<dyn PackageResolver>,
+        output_observer: Option<Arc<dyn ProcessOutputObserver>>,
     ) -> Self {
         Self {
             fs,
             process,
             catalog,
             packages,
+            output_observer,
         }
     }
 }
@@ -48,6 +51,7 @@ impl TaskRunner for StdTaskRunner {
             self.catalog.as_ref(),
             &task_name,
             args,
+            self.output_observer.clone(),
         )? {
             return Ok(Some(code));
         }
@@ -59,6 +63,7 @@ impl TaskRunner for StdTaskRunner {
             self.packages.as_ref(),
             &task_name,
             args,
+            self.output_observer.clone(),
         )
     }
 
@@ -90,6 +95,7 @@ pub fn run_task_if_exists<F, P>(
     catalog: &dyn RuntimeCatalog,
     task_name: &TaskName,
     args: &[String],
+    output_observer: Option<Arc<dyn ProcessOutputObserver>>,
 ) -> Result<Option<i32>, Error>
 where
     F: FileSystem + ?Sized,
@@ -103,7 +109,7 @@ where
     for loc in locations {
         let resolved = resolve_task_path(fs, &loc.path, task_name);
         if let Some(task_path) = resolved {
-            let exit_status = process.run(&task_path, args)?;
+            let exit_status = process.run_observing(&task_path, args, output_observer.clone())?;
             return Ok(Some(exit_status));
         }
     }
@@ -120,6 +126,7 @@ pub fn run_task_in_packages<F, P>(
     packages: &dyn PackageResolver,
     task_name: &TaskName,
     args: &[String],
+    output_observer: Option<Arc<dyn ProcessOutputObserver>>,
 ) -> Result<Option<i32>, Error>
 where
     F: FileSystem + ?Sized,
@@ -136,7 +143,7 @@ where
             continue;
         }
         if let Some(task_path) = resolve_task_path(fs, &task_root, task_name) {
-            let exit_status = process.run(&task_path, args)?;
+            let exit_status = process.run_observing(&task_path, args, output_observer.clone())?;
             return Ok(Some(exit_status));
         }
     }
@@ -287,7 +294,7 @@ mod tests {
         let process = StdProcess;
         let catalog = StubCatalog { roots: vec![tmp] };
         let task_name = TaskName::new("unknown_task");
-        let result = run_task_if_exists(&fs, &process, &catalog, &task_name, &[]);
+        let result = run_task_if_exists(&fs, &process, &catalog, &task_name, &[], None);
         assert!(result.is_ok());
         assert!(result.unwrap().is_none());
     }

@@ -10,7 +10,9 @@ pub(crate) mod policy_rules_tool;
 #[cfg(test)]
 mod policy_rules_tool_tests;
 
-pub(crate) use leakscan_prepare_session::LeakscanPrepareSession;
+pub(crate) use leakscan_prepare_session::{
+    LeakscanPrepareSession, SensitiveContentPrompt, SensitivePromptChoice,
+};
 pub(crate) use leakscan_text_filter::LeakscanTextFilter;
 pub(crate) use policy_engine::StdPolicyEngine;
 pub(crate) use policy_explain_provider::StdPolicyExplainProvider;

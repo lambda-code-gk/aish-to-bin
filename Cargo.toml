@@ -4,6 +4,7 @@ resolver = "2"
 # apps/ai と apps/aish は lib のみ。バイナリ ai / aish は bins/aish-cli から生成。
 default-members = [
     "libs/common",
+    "apps/daemon",
     "apps/ai",
     "apps/aish",
     "bins/aish-cli",
@@ -16,6 +17,7 @@ default-members = [
 ]
 members = [
     "libs/common",
+    "apps/daemon",
     "apps/ai",
     "apps/aish",
     "libs/daemon_api",

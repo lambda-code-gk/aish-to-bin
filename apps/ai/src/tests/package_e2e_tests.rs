@@ -190,6 +190,7 @@ fn package_task_resolves() {
         process,
         Arc::clone(&catalog),
         package_resolver,
+        None,
     ));
     let names = task_runner.list_names().expect("list_names should succeed");
     assert!(

@@ -13,6 +13,9 @@ pub enum Command {
     /// 対話シェルを起動（コマンド未指定時）
     Shell,
 
+    /// shell attachment / console log 周辺の状態表示
+    ShellStatus,
+
     /// 実装済み: コンソールバッファ・ログのロールオーバー
     TruncateConsoleLog,
 
@@ -69,12 +72,27 @@ pub enum Command {
     /// 外部ツール一覧（tools list）
     ToolsList,
 
-    /// 単一ライタ daemon: 起動（foreground）
-    DaemonStart,
+    /// 単一ライタ daemon: 起動（foreground または detach）
+    DaemonStart {
+        /// true のとき detach で起動（background）
+        detach: bool,
+    },
     /// 単一ライタ daemon: ping
     DaemonPing,
     /// 単一ライタ daemon: status（ping ベース）
     DaemonStatus,
+    /// 単一ライタ daemon: jobs（active / persisted lifecycle 一覧）
+    DaemonJobs {
+        active_only: bool,
+        persisted_only: bool,
+    },
+    /// 単一ライタ daemon: stop
+    DaemonStop,
+    /// 単一ライタ daemon: cancel ai job
+    DaemonCancel { job_id: String },
+
+    /// 単一ライタ daemon: ensure（起動していなければ detach で起動して待つ）
+    DaemonEnsure,
 
     /// 未知のコマンド（エラー用）
     Unknown(String),
@@ -86,6 +104,12 @@ impl Command {
         if name == "resume" {
             let id = args.first().cloned();
             return Command::Resume { id };
+        }
+        if name == "shell" {
+            return match args.first().map(|s| s.as_str()) {
+                Some("status") => Command::ShellStatus,
+                _ => Command::Shell,
+            };
         }
         if name == "memory" {
             match args.first().map(|s| s.as_str()) {
@@ -135,9 +159,27 @@ impl Command {
         }
         if name == "daemon" {
             match args.first().map(|s| s.as_str()) {
-                Some("start") => return Command::DaemonStart,
+                Some("start") => {
+                    let detach = args.iter().any(|arg| arg == "--detach");
+                    return Command::DaemonStart { detach };
+                }
+                Some("ensure") => return Command::DaemonEnsure,
                 Some("ping") => return Command::DaemonPing,
                 Some("status") => return Command::DaemonStatus,
+                Some("jobs") => {
+                    let active_only = args.iter().any(|arg| arg == "--active");
+                    let persisted_only = args.iter().any(|arg| arg == "--persisted");
+                    return Command::DaemonJobs {
+                        active_only,
+                        persisted_only,
+                    };
+                }
+                Some("stop") => return Command::DaemonStop,
+                Some("cancel") => {
+                    return Command::DaemonCancel {
+                        job_id: args.get(1).cloned().unwrap_or_default(),
+                    }
+                }
                 _ => {
                     let sub = args.first().cloned().unwrap_or_else(|| "".to_string());
                     return Command::Unknown(format!("daemon {}", sub).trim_end().to_string());
@@ -195,6 +237,7 @@ impl Command {
             "rollout" => Command::Rollout,
             "mute" => Command::Mute,
             "unmute" => Command::Unmute,
+            "shell" => Command::Shell,
             "resume" => Command::Resume { id: None },
             "sessions" => Command::Sessions,
             "init" => Command::Init {
@@ -241,6 +284,12 @@ mod tests {
     fn test_parse_resume() {
         let cmd = Command::parse("resume");
         assert_eq!(cmd, Command::Resume { id: None });
+    }
+
+    #[test]
+    fn test_parse_with_args_shell_status() {
+        let cmd = Command::parse_with_args("shell", &["status".to_string()]);
+        assert_eq!(cmd, Command::ShellStatus);
     }
 
     #[test]
@@ -335,5 +384,78 @@ mod tests {
     fn test_parse_with_args_policy_explain() {
         let cmd = Command::parse_with_args("policy", &["explain".to_string()]);
         assert_eq!(cmd, Command::PolicyExplain);
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_stop() {
+        let cmd = Command::parse_with_args("daemon", &["stop".to_string()]);
+        assert_eq!(cmd, Command::DaemonStop);
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_jobs() {
+        let cmd = Command::parse_with_args("daemon", &["jobs".to_string()]);
+        assert_eq!(
+            cmd,
+            Command::DaemonJobs {
+                active_only: false,
+                persisted_only: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_jobs_filters() {
+        let cmd = Command::parse_with_args(
+            "daemon",
+            &[
+                "jobs".to_string(),
+                "--active".to_string(),
+                "--persisted".to_string(),
+            ],
+        );
+        assert_eq!(
+            cmd,
+            Command::DaemonJobs {
+                active_only: true,
+                persisted_only: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_cancel() {
+        let cmd = Command::parse_with_args("daemon", &["cancel".to_string(), "job-1".to_string()]);
+        assert_eq!(
+            cmd,
+            Command::DaemonCancel {
+                job_id: "job-1".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_start_default_is_foreground() {
+        let cmd = Command::parse_with_args("daemon", &["start".to_string()]);
+        assert!(matches!(
+            cmd,
+            Command::DaemonStart { detach } if !detach
+        ));
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_start_with_detach_flag() {
+        let cmd =
+            Command::parse_with_args("daemon", &["start".to_string(), "--detach".to_string()]);
+        assert!(matches!(
+            cmd,
+            Command::DaemonStart { detach } if detach
+        ));
+    }
+
+    #[test]
+    fn test_parse_with_args_daemon_ensure() {
+        let cmd = Command::parse_with_args("daemon", &["ensure".to_string()]);
+        assert_eq!(cmd, Command::DaemonEnsure);
     }
 }

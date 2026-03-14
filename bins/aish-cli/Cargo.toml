@@ -16,5 +16,6 @@ path = "src/ai.rs"
 [dependencies]
 ai = { path = "../../apps/ai" }
 aish = { path = "../../apps/aish" }
+aish-daemon = { path = "../../apps/daemon" }
 clap = { version = "4", features = ["derive"] }
 common = { path = "../../libs/common" }

@@ -2,6 +2,8 @@
 //!
 //! console.txt への記録を再開する（mute 時に作成されたフラグファイルを削除する）。
 
+use crate::domain::ShellStorageLayout;
+use crate::ports::outbound::ShellAttachmentStore;
 use common::error::Error;
 use common::ports::outbound::{FileSystem, PathResolver, PathResolverInput};
 use common::session::Session;
@@ -12,11 +14,20 @@ use std::sync::Arc;
 pub struct UnmuteUseCase {
     path_resolver: Arc<dyn PathResolver>,
     fs: Arc<dyn FileSystem>,
+    attachment_store: Arc<dyn ShellAttachmentStore>,
 }
 
 impl UnmuteUseCase {
-    pub fn new(path_resolver: Arc<dyn PathResolver>, fs: Arc<dyn FileSystem>) -> Self {
-        Self { path_resolver, fs }
+    pub fn new(
+        path_resolver: Arc<dyn PathResolver>,
+        fs: Arc<dyn FileSystem>,
+        attachment_store: Arc<dyn ShellAttachmentStore>,
+    ) -> Self {
+        Self {
+            path_resolver,
+            fs,
+            attachment_store,
+        }
     }
 
     /// Unmute を実行する
@@ -34,10 +45,11 @@ impl UnmuteUseCase {
     }
 
     fn unmute_console_log(&self, session_dir: &Path) -> Result<i32, Error> {
-        let mute_flag_path = session_dir.join("console.muted");
+        let mute_flag_path = ShellStorageLayout::default().mute_flag_file(session_dir);
         if self.fs.exists(&mute_flag_path) {
             self.fs.remove_file(&mute_flag_path)?;
         }
+        self.attachment_store.set_muted(session_dir, false)?;
         Ok(0)
     }
 }
@@ -45,11 +57,13 @@ impl UnmuteUseCase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::ShellAttachment;
+    use crate::ports::outbound::ShellAttachmentStore;
     use common::adapter::StdFileSystem;
     use common::ports::outbound::PathResolver;
     use common::ports::outbound::PathResolverInput;
     use std::path::PathBuf;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     struct TestPathResolver;
 
@@ -72,6 +86,42 @@ mod tests {
         }
     }
 
+    struct TestAttachmentStore {
+        attachment: Mutex<Option<ShellAttachment>>,
+    }
+
+    impl TestAttachmentStore {
+        fn new() -> Self {
+            Self {
+                attachment: Mutex::new(None),
+            }
+        }
+    }
+
+    impl ShellAttachmentStore for TestAttachmentStore {
+        fn load(&self, _session_dir: &Path) -> Result<Option<ShellAttachment>, Error> {
+            Ok(self.attachment.lock().expect("lock poisoned").clone())
+        }
+
+        fn mark_attached(&self, _session_dir: &Path, pid: u32, muted: bool) -> Result<(), Error> {
+            *self.attachment.lock().expect("lock poisoned") =
+                Some(ShellAttachment::attached(pid, muted, "test-now"));
+            Ok(())
+        }
+
+        fn mark_detached(&self, _session_dir: &Path) -> Result<(), Error> {
+            Ok(())
+        }
+
+        fn set_muted(&self, _session_dir: &Path, muted: bool) -> Result<(), Error> {
+            let mut guard = self.attachment.lock().expect("lock poisoned");
+            if let Some(current) = guard.clone() {
+                *guard = Some(current.with_muted(muted, "test-now"));
+            }
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_unmute_removes_flag_if_exists() {
         let temp_dir = std::path::PathBuf::from("/tmp").join("aish_test_unmute_flag");
@@ -91,8 +141,17 @@ mod tests {
 
         let path_resolver: Arc<dyn PathResolver> = Arc::new(TestPathResolver);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
+        let attachment_store: Arc<dyn ShellAttachmentStore> = Arc::new(TestAttachmentStore::new());
 
-        let usecase = UnmuteUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
+        let usecase = UnmuteUseCase::new(
+            Arc::clone(&path_resolver),
+            Arc::clone(&fs),
+            Arc::clone(&attachment_store),
+        );
+
+        attachment_store
+            .mark_attached(&session_dir, 12345, true)
+            .unwrap();
 
         let input = PathResolverInput {
             home_dir: Some(path_to_string(&home_dir)),
@@ -108,6 +167,8 @@ mod tests {
         assert_eq!(result.unwrap(), 0);
 
         assert!(!mute_flag.exists(), "mute flag should be removed");
+        let attachment = attachment_store.load(&session_dir).unwrap().unwrap();
+        assert!(!attachment.muted);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -127,8 +188,13 @@ mod tests {
 
         let path_resolver: Arc<dyn PathResolver> = Arc::new(TestPathResolver);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
+        let attachment_store: Arc<dyn ShellAttachmentStore> = Arc::new(TestAttachmentStore::new());
 
-        let usecase = UnmuteUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
+        let usecase = UnmuteUseCase::new(
+            Arc::clone(&path_resolver),
+            Arc::clone(&fs),
+            Arc::clone(&attachment_store),
+        );
 
         let input = PathResolverInput {
             home_dir: Some(path_to_string(&home_dir)),
@@ -145,6 +211,7 @@ mod tests {
 
         let mute_flag = session_dir.join("console.muted");
         assert!(!mute_flag.exists(), "mute flag should still not exist");
+        assert!(attachment_store.load(&session_dir).unwrap().is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

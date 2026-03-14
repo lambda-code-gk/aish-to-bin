@@ -1,5 +1,6 @@
 //! Clear コマンドのユースケース
 
+use crate::domain::ShellStorageLayout;
 use common::error::Error;
 use common::ports::outbound::FileSystem;
 use common::ports::outbound::{PathResolver, PathResolverInput};
@@ -55,11 +56,12 @@ impl ClearUseCase {
 
         // ディレクトリ内のファイル一覧を取得
         let entries = self.fs.read_dir(session_dir)?;
+        let storage = ShellStorageLayout::default();
 
         for entry in entries {
             if let Some(file_name) = entry.file_name().and_then(|n| n.to_str()) {
                 #[allow(clippy::collapsible_if)]
-                if file_name.starts_with("part_")
+                if storage.is_part_file_name(file_name)
                     && self
                         .fs
                         .metadata(&entry)
@@ -78,6 +80,16 @@ impl ClearUseCase {
             self.fs.remove_dir_all(&evacuated_dir)?;
         }
 
+        // shell frontend が残した一時物は clear で掃除する。
+        for path in [
+            storage.pending_input_file(session_dir),
+            storage.prompt_suggestion_file(session_dir),
+        ] {
+            if self.fs.exists(&path) {
+                self.fs.remove_file(&path)?;
+            }
+        }
+
         // 履歴送信開始位置を reviewed_history.jsonl の行数に設定。次回は LLM に送る会話履歴が 0 件になる。
         let send_from_path = session_dir.join(HISTORY_SEND_FROM_FILENAME);
         let history_path = session_dir.join("reviewed_history.jsonl");
@@ -91,5 +103,59 @@ impl ClearUseCase {
         self.fs.write(&send_from_path, &content)?;
 
         Ok(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::adapter::StdFileSystem;
+    use common::ports::outbound::PathResolver;
+    use std::sync::Arc;
+
+    struct TestPathResolver;
+
+    impl PathResolver for TestPathResolver {
+        fn resolve_home_dir(&self, input: &PathResolverInput) -> Result<String, Error> {
+            input
+                .home_dir
+                .clone()
+                .ok_or_else(|| Error::invalid_argument("home_dir is required in test".to_string()))
+        }
+
+        fn resolve_session_dir(
+            &self,
+            input: &PathResolverInput,
+            _home_dir: &str,
+        ) -> Result<String, Error> {
+            input.session_dir.clone().ok_or_else(|| {
+                Error::invalid_argument("session_dir is required in test".to_string())
+            })
+        }
+    }
+
+    #[test]
+    fn clear_removes_shell_frontend_artifacts() {
+        let temp_dir = std::path::PathBuf::from("/tmp").join("aish_test_clear_shell_artifacts");
+        if temp_dir.exists() {
+            let _ = std::fs::remove_dir_all(&temp_dir);
+        }
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        std::fs::write(temp_dir.join("pending_input.json"), "{}").unwrap();
+        std::fs::write(temp_dir.join("prompt_suggestion.txt"), "echo hi").unwrap();
+        std::fs::write(temp_dir.join("reviewed_history.jsonl"), "").unwrap();
+        std::fs::write(temp_dir.join("session_schema_version"), "2\n").unwrap();
+
+        let usecase = ClearUseCase::new(Arc::new(TestPathResolver), Arc::new(StdFileSystem));
+        let input = PathResolverInput {
+            home_dir: Some(temp_dir.to_string_lossy().to_string()),
+            session_dir: Some(temp_dir.to_string_lossy().to_string()),
+        };
+
+        usecase.run(&input, true).unwrap();
+
+        assert!(!temp_dir.join("pending_input.json").exists());
+        assert!(!temp_dir.join("prompt_suggestion.txt").exists());
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

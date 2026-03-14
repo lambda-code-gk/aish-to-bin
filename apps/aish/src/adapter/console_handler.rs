@@ -3,7 +3,7 @@
 //! SessionEvent を受け取り、flush / rollover / truncate の責務を集約する。
 //! shell はイベント取得のみ行い、処理はここに委譲する。
 
-use crate::domain::SessionEvent;
+use crate::domain::{SessionEvent, ShellStorageLayout};
 use common::error::Error;
 use common::part_id::IdGenerator;
 use common::ports::outbound::FileSystem;
@@ -62,7 +62,7 @@ impl<'a, F: FileSystem + ?Sized, I: IdGenerator + ?Sized> ConsoleLogHandler<'a, 
         // ミュートフラグ（console.muted）が存在する場合は、console.txt への記録や
         // part ファイルへのロールオーバー / truncate を行わない。
         let muted = {
-            let mute_flag_path = self.session_dir.join("console.muted");
+            let mute_flag_path = ShellStorageLayout::default().mute_flag_file(self.session_dir);
             self.fs.exists(&mute_flag_path)
         };
 

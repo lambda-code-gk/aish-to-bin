@@ -198,6 +198,7 @@ impl AiUseCase {
                 };
                 let pack = self.deps.session.context_pack_builder.build(
                     &history_messages,
+                    session_dir.as_ref(),
                     Some(q),
                     system_instruction,
                     query_placement,
@@ -478,6 +479,7 @@ impl AiUseCase {
                 };
                 let mut pack = match self.deps.session.context_pack_builder.build(
                     &history_messages,
+                    session_dir.as_ref(),
                     Some(q),
                     system_instruction,
                     query_placement,

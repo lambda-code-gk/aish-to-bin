@@ -85,7 +85,13 @@ fn test_addons_budget_limits_to_one() {
     let history = vec![LlmMessage::user("history")];
     let query = Query::new("user query");
     let pack = builder
-        .build(&history, Some(&query), None, QueryPlacement::AppendAtEnd)
+        .build(
+            &history,
+            None,
+            Some(&query),
+            None,
+            QueryPlacement::AppendAtEnd,
+        )
         .expect("build should succeed");
 
     let keep_count = pack
@@ -142,6 +148,7 @@ fn test_addons_inserted_before_query() {
     let pack = builder
         .build(
             &history,
+            None,
             Some(&query),
             Some("sys"),
             QueryPlacement::AppendAtEnd,
@@ -191,7 +198,7 @@ fn test_selector_failure_recorded_as_decision() {
 
     let history = vec![LlmMessage::user("hello")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed despite selector failure");
 
     let error_decision = pack
@@ -228,7 +235,7 @@ fn test_addons_char_budget_limits() {
 
     let history = vec![LlmMessage::user("history")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let keep_count = pack

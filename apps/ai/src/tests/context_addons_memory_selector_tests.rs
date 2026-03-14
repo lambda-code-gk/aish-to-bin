@@ -45,6 +45,7 @@ fn test_memory_selector_returns_addon_for_matching_entry() {
         history: &[],
         query: Some(&query),
         project_root: &project_root,
+        session_dir: None,
     };
     let addons = selector.select(&input).expect("select should succeed");
     assert!(!addons.is_empty(), "should return at least one addon");
@@ -70,6 +71,7 @@ fn test_memory_selector_returns_empty_when_no_query() {
         history: &[],
         query: None,
         project_root: &project_root,
+        session_dir: None,
     };
     let addons = selector.select(&input).expect("select should succeed");
     assert!(addons.is_empty());

@@ -115,7 +115,7 @@ fn test_sensitive_deny_drops_addon_and_records_decision() {
 
     let history = vec![LlmMessage::user("hi")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let deny_decisions: Vec<_> = pack
@@ -156,7 +156,7 @@ fn test_sensitive_mask_replaces_msg_and_attachment() {
 
     let history = vec![LlmMessage::user("hi")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let mask_decisions: Vec<_> = pack
@@ -213,7 +213,7 @@ fn test_sensitive_allow_keeps_addon_and_records_allow_decision() {
 
     let history = vec![LlmMessage::user("hi")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let allow_decisions: Vec<_> = pack

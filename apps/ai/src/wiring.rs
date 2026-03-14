@@ -24,14 +24,14 @@ use crate::adapter::{
     MemorySelector, NoContinuePrompt, NonInteractiveToolApproval, NoopInterruptChecker,
     PartSessionStorage, PassThroughReducer, QueueShellSuggestionTool, ReadFileTool,
     ReplaceFileTool, ReviewedTailViewStrategy, SaveMemoryTool, SearchMemoryTool,
-    SelfImproveHandler, ShellAllowlistRule, ShellTool, SigintChecker, StdCommandAllowRulesLoader,
-    StdConfigExplainProvider, StdConfigProvider, StdContextArtifactStore,
-    StdContextPackBuilderWithAddons, StdEventSinkFactory, StdLlmCompletion,
-    StdLlmEventStreamFactory, StdMemoryContextResolver, StdPolicyEngine, StdProfileLister,
-    StdPromptSourceResolver, StdResolveMemoryDir, StdResolveModeConfig, StdResolveProfileAndModel,
-    StdResolveSystemPromptFromHooks, StdSessionDerivedBuilder, StdSkillSpecLoader,
-    StdStructuredMemoryRepository, StdTaskRunner, StdTaskSpecLoader, StdoutDryRunReportSink,
-    TailWindowReducer, ToolModeRule, WriteFileTool,
+    SelfImproveHandler, SensitiveContentPrompt, ShellAllowlistRule, ShellConsoleSelector,
+    ShellTool, SigintChecker, StdCommandAllowRulesLoader, StdConfigExplainProvider,
+    StdConfigProvider, StdContextArtifactStore, StdContextPackBuilderWithAddons,
+    StdEventSinkFactory, StdLlmCompletion, StdLlmEventStreamFactory, StdMemoryContextResolver,
+    StdPolicyEngine, StdProfileLister, StdPromptSourceResolver, StdResolveMemoryDir,
+    StdResolveModeConfig, StdResolveProfileAndModel, StdResolveSystemPromptFromHooks,
+    StdSessionDerivedBuilder, StdSkillSpecLoader, StdStructuredMemoryRepository, StdTaskRunner,
+    StdTaskSpecLoader, StdoutDryRunReportSink, TailWindowReducer, ToolModeRule, WriteFileTool,
 };
 use crate::adapter::{DaemonEventAppender, FallbackEventAppender};
 use crate::domain::{
@@ -41,11 +41,11 @@ use crate::domain::{PolicyChain, SensitiveAction};
 use crate::domain::{PolicyDecision, PolicyExplainExample};
 use crate::ports::outbound::{
     AgentStateLoader, AgentStateSaver, ConfigExplainProvider, ConfigProvider, ContextAddonSelector,
-    ContextArtifactStore, ContextPackBuilder, DryRunReportSink, EventAppender, LifecycleHooks,
-    LlmCompletion, MemoryContextResolver, PolicyEngine, PolicyExplainProvider,
+    ContextArtifactStore, ContextPackBuilder, DryRunReportSink, EventAppender, EventSinkFactory,
+    LifecycleHooks, LlmCompletion, MemoryContextResolver, PolicyEngine, PolicyExplainProvider,
     PrepareSessionForSensitiveCheck, PromptSourceResolver, ResolveModeConfig,
     ResolveSystemPromptFromHooks, RunQuery, SessionDerivedBuilder, SessionEventStore,
-    SessionHistoryLoader, SessionResponseSaver, TaskRunner, ToolProfileProvider,
+    SessionHistoryLoader, SessionResponseSaver, TaskRunner, ToolApproval, ToolProfileProvider,
 };
 use crate::usecase::app::{
     AiDeps, AiUseCase, ModelDeps, ObsDeps, PolicyDeps, SessionDeps, SystemDeps, ToolingDeps,
@@ -193,6 +193,7 @@ fn build_session_deps(
     config_provider: &Arc<dyn ConfigProvider>,
     project_root: PathBuf,
     external_tool_index: Arc<ExternalToolPolicyIndex>,
+    sensitive_prompt_override: Option<Arc<dyn SensitiveContentPrompt>>,
 ) -> (
     SessionDeps,
     Arc<dyn PolicyExplainProvider>,
@@ -227,6 +228,7 @@ fn build_session_deps(
                     Some(Arc::clone(interrupt_checker)),
                     non_interactive,
                     Some(Arc::new(DeterministicCompactionStrategy)),
+                    sensitive_prompt_override,
                 ));
             (
                 Some(leakscan_prepare) as Option<Arc<dyn PrepareSessionForSensitiveCheck>>,
@@ -251,6 +253,24 @@ fn build_session_deps(
     let mut selectors: Vec<Arc<dyn ContextAddonSelector>> = vec![Arc::new(
         ChangedFilesSnippetSelector::new(Arc::clone(fs), 8, 200, 16_000),
     )];
+    let shell_console_enabled = std::env::var("AISH_CONTEXT_ADDONS_SHELL_CONSOLE_ENABLED")
+        .map(|v| v != "0")
+        .unwrap_or(true);
+    if shell_console_enabled {
+        let shell_console_max_chars = std::env::var("AISH_CONTEXT_ADDONS_SHELL_CONSOLE_MAX_CHARS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(4_000);
+        let shell_console_max_lines = std::env::var("AISH_CONTEXT_ADDONS_SHELL_CONSOLE_MAX_LINES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(80);
+        selectors.push(Arc::new(ShellConsoleSelector::new(
+            Arc::clone(fs),
+            shell_console_max_chars,
+            shell_console_max_lines,
+        )));
+    }
     let memory_enabled = std::env::var("AISH_CONTEXT_ADDONS_MEMORY_ENABLED")
         .map(|v| v != "0")
         .unwrap_or(true);
@@ -514,15 +534,22 @@ fn build_policy_deps(
     interrupt_checker: &Arc<dyn crate::ports::outbound::InterruptChecker>,
     non_interactive: bool,
     run_shell_allowlist: Vec<String>,
+    approver_override: Option<Arc<dyn ToolApproval>>,
+    continue_prompt_override: Option<Arc<dyn crate::ports::outbound::ContinueAfterLimitPrompt>>,
 ) -> PolicyDeps {
     let command_allow_rules_loader = Arc::new(StdCommandAllowRulesLoader);
-    let approver: Arc<dyn crate::ports::outbound::ToolApproval> = if non_interactive {
-        Arc::new(NonInteractiveToolApproval::new())
-    } else {
-        Arc::new(CliToolApproval::new(Some(Arc::clone(interrupt_checker))))
-    };
+    let approver: Arc<dyn crate::ports::outbound::ToolApproval> =
+        if let Some(override_) = approver_override {
+            override_
+        } else if non_interactive {
+            Arc::new(NonInteractiveToolApproval::new())
+        } else {
+            Arc::new(CliToolApproval::new(Some(Arc::clone(interrupt_checker))))
+        };
     let continue_prompt: Arc<dyn crate::ports::outbound::ContinueAfterLimitPrompt> =
-        if non_interactive {
+        if let Some(override_) = continue_prompt_override {
+            override_
+        } else if non_interactive {
             Arc::new(NoContinuePrompt::new())
         } else {
             Arc::new(CliContinuePrompt::new())
@@ -561,8 +588,10 @@ fn build_tooling_deps(
     fs: &Arc<dyn FileSystem>,
     env_resolver: &Arc<dyn EnvResolver>,
     event_hub: Option<EventHubHandle>,
+    sink_factory_override: Option<Arc<dyn EventSinkFactory>>,
 ) -> ToolingDeps {
-    let sink_factory = Arc::new(StdEventSinkFactory::new(verbose));
+    let sink_factory =
+        sink_factory_override.unwrap_or_else(|| Arc::new(StdEventSinkFactory::new(verbose)));
     let mut tools: Vec<Arc<dyn common::tool::Tool>> = vec![
         Arc::new(EchoTool::new()),
         Arc::new(ShellTool::new()),
@@ -699,6 +728,19 @@ fn build_resolve_mode_config(
 /// `non_interactive`: true のとき確認プロンプトを出さない（ツール承認は常に拒否・続行はしない・leakscan ヒットは拒否）。CI 向け。
 /// `verbose`: true のとき不具合調査用の冗長ログを stderr 等に出力する。
 pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
+    wire_ai_with_overrides(non_interactive, verbose, None, None, None, None, None, None)
+}
+
+pub(crate) fn wire_ai_with_overrides(
+    non_interactive: bool,
+    verbose: bool,
+    sink_factory_override: Option<Arc<dyn EventSinkFactory>>,
+    dry_run_report_sink_override: Option<Arc<dyn DryRunReportSink>>,
+    approver_override: Option<Arc<dyn ToolApproval>>,
+    continue_prompt_override: Option<Arc<dyn crate::ports::outbound::ContinueAfterLimitPrompt>>,
+    sensitive_prompt_override: Option<Arc<dyn SensitiveContentPrompt>>,
+    task_output_observer_override: Option<Arc<dyn common::ports::outbound::ProcessOutputObserver>>,
+) -> App {
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem);
     let env_resolver: Arc<dyn EnvResolver> = Arc::new(StdEnvResolver);
     let runtime_catalog: Arc<dyn RuntimeCatalog> = Arc::new(StdRuntimeCatalog::new(
@@ -735,7 +777,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
     )));
     let memory_context_resolver: Arc<dyn MemoryContextResolver> =
         Arc::new(StdMemoryContextResolver::new(structured_memory_repo, 8));
-    let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None);
+    let tooling = build_tooling_deps(verbose, &fs, &env_resolver, None, sink_factory_override);
     let (session, policy_explain_provider, config_explain_provider, run_shell_allowlist) =
         build_session_deps(
             &fs,
@@ -746,6 +788,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
             &config_provider,
             project_root,
             Arc::clone(&tooling.external_tool_policy_index),
+            sensitive_prompt_override,
         );
     let session_event_store = session.session_event_store.clone();
     let session_derived_builder = session.session_derived_builder.clone();
@@ -755,13 +798,16 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         &interrupt_checker,
         non_interactive,
         run_shell_allowlist,
+        approver_override,
+        continue_prompt_override,
     );
     let model = build_model_deps(&fs, &env_resolver);
     let system = build_system_deps(&process);
     let obs = build_obs_deps(&logger);
     let lifecycle_hooks = build_lifecycle_hooks(&model.llm_stream_factory, &logger);
 
-    let dry_run_report_sink: Arc<dyn DryRunReportSink> = Arc::new(StdoutDryRunReportSink::new());
+    let dry_run_report_sink: Arc<dyn DryRunReportSink> =
+        dry_run_report_sink_override.unwrap_or_else(|| Arc::new(StdoutDryRunReportSink::new()));
     let ai_use_case = Arc::new(AiUseCase::new(AiDeps {
         session,
         policy,
@@ -789,6 +835,7 @@ pub fn wire_ai(non_interactive: bool, verbose: bool) -> App {
         Arc::clone(&process),
         Arc::clone(&runtime_catalog),
         Arc::clone(&package_resolver),
+        task_output_observer_override,
     ));
     let resolve_mode_config = build_resolve_mode_config(&env_resolver, &fs);
     let resolve_system_prompt_from_hooks: Arc<dyn ResolveSystemPromptFromHooks> = Arc::new(

@@ -2,10 +2,10 @@
 //!
 //! ai の metadata.json / entries/<id>.json と同一形式でデシリアライズする。
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// 一覧用（content なし）
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)] // fields used by main for display and by adapter for deserialize
 pub struct MemoryListEntry {
     pub id: String,
@@ -17,7 +17,7 @@ pub struct MemoryListEntry {
 }
 
 /// 1 件取得用（content あり）
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(dead_code)] // fields used by main for display and by adapter for deserialize
 pub struct MemoryEntry {
     pub id: String,

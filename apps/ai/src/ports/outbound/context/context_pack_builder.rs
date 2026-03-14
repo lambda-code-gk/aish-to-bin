@@ -1,6 +1,7 @@
 //! 履歴＋クエリから ContextPack を構築する Outbound ポート
 
 use crate::domain::{ContextPack, Query};
+use common::domain::SessionDir;
 use common::error::Error;
 use common::llm::provider::Message as LlmMessage;
 
@@ -11,6 +12,7 @@ pub trait ContextPackBuilder: Send + Sync {
     fn build(
         &self,
         history: &[LlmMessage],
+        session_dir: Option<&SessionDir>,
         query: Option<&Query>,
         system_instruction: Option<&str>,
         query_placement: QueryPlacement,

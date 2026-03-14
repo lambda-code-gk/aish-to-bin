@@ -266,28 +266,6 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
     }
 }
 
-/// コマンドラインを解析する。補完生成が要求された場合は ParseOutcome::GenerateCompletion を返す。
-pub fn parse_args() -> Result<ParseOutcome, Error> {
-    let cmd = build_clap_command();
-    let matches = cmd
-        .try_get_matches()
-        .map_err(|e| Error::invalid_argument(e.to_string()))?;
-
-    if let Some(&shell) = matches.get_one::<Shell>("generate") {
-        return Ok(ParseOutcome::GenerateCompletion(shell));
-    }
-
-    if matches.get_flag("list-tasks") {
-        return Ok(ParseOutcome::ListTasks);
-    }
-
-    if matches.get_flag("list-modes") {
-        return Ok(ParseOutcome::ListModes);
-    }
-
-    Ok(ParseOutcome::Config(matches_to_config(&matches)))
-}
-
 /// テスト用: 引数スライスから解析する
 #[allow(dead_code)]
 pub fn parse_args_from(args: &[String]) -> Result<Config, Error> {

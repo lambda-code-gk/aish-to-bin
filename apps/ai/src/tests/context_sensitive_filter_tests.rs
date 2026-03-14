@@ -98,7 +98,7 @@ fn test_deny_filter_drops_addon_with_decision() {
 
     let history = vec![LlmMessage::user("hello")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let deny_decisions: Vec<_> = pack
@@ -145,7 +145,7 @@ fn test_mask_filter_replaces_addon_content_with_decision() {
 
     let history = vec![LlmMessage::user("hello")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let mask_decisions: Vec<_> = pack
@@ -188,7 +188,7 @@ fn test_clean_filter_passes_addon_through() {
 
     let history = vec![LlmMessage::user("hello")];
     let pack = builder
-        .build(&history, None, None, QueryPlacement::AlreadyInHistory)
+        .build(&history, None, None, None, QueryPlacement::AlreadyInHistory)
         .expect("build should succeed");
 
     let sensitive_decisions: Vec<_> = pack

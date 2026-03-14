@@ -159,7 +159,15 @@ fn build_clap_command() -> clap::Command {
         clap::Command::new("aish")
             .about("CUI automation framework with LLM integration")
             .subcommand_required(false)
-            .subcommand(clap::Command::new("shell").about("Start the interactive shell (default)"))
+            .subcommand(
+                clap::Command::new("shell")
+                    .about("Start the interactive shell (default) or show shell status")
+                    .subcommand_required(false)
+                    .subcommand(
+                        clap::Command::new("status")
+                            .about("Show shell attachment and console log status"),
+                    ),
+            )
             .subcommand(
                 clap::Command::new("plugins")
                     .about("External plugins (discovery is deny-by-default; enable explicitly in plugin.toml)")
@@ -262,11 +270,51 @@ fn build_clap_command() -> clap::Command {
             )
             .subcommand(
                 clap::Command::new("daemon")
-                    .about("Single-writer daemon (aishd): start, ping, status")
+                    .about("Single-writer daemon (aishd): start, ping, status, jobs, stop, cancel")
                     .subcommand_required(true)
-                    .subcommand(clap::Command::new("start").about("Run daemon in foreground (Ctrl-C to stop)"))
+                    .subcommand(
+                        clap::Command::new("start")
+                            .about("Run daemon in foreground (Ctrl-C to stop)")
+                            .arg(
+                                clap::Arg::new("detach")
+                                    .long("detach")
+                                    .help("Start daemon in background (detach) and return immediately")
+                                    .action(ArgAction::SetTrue),
+                            ),
+                    )
+                    .subcommand(
+                        clap::Command::new("ensure")
+                            .about("Ensure daemon is running (start in background if needed)"),
+                    )
                     .subcommand(clap::Command::new("ping").about("Check daemon liveness"))
-                    .subcommand(clap::Command::new("status").about("Show daemon status (same as ping)")),
+                    .subcommand(clap::Command::new("status").about("Show daemon status (same as ping)"))
+                    .subcommand(
+                        clap::Command::new("jobs")
+                            .about("List backend jobs and/or persisted lifecycle state")
+                            .arg(
+                                clap::Arg::new("active")
+                                    .long("active")
+                                    .help("Show only active jobs from the running daemon")
+                                    .action(ArgAction::SetTrue),
+                            )
+                            .arg(
+                                clap::Arg::new("persisted")
+                                    .long("persisted")
+                                    .help("Show only persisted lifecycle rows from the selected session")
+                                    .action(ArgAction::SetTrue),
+                            ),
+                    )
+                    .subcommand(clap::Command::new("stop").about("Ask the daemon to stop and clean up"))
+                    .subcommand(
+                        clap::Command::new("cancel")
+                            .about("Cancel a running ai backend job")
+                            .arg(
+                                clap::Arg::new("job_id")
+                                    .value_name("job_id")
+                                    .required(true)
+                                    .num_args(1),
+                            ),
+                    ),
             ),
     )
 }
@@ -286,7 +334,17 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
         sessions_rebuild_derived_session_id,
     ) = match matches.subcommand() {
         None => (None, Vec::new(), false, false, None, None),
-        Some(("shell", _)) => (None, Vec::new(), false, false, None, None),
+        Some(("shell", m)) => {
+            let args = match m.subcommand() {
+                Some(("status", _)) => vec!["status".to_string()],
+                _ => vec![],
+            };
+            if args.is_empty() {
+                (None, Vec::new(), false, false, None, None)
+            } else {
+                (Some("shell".to_string()), args, false, false, None, None)
+            }
+        }
         Some(("plugins", m)) => {
             let sub = m
                 .subcommand()
@@ -441,24 +499,38 @@ fn matches_to_config(matches: &clap::ArgMatches) -> Config {
             (cmd_name, cmd_args, false, false, None, rebuild_session_id)
         }
         Some(("daemon", daemon_m)) => {
-            let sub = match daemon_m.subcommand() {
-                Some(("start", _)) => "start",
-                Some(("ping", _)) => "ping",
-                Some(("status", _)) => "status",
-                _ => "",
+            let args = match daemon_m.subcommand() {
+                Some(("start", m)) => {
+                    let mut args = vec!["start".to_string()];
+                    if m.get_flag("detach") {
+                        args.push("--detach".to_string());
+                    }
+                    args
+                }
+                Some(("ensure", _)) => vec!["ensure".to_string()],
+                Some(("ping", _)) => vec!["ping".to_string()],
+                Some(("status", _)) => vec!["status".to_string()],
+                Some(("jobs", m)) => {
+                    let mut args = vec!["jobs".to_string()];
+                    if m.get_flag("active") {
+                        args.push("--active".to_string());
+                    }
+                    if m.get_flag("persisted") {
+                        args.push("--persisted".to_string());
+                    }
+                    args
+                }
+                Some(("stop", _)) => vec!["stop".to_string()],
+                Some(("cancel", m)) => {
+                    let mut args = vec!["cancel".to_string()];
+                    if let Some(job_id) = m.get_one::<String>("job_id") {
+                        args.push(job_id.clone());
+                    }
+                    args
+                }
+                _ => vec![],
             };
-            (
-                Some("daemon".to_string()),
-                if sub.is_empty() {
-                    vec![]
-                } else {
-                    vec![sub.to_string()]
-                },
-                false,
-                false,
-                None,
-                None,
-            )
+            (Some("daemon".to_string()), args, false, false, None, None)
         }
         Some((name, _)) => (Some(name.to_string()), vec![], false, false, None, None),
     };
@@ -735,11 +807,82 @@ mod tests {
     }
 
     #[test]
+    fn test_config_to_command_with_shell_status() {
+        let config = Config {
+            command_name: Some("shell".to_string()),
+            command_args: vec!["status".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(config_to_command(&config), Command::ShellStatus);
+    }
+
+    #[test]
     fn test_config_to_command_with_unmute() {
         let config = Config {
             command_name: Some("unmute".to_string()),
             ..Default::default()
         };
         assert_eq!(config_to_command(&config), Command::Unmute);
+    }
+
+    #[test]
+    fn test_config_to_command_with_daemon_stop() {
+        let config = Config {
+            command_name: Some("daemon".to_string()),
+            command_args: vec!["stop".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(config_to_command(&config), Command::DaemonStop);
+    }
+
+    #[test]
+    fn test_config_to_command_with_daemon_jobs() {
+        let config = Config {
+            command_name: Some("daemon".to_string()),
+            command_args: vec!["jobs".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(
+            config_to_command(&config),
+            Command::DaemonJobs {
+                active_only: false,
+                persisted_only: false,
+            }
+        );
+    }
+
+    #[test]
+    fn test_config_to_command_with_daemon_jobs_filters() {
+        let config = Config {
+            command_name: Some("daemon".to_string()),
+            command_args: vec![
+                "jobs".to_string(),
+                "--active".to_string(),
+                "--persisted".to_string(),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            config_to_command(&config),
+            Command::DaemonJobs {
+                active_only: true,
+                persisted_only: true,
+            }
+        );
+    }
+
+    #[test]
+    fn test_config_to_command_with_daemon_cancel() {
+        let config = Config {
+            command_name: Some("daemon".to_string()),
+            command_args: vec!["cancel".to_string(), "job-1".to_string()],
+            ..Config::default()
+        };
+        assert_eq!(
+            config_to_command(&config),
+            Command::DaemonCancel {
+                job_id: "job-1".to_string()
+            }
+        );
     }
 }

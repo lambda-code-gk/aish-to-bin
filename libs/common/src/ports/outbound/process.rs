@@ -4,6 +4,17 @@
 
 use crate::error::Error;
 use std::path::Path;
+use std::sync::Arc;
+
+#[derive(Debug, Clone, Copy)]
+pub enum ProcessOutputStream {
+    Stdout,
+    Stderr,
+}
+
+pub trait ProcessOutputObserver: Send + Sync {
+    fn on_output(&self, stream: ProcessOutputStream, text: &str) -> Result<(), Error>;
+}
 
 /// サブプロセス実行の抽象（Outbound ポート）
 ///
@@ -11,4 +22,15 @@ use std::path::Path;
 pub trait Process: Send + Sync {
     /// プログラムを引数付きで実行し、終了コードを返す
     fn run(&self, program: &Path, args: &[String]) -> Result<i32, Error>;
+
+    /// プログラムを引数付きで実行し、stdout/stderr を observer に転送する。
+    fn run_observing(
+        &self,
+        program: &Path,
+        args: &[String],
+        observer: Option<Arc<dyn ProcessOutputObserver>>,
+    ) -> Result<i32, Error> {
+        let _ = observer;
+        self.run(program, args)
+    }
 }

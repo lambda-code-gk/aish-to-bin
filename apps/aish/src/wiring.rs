@@ -8,18 +8,24 @@ use common::adapter::{
 };
 use common::part_id::{IdGenerator, StdIdGenerator};
 use common::ports::outbound::{
-    EnvResolver, FileSystem, Log, McpHost, PathResolver, RuntimeCatalog, Signal,
+    EnvResolver, FileSystem, Log, McpHost, PathResolver, RuntimeCatalog, SessionEventStore, Signal,
 };
 use plugins::StdioJsonRpcMcpBridgeHost;
+use storage::NdjsonSessionEventStore;
 
 use crate::adapter::{
-    LoggingMemoryRepository, StdMemoryRepository, StdReviewedHistoryReader, StdShellRunner,
-    UnixPtySpawn, UnixSignal,
+    LoggingMemoryRepository, StdMemoryRepository, StdReviewedHistoryReader,
+    StdShellAttachmentStore, StdShellRunner, UnixPtySpawn, UnixSignal,
 };
-use crate::ports::outbound::{MemoryRepository, ReviewedHistoryReader, ShellRunner};
+use crate::daemon_bridge;
+use crate::daemon_handler::WiredDaemonRequestHandler;
+use crate::ports::outbound::{
+    MemoryRepository, ReviewedHistoryReader, ShellAttachmentStore, ShellRunner,
+};
 use crate::usecase::{
-    ClearUseCase, HistoryUseCase, InitUseCase, MemoryUseCase, MuteUseCase, ResumeUseCase,
-    RolloutUseCase, SessionsUseCase, ShellUseCase, TruncateConsoleLogUseCase, UnmuteUseCase,
+    ClearUseCase, HistoryUseCase, InitUseCase, JobsUseCase, MemoryUseCase, MuteUseCase,
+    ResumeUseCase, RolloutUseCase, SessionsUseCase, ShellStatusUseCase, ShellUseCase,
+    TruncateConsoleLogUseCase, UnmuteUseCase,
 };
 
 /// 配線で組み立てたポート群とユースケース（main の Command ディスパッチで利用）
@@ -35,6 +41,7 @@ pub struct App {
     pub shell_runner: Arc<dyn ShellRunner>,
     pub memory_use_case: MemoryUseCase,
     pub shell_use_case: ShellUseCase,
+    pub shell_status_use_case: ShellStatusUseCase,
     pub clear_use_case: ClearUseCase,
     pub truncate_console_log_use_case: TruncateConsoleLogUseCase,
     pub rollout_use_case: RolloutUseCase,
@@ -43,6 +50,7 @@ pub struct App {
     pub resume_use_case: ResumeUseCase,
     pub sessions_use_case: SessionsUseCase,
     pub history_use_case: HistoryUseCase,
+    pub jobs_use_case: JobsUseCase,
     pub init_use_case: InitUseCase,
     /// 外部拡張（MCP互換ホスト）
     pub mcp_host: Arc<dyn McpHost>,
@@ -71,12 +79,15 @@ pub fn wire_aish() -> App {
         Arc::new(StdPathResolver::new(Arc::clone(&env_resolver)));
     let signal: Arc<dyn Signal> = Arc::new(UnixSignal);
     let pty_spawn = Arc::new(UnixPtySpawn);
+    let shell_attachment_store: Arc<dyn ShellAttachmentStore> =
+        Arc::new(StdShellAttachmentStore::new(Arc::clone(&fs)));
     let shell_runner: Arc<dyn ShellRunner> = Arc::new(StdShellRunner::new(
         Arc::clone(&env_resolver),
         Arc::clone(&fs),
         Arc::clone(&id_gen),
         Arc::clone(&signal) as Arc<dyn Signal>,
         pty_spawn,
+        Arc::clone(&shell_attachment_store),
     ));
     let memory_repository: Arc<dyn MemoryRepository> = Arc::new(LoggingMemoryRepository::new(
         Arc::new(StdMemoryRepository::new(
@@ -87,23 +98,38 @@ pub fn wire_aish() -> App {
     ));
     let memory_use_case = MemoryUseCase::new(memory_repository);
     let shell_use_case = ShellUseCase::new(Arc::clone(&path_resolver), Arc::clone(&shell_runner));
+    let session_event_store: Arc<dyn SessionEventStore> =
+        Arc::new(NdjsonSessionEventStore::new(Arc::clone(&fs)));
+    let shell_status_use_case = ShellStatusUseCase::new(
+        Arc::clone(&path_resolver),
+        Arc::clone(&fs),
+        Arc::clone(&shell_attachment_store),
+        Arc::clone(&session_event_store),
+    );
     let clear_use_case = ClearUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
     let truncate_console_log_use_case = TruncateConsoleLogUseCase::new(
         Arc::clone(&path_resolver),
         Arc::clone(&fs),
         Arc::clone(&signal),
+        Arc::clone(&shell_attachment_store),
     );
     let rollout_use_case = RolloutUseCase::new(
         Arc::clone(&path_resolver),
         Arc::clone(&fs),
         Arc::clone(&signal),
+        Arc::clone(&shell_attachment_store),
     );
     let mute_use_case = MuteUseCase::new(
         Arc::clone(&path_resolver),
         Arc::clone(&fs),
         Arc::clone(&signal),
+        Arc::clone(&shell_attachment_store),
     );
-    let unmute_use_case = UnmuteUseCase::new(Arc::clone(&path_resolver), Arc::clone(&fs));
+    let unmute_use_case = UnmuteUseCase::new(
+        Arc::clone(&path_resolver),
+        Arc::clone(&fs),
+        Arc::clone(&shell_attachment_store),
+    );
     let resume_use_case = ResumeUseCase::new(
         Arc::clone(&path_resolver),
         Arc::clone(&fs),
@@ -117,6 +143,8 @@ pub fn wire_aish() -> App {
     let reviewed_history_reader: Arc<dyn ReviewedHistoryReader> =
         Arc::new(StdReviewedHistoryReader::new(Arc::clone(&fs)));
     let history_use_case = HistoryUseCase::new(Arc::clone(&path_resolver), reviewed_history_reader);
+    let jobs_use_case =
+        JobsUseCase::new(Arc::clone(&path_resolver), Arc::clone(&session_event_store));
     let init_use_case = InitUseCase::new(Arc::clone(&env_resolver), Arc::clone(&fs));
     let mcp_host: Arc<dyn McpHost> = Arc::new(StdioJsonRpcMcpBridgeHost::new());
     let get_terminal_width: Box<dyn Fn() -> usize + Send + Sync> = Box::new(|| {
@@ -134,6 +162,7 @@ pub fn wire_aish() -> App {
         shell_runner,
         memory_use_case,
         shell_use_case,
+        shell_status_use_case,
         clear_use_case,
         truncate_console_log_use_case,
         rollout_use_case,
@@ -142,9 +171,22 @@ pub fn wire_aish() -> App {
         resume_use_case,
         sessions_use_case,
         history_use_case,
+        jobs_use_case,
         init_use_case,
         mcp_host,
         logger,
         get_terminal_width,
     }
+}
+
+#[cfg(unix)]
+pub fn wire_daemon_server_handlers() -> aish_daemon::ServerHandlers {
+    daemon_bridge::build_server_handlers(Arc::new(|| {
+        let app = wire_aish();
+        Arc::new(WiredDaemonRequestHandler::new(
+            app.memory_use_case,
+            app.history_use_case,
+            Arc::clone(&app.mcp_host),
+        ))
+    }))
 }
