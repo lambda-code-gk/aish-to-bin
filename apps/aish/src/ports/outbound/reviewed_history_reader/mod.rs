@@ -22,3 +22,4 @@ pub trait ReviewedHistoryReader: Send + Sync {
         ids: &[String],
     ) -> Result<Vec<HistoryGetEntry>, Error>;
 }
+

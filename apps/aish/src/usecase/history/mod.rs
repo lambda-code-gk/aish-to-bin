@@ -76,3 +76,4 @@ impl HistoryUseCase {
         Session::new(&session_path, &home_dir)
     }
 }
+

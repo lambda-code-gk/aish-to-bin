@@ -16,3 +16,4 @@ pub struct HistoryGetEntry {
     pub id: String,
     pub content: String,
 }
+
