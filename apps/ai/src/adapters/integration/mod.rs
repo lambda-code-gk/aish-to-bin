@@ -1,1 +1,1 @@
-// Phase 1: placeholder for integration adapter modules.
+pub(crate) mod daemon_client;
