@@ -3,3 +3,5 @@ pub(crate) mod package_spec_loader;
 pub(crate) mod prompt_source_resolver;
 pub(crate) mod skill_spec_loader;
 pub(crate) mod task_spec_loader;
+pub(crate) mod task;
+pub(crate) mod sigint_checker;
