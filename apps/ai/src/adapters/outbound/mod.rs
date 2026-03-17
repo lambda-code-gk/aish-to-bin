@@ -6,3 +6,4 @@ pub(crate) mod task_spec_loader;
 pub(crate) mod task;
 pub(crate) mod sigint_checker;
 pub(crate) mod config;
+pub(crate) mod lifecycle;
