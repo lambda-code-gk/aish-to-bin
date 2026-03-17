@@ -1,1 +1,5 @@
-// Phase 1: placeholder for outbound adapter modules.
+pub(crate) mod package_resolver;
+pub(crate) mod package_spec_loader;
+pub(crate) mod prompt_source_resolver;
+pub(crate) mod skill_spec_loader;
+pub(crate) mod task_spec_loader;
